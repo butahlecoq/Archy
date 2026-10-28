@@ -1,6 +1,6 @@
 # Archy
 
-Archy is a proposed open-source, agent-native architectural design system. It aims to turn a structured architectural brief into inspectable design alternatives, BIM deliverables, and reproducible comparisons.
+Archy is a proposed open-source system for agent-centered architectural design on Omarchy. It aims to turn a structured architectural brief into inspectable design alternatives, BIM deliverables, and reproducible comparisons.
 
 This repository contains the initial project plan. No software, integrations, or automated workflow have been implemented yet.
 
