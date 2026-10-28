@@ -4,6 +4,8 @@ Archy is a proposed open-source, agent-native architectural design system. It ai
 
 This repository contains the initial project plan. No software, integrations, or automated workflow have been implemented yet.
 
+Omarchy is the initial target environment for development and the proof of concept. The project should document any Omarchy-specific setup while keeping its architectural specifications independent of the desktop environment.
+
 ## Direction
 
 Archy owns the project specification, constraints, design decisions, and evaluation history. Existing tools provide specialized modeling and BIM capabilities. The intended source of truth is a structured design specification together with IFC data; a Blender scene is a derived view, not the sole record of a design.

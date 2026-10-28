@@ -2,6 +2,10 @@
 
 These projects are starting points for investigation, not installed dependencies or commitments. Their capabilities, setup, compatibility, licenses, and safety properties need verification before use.
 
+## Omarchy considerations
+
+The first integration work targets Omarchy. Check how Blender, IfcOpenShell, and their MCP servers are installed and launched on the target system, including Python environment and dependency compatibility. Verify headless rendering and GUI operation where each workflow requires them. Document the versions and setup that actually work; no Omarchy installation procedure has been validated yet.
+
 ## Modeling and BIM
 
 - [Blender MCP](https://github.com/ahujasid/mcp-for-blender) connects an agent to Blender for scene manipulation and rendering. Investigate its operations and the risks of arbitrary Python execution.

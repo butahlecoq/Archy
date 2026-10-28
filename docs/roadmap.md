@@ -4,6 +4,8 @@
 
 Prove the workflow described in [Archy 0.1](proof-of-concept.md) using existing agent and MCP infrastructure. Define the brief and deterministic operations needed for one massing study. Verify the measurements independently.
 
+Develop and verify this first workflow on Omarchy. Record the tested dependencies and setup as the integrations are established.
+
 ## After the proof of concept
 
 Use the results to decide whether to build a Rust CLI, typed operations, project management, geometry interfaces, validation, and transactional execution. Investigate upstream contributions to existing BIM and CAD projects before building overlapping capabilities.
