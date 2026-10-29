@@ -179,7 +179,17 @@ fn new_reason(
     None
 }
 
-fn capture(mut command: Command, limits: Limits, cancel: &AtomicBool) -> Capture {
+fn capture(command: Command, limits: Limits, cancel: &AtomicBool) -> Capture {
+    capture_with_term_pause(command, limits, cancel, Duration::ZERO, |_| {})
+}
+
+fn capture_with_term_pause<F: FnOnce(Pid)>(
+    mut command: Command,
+    limits: Limits,
+    cancel: &AtomicBool,
+    term_pause: Duration,
+    before_deadline: F,
+) -> Capture {
     command
         .process_group(0)
         .stdin(Stdio::null())
@@ -207,6 +217,7 @@ fn capture(mut command: Command, limits: Limits, cancel: &AtomicBool) -> Capture
         stderr = None;
         reason = Some(Outcome::IoFailure);
     }
+    before_deadline(pid);
     let started = Instant::now();
     let deadline = started + limits.wall;
     let mut stop_started = None;
@@ -259,6 +270,9 @@ fn capture(mut command: Command, limits: Limits, cancel: &AtomicBool) -> Capture
                 exited,
                 identity_pinned,
             );
+            if !term_pause.is_zero() {
+                thread::sleep(term_pause);
+            }
             stop_started = Some(now);
         }
         if let Some(stopped) = stop_started {
@@ -319,8 +333,9 @@ fn capture(mut command: Command, limits: Limits, cancel: &AtomicBool) -> Capture
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::sync::Arc;
+    use std::path::PathBuf;
     use std::sync::atomic::Ordering;
+    use std::sync::{Arc, mpsc};
     use std::thread;
     use std::time::Instant;
 
@@ -358,6 +373,56 @@ mod tests {
             term_grace: Duration::from_millis(80),
             drain_grace: Duration::from_millis(150),
             max_output: 1024,
+        }
+    }
+
+    struct EscapedFixture {
+        dir: PathBuf,
+        pidfd: Option<OwnedFd>,
+    }
+
+    impl EscapedFixture {
+        fn new() -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "archy-escaped-{}-{:?}",
+                std::process::id(),
+                thread::current().id()
+            ));
+            std::fs::create_dir(&dir).unwrap();
+            Self { dir, pidfd: None }
+        }
+
+        fn pin(&mut self) -> Pid {
+            let until = Instant::now() + Duration::from_secs(3);
+            while !std::fs::metadata(self.dir.join("pid")).is_ok_and(|meta| meta.len() > 0) {
+                assert!(Instant::now() < until, "escaped child did not become ready");
+                thread::sleep(Duration::from_millis(2));
+            }
+            let text = std::fs::read_to_string(self.dir.join("pid")).unwrap();
+            let pid = Pid::from_raw(text.trim().parse().unwrap()).unwrap();
+            self.pidfd = Some(pidfd_open(pid, PidfdFlags::empty()).unwrap());
+            std::fs::write(self.dir.join("go"), b"").unwrap();
+            while !self.dir.join("ready").exists() {
+                assert!(
+                    Instant::now() < until,
+                    "escaped child did not enter its session"
+                );
+                thread::sleep(Duration::from_millis(2));
+            }
+            pid
+        }
+
+        fn release(&self) {
+            std::fs::write(self.dir.join("ack"), b"").unwrap();
+        }
+    }
+
+    impl Drop for EscapedFixture {
+        fn drop(&mut self) {
+            if let Some(fd) = &self.pidfd {
+                let _ = pidfd_send_signal(fd, Signal::KILL);
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
 
@@ -475,38 +540,81 @@ mod tests {
 
     #[test]
     fn escaped_session_pipeholder_does_not_lose_group_identity_before_signaling() {
+        let mut escaped = EscapedFixture::new();
         let mut command = Command::new("/bin/sh");
         command.args([
             "-c",
-            "/usr/bin/setsid /bin/sleep 1 & echo escaped:$!; exit 0",
+            r#"/bin/sh -c 'while [ ! -e "$1/go" ]; do /bin/sleep 0.01; done; exec /usr/bin/setsid /bin/sh -c '\''echo ready > "$1/ready"; while [ ! -e "$1/ack" ]; do /bin/sleep 0.01; done; exec /bin/sleep 10'\'' sh "$1"' sh "$ARCHY_ESCAPED_DIR" & escaped=$!; echo "$escaped" > "$ARCHY_ESCAPED_DIR/pid"; while [ ! -e "$ARCHY_ESCAPED_DIR/ack" ]; do /bin/sleep 0.01; done; echo escaped:$escaped; exit 0"#,
         ]);
-        let result = capture(command, limits(), &AtomicBool::new(false));
+        command.env("ARCHY_ESCAPED_DIR", &escaped.dir);
+        let (result, pid) = thread::scope(|scope| {
+            let (leader_tx, leader_rx) = mpsc::channel();
+            let (start_tx, start_rx) = mpsc::channel();
+            let capture_thread = scope.spawn(move || {
+                capture_with_term_pause(
+                    command,
+                    limits(),
+                    &AtomicBool::new(false),
+                    Duration::from_millis(1200),
+                    |leader| {
+                        let _ = leader_tx.send(leader);
+                        let _ = start_rx.recv();
+                    },
+                )
+            });
+            let leader = leader_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            let _leader_pidfd = pidfd_open(leader, PidfdFlags::empty()).unwrap();
+            let pid = escaped.pin();
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+            let fields: Vec<_> = stat
+                .split(") ")
+                .nth(1)
+                .unwrap()
+                .split_whitespace()
+                .collect();
+            assert_ne!(fields[0], "Z", "escaped child exited before release");
+            assert_eq!(fields[3].parse::<i32>().unwrap(), pid.as_raw_pid());
+            escaped.release();
+            let until = Instant::now() + Duration::from_secs(3);
+            loop {
+                let stat = std::fs::read_to_string(format!("/proc/{leader}/stat")).unwrap();
+                if stat.split(") ").nth(1).unwrap().starts_with('Z') {
+                    break;
+                }
+                assert!(Instant::now() < until, "group leader did not exit");
+                thread::sleep(Duration::from_millis(2));
+            }
+            start_tx.send(()).unwrap();
+            (capture_thread.join().unwrap(), pid)
+        });
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+        let fields: Vec<_> = stat
+            .split(") ")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .collect();
+        assert_ne!(
+            fields[0], "Z",
+            "escaped child exited before capture returned"
+        );
         assert_eq!(result.outcome, Outcome::TimedOut);
+        assert!(result.termination.pidfd_opened);
         assert!(result.termination.leader_pinned_at_group_signal);
+        assert!(result.termination.term_group_sent);
         assert!(result.termination.direct_reaped);
         assert!(!result.termination.stdout_eof || !result.termination.stderr_eof);
         let text = String::from_utf8_lossy(&result.stdout.bytes);
-        let pid = text
+        let captured_pid = text
             .split("escaped:")
             .nth(1)
             .unwrap()
             .lines()
             .next()
             .unwrap()
-            .parse::<u32>()
+            .parse::<i32>()
             .unwrap();
-        let until = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < until {
-            if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-                if stat.split(") ").nth(1).unwrap().starts_with('Z') {
-                    return;
-                }
-            } else {
-                return;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        panic!("escaped fixture child remained live: {pid}");
+        assert_eq!(captured_pid, pid.as_raw_pid());
     }
 
     #[test]
