@@ -7,6 +7,8 @@ mod isolation;
 mod process;
 mod request;
 mod response;
+#[cfg(target_os = "linux")]
+mod service;
 
 pub use artifacts::{
     CaptureOutcome, CapturedArtifact, CapturedOutputs, CapturedWorkerError, ErrorBinding,
@@ -19,6 +21,8 @@ pub use request::{BlenderRequest, BlenderWire, IfcRequest, IfcWire, SourceArtifa
 pub use response::{
     BackendContract, BlenderResponse, IfcResponse, decode_blender_response, decode_ifc_response,
 };
+#[cfg(target_os = "linux")]
+pub use service::{BackendKind, ServiceSession};
 
 pub fn backend_schema() -> schemars::Schema {
     schemars::schema_for!(BackendContract)
