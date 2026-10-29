@@ -12,7 +12,7 @@ archy-eval = { path = "../archy-eval" }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["net", "process"] }
 
 [dev-dependencies]
 rustix = { workspace = true, features = ["process"] }

@@ -1,6 +1,8 @@
 //! Typed, bounded worker protocol. File and process authority belongs to A09.
 
 mod artifacts;
+#[cfg(target_os = "linux")]
+mod isolation;
 #[cfg(all(test, target_os = "linux"))]
 mod process;
 mod request;
@@ -10,6 +12,8 @@ pub use artifacts::{
     CaptureOutcome, CapturedArtifact, CapturedOutputs, CapturedWorkerError, ErrorBinding,
     capture_blender, capture_ifc,
 };
+#[cfg(target_os = "linux")]
+pub use isolation::{QuotaCheckedScratch, receive_quota_checked_scratch};
 
 pub use request::{BlenderRequest, BlenderWire, IfcRequest, IfcWire, SourceArtifact};
 pub use response::{
