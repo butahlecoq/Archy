@@ -11,10 +11,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pinned Rust
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
-      # Cargo.lock is not fabricated: first runnable toolchain resolves and commits it.
-      - name: Resolve dependency graph (lockfile gate)
+      - name: Verify tracked locked dependency graph
         run: |
-          cargo generate-lockfile
+          cargo metadata --locked --format-version 1 --no-deps > /dev/null
           git diff --exit-code -- Cargo.lock
           git ls-files --error-unmatch Cargo.lock
       - run: cargo fmt --all -- --check

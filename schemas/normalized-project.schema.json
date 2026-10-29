@@ -1,60 +1,57 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "normalized-project",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "schema_version": {
-      "const": "0.1.0"
-    },
-    "project_id": {
+  "$defs": {
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
       "type": "string"
     },
-    "units": {
-      "const": "m"
-    },
-    "site": {
-      "type": "object",
+    "Generation": {
       "additionalProperties": false,
       "properties": {
-        "polygon_xy_m": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "minItems": 2,
-            "maxItems": 2
-          },
-          "minItems": 5,
-          "maxItems": 5
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
-        "north_angle_deg": {
-          "type": "number"
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "type": "array"
         }
       },
       "required": [
-        "polygon_xy_m",
-        "north_angle_deg"
-      ]
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
     },
-    "brief": {
-      "type": "object",
+    "NormalizedBrief": {
       "additionalProperties": false,
       "properties": {
-        "storeys": {
-          "type": "integer",
-          "minimum": 1
-        },
         "floor_to_floor_m": {
+          "format": "double",
           "type": "number"
         },
-        "target_gfa_m2": {
-          "type": "number"
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "target_gfa_hard": {
           "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "format": "double",
+          "type": "number"
         }
       },
       "required": [
@@ -62,80 +59,124 @@
         "floor_to_floor_m",
         "target_gfa_m2",
         "target_gfa_hard"
-      ]
+      ],
+      "type": "object"
     },
-    "constraints": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "max_height",
-              "min_edge_setback"
-            ]
-          },
-          "value_m": {
-            "type": "number"
-          },
-          "source": {
-            "type": "string"
-          },
-          "authority": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "value_m",
-          "source",
-          "authority"
-        ]
-      }
-    },
-    "generation": {
-      "type": "object",
+    "NormalizedConstraint": {
       "additionalProperties": false,
       "properties": {
-        "count": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000
+        "authority": {
+          "description": "User declaration only. Absent authority becomes `assumption`.",
+          "type": "string"
         },
-        "seed": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 18446744073709551615
+        "id": {
+          "type": "string"
         },
-        "shapes": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "rectangle",
-              "l_shape"
-            ]
-          },
-          "minItems": 1,
-          "uniqueItems": true
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "value_m": {
+          "format": "double",
+          "type": "number"
         }
       },
       "required": [
-        "count",
-        "seed",
-        "shapes"
-      ]
+        "id",
+        "kind",
+        "value_m",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "NormalizedSite": {
+      "additionalProperties": false,
+      "properties": {
+        "north_angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/NormalizedBrief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/NormalizedConstraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation"
     },
     "normalization_version": {
-      "const": "si-rectangle-v1"
+      "type": "string"
+    },
+    "preferences": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "site": {
+      "$ref": "#/$defs/NormalizedSite"
     },
     "tolerance_m": {
-      "const": 1e-06
+      "format": "double",
+      "type": "number"
+    },
+    "units": {
+      "$ref": "#/$defs/Units"
     }
   },
   "required": [
@@ -145,8 +186,11 @@
     "site",
     "brief",
     "constraints",
+    "preferences",
     "generation",
     "normalization_version",
     "tolerance_m"
-  ]
+  ],
+  "title": "NormalizedSpec",
+  "type": "object"
 }

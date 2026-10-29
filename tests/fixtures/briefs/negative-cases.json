@@ -51,7 +51,7 @@
     "file": "unknown-field.json",
     "format": "json",
     "code": "INVALID_SCHEMA",
-    "field": "guess"
+    "field": "site.guess"
   },
   {
     "file": "ambiguous-unit-suffix.json",
@@ -98,6 +98,60 @@
   {
     "file": "json-nan.json",
     "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": null
+  },
+  {
+    "file": "missing-project-id.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "project_id"
+  },
+  {
+    "file": "missing-schema-version.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "schema_version"
+  },
+  {
+    "file": "missing-site.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "site"
+  },
+  {
+    "file": "missing-brief.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "brief"
+  },
+  {
+    "file": "missing-units.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "units"
+  },
+  {
+    "file": "missing-constraints.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "constraints"
+  },
+  {
+    "file": "missing-storeys.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "brief.storeys"
+  },
+  {
+    "file": "yaml-overflow.yaml",
+    "format": "yaml",
+    "code": "INVALID_SCHEMA",
+    "field": "brief.floor_to_floor_m"
+  },
+  {
+    "file": "malformed-alias.yaml",
+    "format": "yaml",
     "code": "INVALID_SCHEMA",
     "field": null
   }

@@ -7,6 +7,12 @@ pub use error::{ArchyError, ErrorCode};
 pub use project::*;
 pub use validation::{InputFormat, normalize, parse_project};
 
-pub fn project_schema() -> schemars::Schema { schemars::schema_for!(Project) }
-pub fn normalized_schema() -> schemars::Schema { schemars::schema_for!(NormalizedSpec) }
-pub fn error_schema() -> schemars::Schema { schemars::schema_for!(ArchyError) }
+pub fn project_schema() -> schemars::Schema {
+    schemars::schema_for!(Project)
+}
+pub fn normalized_schema() -> schemars::Schema {
+    schemars::schema_for!(NormalizedSpec)
+}
+pub fn error_schema() -> schemars::Schema {
+    schemars::schema_for!(ArchyError)
+}

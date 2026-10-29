@@ -1,272 +1,278 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "project",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "schema_version": {
-      "const": "0.1.0"
-    },
-    "project_id": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9_-]{1,128}$"
-    },
-    "units": {
-      "type": "string",
-      "enum": [
-        "m",
-        "mm",
-        "cm",
-        "ft"
-      ]
-    },
-    "site": {
-      "type": "object",
+  "$defs": {
+    "Brief": {
       "additionalProperties": false,
       "properties": {
-        "width": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "depth": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "width_m": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "depth_m": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "polygon_xy": {
-          "anyOf": [
-            {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 2,
-                "maxItems": 2
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "polygon_xy_m": {
-          "anyOf": [
-            {
-              "type": "array",
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 2,
-                "maxItems": 2
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "north_deg": {
-          "type": "number"
-        }
-      },
-      "required": []
-    },
-    "brief": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "storeys": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
-        },
         "floor_to_floor": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
           ]
         },
         "floor_to_floor_m": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
           ]
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "target_gfa": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "target_gfa_m2": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
           ]
         },
         "target_gfa_hard": {
+          "default": false,
           "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "required": [
         "storeys"
-      ]
+      ],
+      "type": "object"
     },
-    "constraints": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "max_height",
-              "min_edge_setback"
-            ]
-          },
-          "value": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "value_m": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "unit": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "m",
-                  "mm",
-                  "cm",
-                  "ft"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "source": {
-            "type": "string"
-          },
-          "authority": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
+    "Constraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "required": [
-          "id",
-          "kind",
-          "source"
-        ]
-      }
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Units"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "source"
+      ],
+      "type": "object"
     },
-    "generation": {
-      "type": "object",
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "Generation": {
       "additionalProperties": false,
       "properties": {
         "count": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1000
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         },
         "seed": {
-          "type": "integer",
+          "format": "uint64",
           "minimum": 0,
-          "maximum": 18446744073709551615
+          "type": "integer"
         },
         "shapes": {
-          "type": "array",
           "items": {
-            "enum": [
-              "rectangle",
-              "l_shape"
-            ]
+            "$ref": "#/$defs/Shape"
           },
-          "minItems": 1,
-          "uniqueItems": true
+          "type": "array"
         }
       },
       "required": [
         "count",
         "seed",
         "shapes"
-      ]
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "Site": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "depth_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "north_deg": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "polygon_xy_m": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "width_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Structural input contract. Generic dimensions obey declared units; explicit\n_m/_m2 fields always mean SI. Core additionally enforces exclusive dimension\nrepresentations, positive finite values, version and rectangular geometry.",
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/Brief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/Constraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation",
+      "default": {
+        "count": 3,
+        "seed": 42,
+        "shapes": [
+          "rectangle",
+          "l_shape"
+        ]
+      }
+    },
+    "preferences": {
+      "default": [],
+      "description": "Text preferences survive normalization without invented metrics.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "site": {
+      "$ref": "#/$defs/Site"
+    },
+    "units": {
+      "$ref": "#/$defs/Units"
     }
   },
   "required": [
@@ -277,5 +283,6 @@
     "brief",
     "constraints"
   ],
-  "description": "Draft structural input contract. Core validation additionally requires exactly one dimension representation, finite positive SI values, rectangle geometry and consistent hard bounds. SI aliases require effective units=m. Optional dimension fields may be null but do not satisfy semantic requirements."
+  "title": "Project",
+  "type": "object"
 }

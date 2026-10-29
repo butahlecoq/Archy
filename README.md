@@ -1,23 +1,34 @@
 # Archy
 
-Archy is a proposed open-source system for agent-centered architectural design on Omarchy. It aims to turn a structured architectural brief into inspectable design alternatives, BIM deliverables, and reproducible comparisons.
+Archy is an architectural workspace for Omarchy. This partial release 0.1 implements a Rust workspace and `init`/`validate`. Generation, evaluation, workers, reports, IFC and MCP belong to later slices.
 
-This repository contains the initial project plan. No software, integrations, or automated workflow have been implemented yet.
+The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 
-Omarchy is the initial target environment for development and the proof of concept. The project should document any Omarchy-specific setup while keeping its architectural specifications independent of the desktop environment.
+## Development and use
 
-## Direction
+Install pinned Rust 1.99.1 with rustfmt/clippy, then:
 
-Archy owns the project specification, constraints, design decisions, and evaluation history. Existing tools provide specialized modeling and BIM capabilities. The intended source of truth is a structured design specification together with IFC data; a Blender scene is a derived view, not the sole record of a design.
+```sh
+cargo build --locked --workspace
+cargo run --locked -p archy-cli -- init --name courtyard-demo --dir ./courtyard-demo
+cargo run --locked -p archy-cli -- validate --project ./courtyard-demo/project.yaml --json
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+python -m pip install jsonschema==4.26.0
+python scripts/check-schemas.py
+```
 
-The first milestone is a proof of concept that takes one brief, generates three building masses without manual modeling, checks their stated geometric constraints, renders them, and produces a comparison whose measurements can be independently reproduced.
+`init` requires an absent target with an existing parent. It creates project.yaml and a local schema, refusing existing files, directories or symlinks. A write failure can leave a partial new directory for inspection; recovery never removes user files. `validate --project` accepts a YAML/JSON manifest file, not a directory. `--json` emits one normalized object or error envelope on stdout; failures exit nonzero. Source bytes remain unchanged.
 
-## Documents
+## Input contract
 
-- [Architecture](docs/architecture.md): proposed responsibilities, data, and boundaries.
-- [Proof of concept](docs/proof-of-concept.md): workflow, deliverables, and success criteria.
-- [Integrations](docs/integrations.md): candidate projects and questions to investigate.
-- [Project structure](docs/project-structure.md): proposed layout for an architectural project managed in Git.
-- [Roadmap](docs/roadmap.md): milestones and decisions still to make.
+Required fields: schema_version (`0.1.0`), project_id (1–128 ASCII letters/digits/underscore/hyphen), units (`m`, `mm`, `cm`, `ft`), site, brief and constraints (possibly empty). Brief requires positive integer storeys, floor-to-floor height and target GFA. Site requires width/depth or a closed axis-aligned rectangular polygon. Polygon position is retained; canonical winding starts at minimum X/Y in right-handed XY, Z-up coordinates.
 
-Archy is a working name. Trademark, package, and repository-name availability need further investigation. A license has not yet been chosen.
+Generic dimensions use global units; constraints may override units. Explicit `_m`/`_m2` fields always mean SI, regardless of global or constraint units. Supplying both representations fails. Null dimensions mean absent. All dimensions must be finite and positive. North defaults to zero and normalizes modulo 360. Target GFA is soft unless target_gfa_hard=true. Hard setbacks and site/storey capacity must be consistent; candidate height feasibility belongs to evaluation. Length tolerance is 1e-6 m; area comparison tolerance is separately 1e-6 m².
+
+Constraints require unique id, supported kind (`max_height`, `min_edge_setback`), positive dimension and nonempty source. Missing authority becomes `assumption`; supplied authority remains an unverified user declaration. Optional `preferences` is a string list preserved without invented metrics. Generation defaults to count=3, seed=42 and rectangle/l_shape; this slice validates declarations only.
+
+Unknown/duplicate fields fail. YAML anchors, aliases, merge keys and unsupported tags fail. Input limits are 1 MiB, depth 32, and bounded nodes/events/scalars. Text resembling numbers/booleans requires YAML quotes. Errors include stable code, field path and retriable flag; syntax errors use `$` where no field is available, with parser locations in the message. Generated schemas describe structure; core validation additionally enforces cross-field dimensions, finite arithmetic and geometry.
+
+Omarchy is the target runtime. WSL/Ubuntu checks are development evidence; actual Omarchy acceptance is deferred. See [research](docs/research/omarchy-and-reuse.md), [dependencies](docs/dependencies.md), [license status](docs/license-status.md) and [handoff](docs/plans/task-01-handoff.md). Original core uses MIT; backend/third-party obligations remain separate.

@@ -1,10 +1,6 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "error",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "code": {
+  "$defs": {
+    "ErrorCode": {
       "enum": [
         "INVALID_SCHEMA",
         "INVALID_GEOMETRY",
@@ -15,12 +11,21 @@
         "REVISION_CONFLICT",
         "PERMISSION_DENIED",
         "INTERNAL_ERROR"
-      ]
-    },
-    "message": {
+      ],
       "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/ErrorCode"
     },
     "field": {
+      "description": "JSON-style dotted field path; `$` denotes the document itself.",
+      "type": "string"
+    },
+    "message": {
       "type": "string"
     },
     "retriable": {
@@ -32,5 +37,7 @@
     "message",
     "field",
     "retriable"
-  ]
+  ],
+  "title": "ArchyError",
+  "type": "object"
 }

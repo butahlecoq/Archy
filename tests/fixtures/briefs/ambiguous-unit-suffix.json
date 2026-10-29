@@ -3,7 +3,7 @@
   "project_id": "courtyard-demo",
   "units": "ft",
   "site": {
-    "width_m": 20,
+    "width_m": 20, "width": 20,
     "depth_m": 35,
     "north_deg": 0
   },
