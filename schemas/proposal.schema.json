@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_id": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "measured": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        }
+      },
+      "required": [
+        "constraint_id",
+        "result",
+        "explanation",
+        "required"
+      ],
+      "type": "object"
+    },
+    "CheckResult": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "WARN",
+        "UNKNOWN"
+      ],
+      "type": "string"
+    },
+    "ConstraintEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "description": "A declaration from input, not proof of legal authority.",
+          "type": "string"
+        },
+        "bound": {
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "bound",
+        "unit",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "ReviewEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "maxItems": 4096,
+          "minItems": 1,
+          "type": "array"
+        },
+        "comparison_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "constraints": {
+          "items": {
+            "$ref": "#/$defs/ConstraintEvidence"
+          },
+          "maxItems": 4096,
+          "type": "array"
+        },
+        "evaluation_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "expected_head_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "expected_project_revision": {
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "input_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "normalized_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "project_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$(?![\\s\\S])",
+          "type": "string"
+        },
+        "source_run_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "type": "string"
+        },
+        "variant_id": {
+          "maxLength": 72,
+          "minLength": 72,
+          "pattern": "^variant-[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "variant_sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "variant_id",
+        "source_run_id",
+        "expected_project_revision",
+        "expected_head_sha256",
+        "input_sha256",
+        "normalized_sha256",
+        "variant_sha256",
+        "evaluation_sha256",
+        "comparison_sha256",
+        "constraints",
+        "checks"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Schema validation is structural; callers must also call `validate` and bind evidence.",
+  "properties": {
+    "evidence": {
+      "$ref": "#/$defs/ReviewEvidence"
+    },
+    "schema_version": {
+      "maxLength": 17,
+      "minLength": 17,
+      "pattern": "^archy-proposal-v1$",
+      "type": "string"
+    },
+    "suggested_reason": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "pattern": "[^\\s\\x00-\\x1f\\x7f-\\x9f\\u00ad\\u0300-\\u036f\\u061c\\u180e\\u1ab0-\\u1aff\\u1dc0-\\u1dff\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\u20d0-\\u20ff\\ufe00-\\ufe0f\\ufe20-\\ufe2f\\ufeff]",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "evidence",
+    "suggested_reason"
+  ],
+  "title": "Proposal",
+  "type": "object"
+}

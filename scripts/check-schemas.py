@@ -200,3 +200,5 @@ for name, args, schema in [
     Draft202012Validator(read(ROOT / 'schemas' / f'{schema}.schema.json')).validate(value)
     assert value == desktop[name], name
 print('actual CLI desktop capabilities and genesis status conform')
+
+subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check=True)

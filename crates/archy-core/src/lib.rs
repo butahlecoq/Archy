@@ -1,5 +1,6 @@
 //! Versioned brief parsing and canonical SI normalization. No backend is needed.
 pub mod check;
+pub mod decision_contract;
 pub mod error;
 pub mod metric;
 pub mod project;
@@ -42,4 +43,10 @@ pub fn revision_schema() -> schemars::Schema {
 }
 pub fn run_request_schema() -> schemars::Schema {
     schemars::schema_for!(RunRequest)
+}
+pub fn proposal_schema() -> schemars::Schema {
+    schemars::schema_for!(decision_contract::Proposal)
+}
+pub fn decision_record_schema() -> schemars::Schema {
+    schemars::schema_for!(decision_contract::DecisionRecord)
 }

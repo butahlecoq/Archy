@@ -22,6 +22,6 @@ fn main() {
         .collect();
     println!(
         "{}",
-        serde_json::json!({"schemas": {"project": project_schema(), "normalized-project": normalized_schema(), "error": error_schema()}, "project": project, "normalized": normalized, "errors": errors})
+        serde_json::json!({"schemas": {"project": project_schema(), "normalized-project": normalized_schema(), "error": error_schema(), "proposal": proposal_schema(), "decision-record": decision_record_schema()}, "project": project, "normalized": normalized, "errors": errors})
     );
 }
