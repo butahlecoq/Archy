@@ -271,6 +271,72 @@ fn final_check(
     Ok(())
 }
 
+fn ifc_directory(scratch: &File) -> Result<File, ArchyError> {
+    let root = fs::fstat(scratch).map_err(|e| invalid(format!("scratch metadata: {e}")))?;
+    if !FileType::from_raw_mode(root.st_mode).is_dir() {
+        return Err(invalid("scratch capability is not a directory"));
+    }
+    let mut cursor =
+        fs::Dir::read_from(scratch).map_err(|e| invalid(format!("scratch listing: {e}")))?;
+    let mut found = false;
+    while let Some(entry) = cursor.read() {
+        let entry = entry.map_err(|e| invalid(format!("scratch entry: {e}")))?;
+        let name = entry
+            .file_name()
+            .to_str()
+            .map_err(|_| invalid("non-UTF8 scratch entry"))?;
+        if name == "." || name == ".." {
+            continue;
+        }
+        if name != "ifc" || found {
+            return Err(invalid("unexpected scratch entry"));
+        }
+        found = true;
+    }
+    if !found {
+        return Err(invalid("missing IFC output directory"));
+    }
+    let fd = fs::openat2(
+        scratch,
+        "ifc",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+        Mode::empty(),
+        RESOLVE,
+    )
+    .map_err(|e| invalid(format!("open IFC output: {e}")))?;
+    let directory = File::from(fd);
+    let stat = fs::fstat(&directory).map_err(|e| invalid(format!("IFC output metadata: {e}")))?;
+    if !FileType::from_raw_mode(stat.st_mode).is_dir() || stat.st_nlink != 2 {
+        return Err(invalid("unsafe IFC output directory"));
+    }
+    Ok(directory)
+}
+
+fn check_ifc_directory(scratch: &File, directory: &File) -> Result<(), ArchyError> {
+    let path = current_stat(scratch, "ifc")?;
+    let pinned = fs::fstat(directory).map_err(|e| invalid(format!("IFC output metadata: {e}")))?;
+    if !same_stat(&path, &pinned) {
+        return Err(invalid("IFC output directory changed"));
+    }
+    let mut cursor =
+        fs::Dir::read_from(scratch).map_err(|e| invalid(format!("scratch listing: {e}")))?;
+    let mut entries = 0;
+    while let Some(entry) = cursor.read() {
+        let entry = entry.map_err(|e| invalid(format!("scratch entry: {e}")))?;
+        let name = entry
+            .file_name()
+            .to_str()
+            .map_err(|_| invalid("non-UTF8 scratch entry"))?;
+        if name != "." && name != ".." {
+            entries += 1;
+            if name != "ifc" || entries != 1 {
+                return Err(invalid("unexpected scratch entry"));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn success(
     scratch: &File,
     response: ReadFile,
@@ -379,11 +445,12 @@ pub fn capture_blender(
 }
 
 pub fn capture_ifc(scratch: &File, request: &IfcRequest) -> Result<CaptureOutcome, ArchyError> {
+    let directory = ifc_directory(scratch)?;
     let mut total = 0;
-    let response = read_file(scratch, "response.json", MAX_RESPONSE_BYTES, &mut total)?;
-    match decode_ifc_response(&response.bytes, request)? {
+    let response = read_file(&directory, "response.json", MAX_RESPONSE_BYTES, &mut total)?;
+    let outcome = match decode_ifc_response(&response.bytes, request)? {
         IfcResponse::Ok(success_response) => success(
-            scratch,
+            &directory,
             response,
             &success_response.artifacts,
             &IFC,
@@ -391,13 +458,15 @@ pub fn capture_ifc(scratch: &File, request: &IfcRequest) -> Result<CaptureOutcom
             &mut total,
         ),
         IfcResponse::Error(failure) => Ok(worker_error(
-            scratch,
+            &directory,
             response,
             failure.error,
             ErrorBinding::RequestBound,
             &IFC,
         )),
-    }
+    }?;
+    check_ifc_directory(scratch, &directory)?;
+    Ok(outcome)
 }
 
 #[cfg(test)]

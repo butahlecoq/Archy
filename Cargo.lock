@@ -108,6 +108,7 @@ dependencies = [
 name = "archy-cli"
 version = "0.1.0"
 dependencies = [
+ "archy-adapters",
  "archy-core",
  "archy-eval",
  "archy-generate",
@@ -184,6 +185,16 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "archy-service-gate"
+version = "0.1.0"
+dependencies = [
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

@@ -10,13 +10,14 @@ from pathlib import Path, PurePosixPath
 import re
 import shlex
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
 import tomllib
 
 
-PREFIXES = ("usr/bin/", "usr/share/archy/", "usr/share/licenses/archy/")
+PREFIXES = ("usr/bin/", "usr/lib/archy/", "usr/share/archy/", "usr/share/licenses/archy/")
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 NOTICE_LIMIT = 16 * 1024 * 1024
 NOTICE_INVENTORY_LIMIT = 2 * 1024 * 1024
@@ -28,9 +29,9 @@ REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 def normal_registry_graph(metadata):
     packages = {p["id"]: p for p in metadata["packages"]}
     nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
-    roots = [p["id"] for p in packages.values() if p["name"] == "archy-cli" and p.get("source") is None]
-    if len(roots) != 1:
-        raise ValueError("expected exactly one local archy-cli package")
+    roots = [p["id"] for p in packages.values() if p["name"] in ("archy-cli", "archy-service-gate") and p.get("source") is None]
+    if len(roots) != 2 or {packages[p]["name"] for p in roots} != {"archy-cli", "archy-service-gate"}:
+        raise ValueError("expected local CLI and service gate packages")
     visited = set()
     pending = roots
     while pending:
@@ -63,6 +64,59 @@ def locked_graph(source):
                  if p.get("source") == REGISTRY}
     graph = normal_registry_graph(metadata)
     return {(p["name"], p["version"], checksums[p["name"], p["version"]]) for p in graph}
+
+
+def require_static_gate(data):
+    address_space = 1 << 64
+    if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01" or data[6] != 1:
+        raise ValueError("gate must be ELF64 little-endian")
+    if struct.unpack_from("<H", data, 16)[0] not in (2, 3) or struct.unpack_from("<I", data, 20)[0] != 1:
+        raise ValueError("gate must be an executable ELF")
+    if struct.unpack_from("<H", data, 18)[0] != 62:
+        raise ValueError("gate must target x86_64")
+    offset = struct.unpack_from("<Q", data, 32)[0]
+    entry = struct.unpack_from("<Q", data, 24)[0]
+    header_size, entry_size, count = struct.unpack_from("<HHH", data, 52)
+    if header_size != 64 or entry_size != 56 or count in (0, 65535) or offset < 64 or offset + entry_size * count > len(data):
+        raise ValueError("invalid gate program headers")
+    loads = []
+    dynamics = []
+    for index in range(count):
+        kind, flags, file_offset, address, _, file_size, memory_size, alignment = struct.unpack_from(
+            "<IIQQQQQQ", data, offset + entry_size * index)
+        if kind == 3:
+            raise ValueError("gate has PT_INTERP and could load manager LD_PRELOAD")
+        if file_offset > len(data) or file_size > len(data) - file_offset:
+            raise ValueError("invalid gate program header file range")
+        if address + memory_size > address_space:
+            raise ValueError("invalid gate program header virtual range")
+        if kind == 1:
+            if memory_size < file_size or alignment not in (0, 1) and (alignment & (alignment - 1)) != 0:
+                raise ValueError("invalid gate load segment")
+            if alignment > 1 and (address - file_offset) % alignment:
+                raise ValueError("invalid gate load alignment")
+            loads.append((address, file_offset, file_size, flags))
+        elif kind == 2:
+            dynamics.append((address, file_offset, file_size))
+    if not any(flags & 1 and start <= entry < start + size
+               for start, _, size, flags in loads):
+        raise ValueError("gate entry is outside executable PT_LOAD file range")
+    if len(dynamics) > 1:
+        raise ValueError("multiple PT_DYNAMIC segments")
+    for address, file_offset, size in dynamics:
+        if size == 0 or size % 16 or not any(
+            start <= address and address + size <= start + load_size
+            and file_offset == load_offset + address - start
+            for start, load_offset, load_size, _ in loads
+        ):
+            raise ValueError("invalid gate PT_DYNAMIC range")
+        entries = [struct.unpack_from("<QQ", data, file_offset + position)
+                   for position in range(0, size, 16)]
+        if (0, 0) not in entries or any(entry != (0, 0) for entry in entries[entries.index((0, 0)) + 1:]):
+            raise ValueError("unterminated or malformed gate PT_DYNAMIC")
+        forbidden = {1, 14, 15, 29, 0x6ffffefb, 0x6ffffefc, 0x7ffffffd, 0x7fffffff}
+        if any(tag in forbidden for tag, _ in entries):
+            raise ValueError("gate has DT_NEEDED or other dynamic loader dependency")
 
 
 def open_directory(path):
@@ -193,7 +247,7 @@ def stage(args):
         if len(fields) != 3:
             raise ValueError("inventory needs source, destination, mode")
         src, dst, mode = fields
-        if src not in ("@binary", "@notices", "@notice-inventory"):
+        if src not in ("@binary", "@gate-binary", "@notices", "@notice-inventory"):
             relative(src)
         relative(dst)
         if not dst.startswith(PREFIXES) or dst in seen:
@@ -202,10 +256,14 @@ def stage(args):
                     "@notice-inventory": NOTICE_INVENTORY_PATH}
         if (src in reserved and dst != reserved[src]) or (dst in reserved.values() and src not in reserved):
             raise ValueError(f"invalid notice destination/source: {dst}")
-        if mode not in ("0644", "0755") or (dst == "usr/bin/archy") != (mode == "0755"):
+        executable_paths = ("usr/bin/archy", "usr/lib/archy/archy-service-gate")
+        if mode not in ("0644", "0755") or (dst in executable_paths) != (mode == "0755"):
             raise ValueError(f"invalid mode: {dst}")
+        if (src == "@gate-binary") != (dst == "usr/lib/archy/archy-service-gate"):
+            raise ValueError("gate binary must use fixed destination")
         seen.add(dst)
         special = {"@binary": binary,
+                   "@gate-binary": getattr(args, "gate_binary", None),
                    "@notices": getattr(args, "notices_file", None),
                    "@notice-inventory": getattr(args, "notice_inventory_file", None)}
         if src in special and special[src] is None:
@@ -221,8 +279,8 @@ def stage(args):
                     raise ValueError(f"unsafe destination parent: {parent}")
         if target.exists() or target.is_symlink():
             raise ValueError(f"destination collision: {dst}")
-        rows.append((origin, target, mode, dst))
-    if not rows or "usr/bin/archy" not in seen or "usr/share/licenses/archy/LICENSE" not in seen:
+        rows.append((origin, target, mode, dst, src))
+    if not rows or "usr/bin/archy" not in seen or "usr/lib/archy/archy-service-gate" not in seen or "usr/share/licenses/archy/LICENSE" not in seen:
         raise ValueError("missing required core paths")
     if NOTICE_PATH not in seen or NOTICE_INVENTORY_PATH not in seen:
         raise ValueError("missing required notice bundle/inventory paths")
@@ -240,15 +298,20 @@ def stage(args):
         raise ValueError("invalid notice crate inventory") from error
     if len(covered) != len(crates) or covered != locked_graph(source):
         raise ValueError("notice dependency coverage mismatch")
-    validated_notices = {NOTICE_PATH: notices, NOTICE_INVENTORY_PATH: inventory_bytes}
+    captured = {NOTICE_PATH: notices, NOTICE_INVENTORY_PATH: inventory_bytes}
+    for origin, _, _, dst, src in rows:
+        if dst not in captured:
+            captured[dst] = read_regular_nofollow(origin)
+        if src == "@gate-binary":
+            require_static_gate(captured[dst])
     inventory = []
     with ExitStack() as stack:
         root_fd = open_directory(dest)
         stack.callback(os.close, root_fd)
         created = []
         try:
-            for origin, target, mode, dst in rows:
-                data = validated_notices[dst] if dst in validated_notices else read_regular_nofollow(origin)
+            for origin, target, mode, dst, src in rows:
+                data = captured[dst]
                 parent_fd = open_stage_parent(root_fd, dst, create=True)
                 stack.callback(os.close, parent_fd)
                 fd = os.open(target.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -322,7 +385,8 @@ def recipe(args):
             raise ValueError("archive package manifest exceeds byte limit")
         manifest_lines = manifest_bytes.decode("utf-8").splitlines()
         required_notices = (f"@notices\t{NOTICE_PATH}\t0644",
-                            f"@notice-inventory\t{NOTICE_INVENTORY_PATH}\t0644")
+                            f"@notice-inventory\t{NOTICE_INVENTORY_PATH}\t0644",
+                            "@gate-binary\tusr/lib/archy/archy-service-gate\t0755")
         if any(manifest_lines.count(line) != 1 for line in required_notices):
             raise ValueError("archive package manifest lacks required notice pair")
     version = args.source_id.removeprefix("v").replace("-", "_")
@@ -339,6 +403,7 @@ url='https://github.com/butahlecoq/Archy'
 license=('MIT')
 options=('!debug')
 depends=('glibc' 'libgcc')
+optdepends=('bubblewrap: gated backend isolation' 'systemd: user-service supervisor')
 makedepends=('cargo' 'python')
 source=({shlex.quote('archy-source.tar.gz::file://' + str(archive))})
 sha256sums=('{args.sha256}')
@@ -351,12 +416,14 @@ build() {{
   python3 packaging/arch/notices.py --source . --vendor vendor \\
     --output-dir "$srcdir/archy-notices"
   cargo build --offline --locked --release -p archy-cli
+  cargo rustc --offline --locked --release -p archy-service-gate --bin archy-service-gate -- -C target-feature=+crt-static
 }}
 
 package() {{
   cd "$srcdir/{root}"
   python3 packaging/arch/package.py stage --source . \\
     --binary "$srcdir/archy-target/release/archy" \\
+    --gate-binary "$srcdir/archy-target/release/archy-service-gate" \\
     --manifest packaging/arch/files.txt --dest "$pkgdir" \\
     --notices-file "$srcdir/archy-notices/THIRD-PARTY-NOTICES.txt" \\
     --notice-inventory-file "$srcdir/archy-notices/third-party-notices.json"
@@ -375,6 +442,7 @@ def main():
     for flag in ("source", "binary", "manifest", "dest"):
         s.add_argument(f"--{flag}", required=True)
     s.add_argument("--inventory")
+    s.add_argument("--gate-binary")
     s.add_argument("--notices-file")
     s.add_argument("--notice-inventory-file")
     r = subs.add_parser("recipe")

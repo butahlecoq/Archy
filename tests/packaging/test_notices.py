@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from tests.packaging.elf_fixture import gate_elf
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +23,22 @@ def sha(data):
 
 
 class NoticeAdmissionTests(unittest.TestCase):
+    def test_graph_includes_gate_only_normal_dependency(self):
+        metadata = {
+            "packages": [
+                {"id": "cli", "name": "archy-cli", "source": None},
+                {"id": "gate", "name": "archy-service-gate", "source": None},
+                {"id": "gate-dep", "name": "gate-dep", "version": "1.0.0",
+                 "source": "registry+https://github.com/rust-lang/crates.io-index"},
+            ],
+            "resolve": {"nodes": [
+                {"id": "cli", "deps": []},
+                {"id": "gate", "deps": [{"pkg": "gate-dep", "dep_kinds": [{"kind": "normal"}]}]},
+                {"id": "gate-dep", "deps": []},
+            ]},
+        }
+        self.assertEqual([p["name"] for p in NOTICES.normal_registry_graph(metadata)], ["gate-dep"])
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -73,6 +90,7 @@ checksum = "''' + "b" * 64 + '''"
         self.metadata = {
             "packages": [
                 {"id": "cli", "name": "archy-cli", "version": "0.1.0", "source": None},
+                {"id": "gate", "name": "archy-service-gate", "version": "0.1.0", "source": None},
                 {"id": "alpha", "name": "alpha", "version": "1.0.0", "license": "MIT",
                  "source": "registry+https://github.com/rust-lang/crates.io-index"},
                 {"id": "beta", "name": "beta", "version": "2.0.0", "license": "Apache-2.0",
@@ -80,6 +98,7 @@ checksum = "''' + "b" * 64 + '''"
             ],
             "resolve": {"nodes": [
                 {"id": "cli", "deps": [{"pkg": "alpha", "dep_kinds": [{"kind": None}]}]},
+                {"id": "gate", "deps": [{"pkg": "alpha", "dep_kinds": [{"kind": None}]}]},
                 {"id": "alpha", "deps": [{"pkg": "beta", "dep_kinds": [{"kind": None}]}]},
                 {"id": "beta", "deps": []},
             ]},
@@ -207,8 +226,10 @@ checksum = "''' + "b" * 64 + '''"
         (self.source / "LICENSE").write_text("Archy MIT\n")
         binary = self.base / "archy"
         binary.write_bytes(b"binary fixture")
+        gate_binary = self.base / "archy-service-gate"
+        gate_binary.write_bytes(gate_elf())
         manifest = self.base / "files.txt"
-        manifest.write_text("@binary\tusr/bin/archy\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\n"
+        manifest.write_text("@binary\tusr/bin/archy\t0755\n@gate-binary\tusr/lib/archy/archy-service-gate\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\n"
                             "@notices\tusr/share/licenses/archy/THIRD-PARTY-NOTICES.txt\t0644\n"
                             "@notice-inventory\tusr/share/archy/third-party-notices.json\t0644\n")
         dest = self.base / "dest"
@@ -219,11 +240,11 @@ checksum = "''' + "b" * 64 + '''"
         stage_inventory = self.base / "stage-inventory.json"
         expected = {("alpha", "1.0.0", "a" * 64), ("beta", "2.0.0", "b" * 64)}
         with patch.object(package, "locked_graph", return_value=expected):
-            package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), dest=str(dest),
+            package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), gate_binary=str(gate_binary), dest=str(dest),
                                           manifest=str(manifest), inventory=str(stage_inventory),
                                           notices_file=str(notice_text), notice_inventory_file=str(notice_inventory)))
         staged = json.loads(stage_inventory.read_text())
-        self.assertEqual(len(staged), 4)
+        self.assertEqual(len(staged), 5)
         for entry in staged:
             target = dest / entry["path"]
             self.assertEqual(sha(target.read_bytes()), entry["sha256"])
@@ -241,8 +262,10 @@ checksum = "''' + "b" * 64 + '''"
         (self.source / "LICENSE").write_text("Archy MIT\n")
         binary = self.base / "archy"
         binary.write_bytes(b"binary fixture")
+        gate_binary = self.base / "archy-service-gate"
+        gate_binary.write_bytes(gate_elf())
         manifest = self.base / "files.txt"
-        manifest.write_text("@binary\tusr/bin/archy\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\n"
+        manifest.write_text("@binary\tusr/bin/archy\t0755\n@gate-binary\tusr/lib/archy/archy-service-gate\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\n"
                             "@notices\tusr/share/licenses/archy/THIRD-PARTY-NOTICES.txt\t0644\n"
                             "@notice-inventory\tusr/share/archy/third-party-notices.json\t0644\n")
         dest = self.base / "dest"
@@ -251,7 +274,7 @@ checksum = "''' + "b" * 64 + '''"
         sentinel.parent.mkdir(parents=True)
         sentinel.write_text("keep")
         with self.assertRaisesRegex(ValueError, "notice bundle/inventory checksum mismatch"):
-            package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), dest=str(dest),
+            package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), gate_binary=str(gate_binary), dest=str(dest),
                                           manifest=str(manifest), inventory=None, notices_file=str(notice_text),
                                           notice_inventory_file=str(notice_inventory)))
         self.assertEqual(sentinel.read_text(), "keep")

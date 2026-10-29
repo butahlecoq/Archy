@@ -73,6 +73,23 @@ impl BoundProjectRead {
             history: self.store.read_history()?,
         })
     }
+    pub(crate) fn with_verified_locked_run<T>(
+        &self,
+        run_id: &str,
+        use_run: impl FnOnce(&TrustedRun) -> Result<T, ArchyError>,
+    ) -> Result<T, ArchyError> {
+        let locked = self.store.lock()?;
+        self.check_binding()?;
+        let run = crate::run_integrity::verify_locked(&locked, run_id)?;
+        if run.manifest().project_id != self.spec.project_id {
+            return Err(artifact_invalid(
+                "Accepted run belongs to another project ID",
+            ));
+        }
+        let result = use_run(&run)?;
+        self.check_binding()?;
+        Ok(result)
+    }
     pub fn project_id(&self) -> &str {
         &self.spec.project_id
     }

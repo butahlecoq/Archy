@@ -5,6 +5,7 @@ use archy_core::{ErrorCode, NormalizedSpec, Variant, sha256_hex};
 use std::fs::{self, File};
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -25,6 +26,9 @@ impl Scratch {
     }
     fn path(&self, name: &str) -> PathBuf {
         self.0.join(name)
+    }
+    fn ifc_path(&self, name: &str) -> PathBuf {
+        self.0.join("ifc").join(name)
     }
 }
 impl Drop for Scratch {
@@ -79,7 +83,7 @@ fn ifc_request() -> IfcRequest {
         "req-1",
         "run-1",
         &"a".repeat(64),
-        "runs/run-1/ifc",
+        "output/ifc",
         vec![],
     )
     .unwrap()
@@ -92,7 +96,7 @@ fn other_ifc_request() -> IfcRequest {
         "req-2",
         "run-2",
         &"b".repeat(64),
-        "runs/run-2/ifc",
+        "output/ifc",
         vec![],
     )
     .unwrap()
@@ -104,18 +108,24 @@ fn success(scratch: &Scratch, backend: &str) -> serde_json::Value {
         &fs::read(root.join(format!("tests/fixtures/backend/{backend}-response.json"))).unwrap(),
     )
     .unwrap();
+    if backend == "ifc" {
+        fs::create_dir_all(scratch.path("ifc")).unwrap();
+    }
+    let path = |name: &str| {
+        if backend == "ifc" {
+            scratch.ifc_path(name)
+        } else {
+            scratch.path(name)
+        }
+    };
     for artifact in value["artifacts"].as_array_mut().unwrap() {
         let name = artifact["path"].as_str().unwrap().to_string();
         let bytes = format!("captured:{name}").into_bytes();
-        fs::write(scratch.path(&name), &bytes).unwrap();
+        fs::write(path(&name), &bytes).unwrap();
         artifact["sha256"] = sha256_hex(&bytes).into();
         artifact["size_bytes"] = bytes.len().into();
     }
-    fs::write(
-        scratch.path("response.json"),
-        serde_json::to_vec(&value).unwrap(),
-    )
-    .unwrap();
+    fs::write(path("response.json"), serde_json::to_vec(&value).unwrap()).unwrap();
     value
 }
 
@@ -159,9 +169,10 @@ fn declared_worker_error_retains_response_and_does_not_require_success_inventory
         "request_id":"req-1","project_id":"courtyard-demo","variant_id":source().1.id,
         "run_id":"run-1","source_digest":"a".repeat(64),"artifacts":[],
         "error":{"code":"BACKEND_TIMEOUT","field":"backend","message":"worker timed out","retriable":false}});
+    fs::create_dir(scratch.path("ifc")).unwrap();
     let bytes = serde_json::to_vec(&error).unwrap();
-    fs::write(scratch.path("response.json"), &bytes).unwrap();
-    fs::write(scratch.path("model.ifc"), b"partial").unwrap();
+    fs::write(scratch.ifc_path("response.json"), &bytes).unwrap();
+    fs::write(scratch.ifc_path("model.ifc"), b"partial").unwrap();
     let CaptureOutcome::WorkerError(failure) = capture_ifc(&scratch.dir(), &ifc_request()).unwrap()
     else {
         panic!("not worker error")
@@ -180,7 +191,7 @@ fn declared_worker_error_retains_response_and_does_not_require_success_inventory
             .code,
         ErrorCode::ArtifactInvalid
     );
-    fs::write(scratch.path("unexpected"), b"extra").unwrap();
+    fs::write(scratch.ifc_path("unexpected"), b"extra").unwrap();
     let CaptureOutcome::WorkerError(failure) = capture_ifc(&scratch.dir(), &ifc_request()).unwrap()
     else {
         panic!("not worker error")
@@ -190,10 +201,10 @@ fn declared_worker_error_retains_response_and_does_not_require_success_inventory
         failure.scratch_issue().unwrap().code,
         ErrorCode::ArtifactInvalid
     );
-    fs::remove_file(scratch.path("unexpected")).unwrap();
-    fs::remove_file(scratch.path("model.ifc")).unwrap();
+    fs::remove_file(scratch.ifc_path("unexpected")).unwrap();
+    fs::remove_file(scratch.ifc_path("model.ifc")).unwrap();
     rustix::fs::mkfifoat(
-        scratch.dir(),
+        File::open(scratch.path("ifc")).unwrap(),
         "model.ifc",
         rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
     )
@@ -313,7 +324,7 @@ fn rejects_claim_mismatch_traversal_and_oversized_regular_file() {
     let mut response = success(&scratch, "ifc");
     response["artifacts"][0]["sha256"] = "f".repeat(64).into();
     fs::write(
-        scratch.path("response.json"),
+        scratch.ifc_path("response.json"),
         serde_json::to_vec(&response).unwrap(),
     )
     .unwrap();
@@ -325,7 +336,7 @@ fn rejects_claim_mismatch_traversal_and_oversized_regular_file() {
     );
     response["artifacts"][0]["path"] = "../model.ifc".into();
     fs::write(
-        scratch.path("response.json"),
+        scratch.ifc_path("response.json"),
         serde_json::to_vec(&response).unwrap(),
     )
     .unwrap();
@@ -336,7 +347,7 @@ fn rejects_claim_mismatch_traversal_and_oversized_regular_file() {
         ErrorCode::ArtifactInvalid
     );
     success(&scratch, "ifc");
-    File::create(scratch.path("model.ifc"))
+    File::create(scratch.ifc_path("model.ifc"))
         .unwrap()
         .set_len(16 * 1024 * 1024 + 1)
         .unwrap();
@@ -353,12 +364,12 @@ fn accepts_exact_response_and_artifact_limits_then_rejects_one_byte_over() {
     let scratch = Scratch::new();
     let mut response = success(&scratch, "ifc");
     let model = vec![b'x'; 16 * 1024 * 1024];
-    fs::write(scratch.path("model.ifc"), &model).unwrap();
+    fs::write(scratch.ifc_path("model.ifc"), &model).unwrap();
     response["artifacts"][0]["size_bytes"] = model.len().into();
     response["artifacts"][0]["sha256"] = sha256_hex(&model).into();
     let mut bytes = serde_json::to_vec(&response).unwrap();
     bytes.resize(1024 * 1024, b' ');
-    fs::write(scratch.path("response.json"), &bytes).unwrap();
+    fs::write(scratch.ifc_path("response.json"), &bytes).unwrap();
     let CaptureOutcome::Success(outputs) = capture_ifc(&scratch.dir(), &ifc_request()).unwrap()
     else {
         panic!("not success")
@@ -366,11 +377,183 @@ fn accepts_exact_response_and_artifact_limits_then_rejects_one_byte_over() {
     assert_eq!(outputs.response_bytes().len(), 1024 * 1024);
     assert_eq!(outputs.artifacts()[0].bytes().len(), 16 * 1024 * 1024);
     bytes.push(b' ');
-    fs::write(scratch.path("response.json"), &bytes).unwrap();
+    fs::write(scratch.ifc_path("response.json"), &bytes).unwrap();
     assert_eq!(
         capture_ifc(&scratch.dir(), &ifc_request())
             .unwrap_err()
             .code,
+        ErrorCode::ArtifactInvalid
+    );
+}
+
+#[test]
+fn actual_ifc_worker_layout_and_handled_error_capture_without_native_backend() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = r#"
+import hashlib, json, sys
+from unittest import mock
+sys.path.insert(0, sys.argv[1] + '/workers/ifc')
+from archy_ifc_worker import worker, protocol
+
+def run(request, output, request_path):
+    if sys.argv[4] == 'error':
+        raise protocol.ProtocolError('fixture native failure', 'model.ifc', 'ARTIFACT_INVALID')
+    value = json.load(open(sys.argv[1] + '/tests/fixtures/backend/ifc-response.json'))
+    for key in ('request_id', 'project_id', 'variant_id', 'run_id', 'source_digest'):
+        value[key] = request[key]
+    for item in value['artifacts']:
+        data = ('actual-worker:' + item['path']).encode()
+        (output / item['path']).write_bytes(data)
+        item['size_bytes'] = len(data)
+        item['sha256'] = hashlib.sha256(data).hexdigest()
+    return value
+
+with mock.patch.object(worker, 'run', side_effect=run):
+    sys.exit(worker.main(['--project-root', sys.argv[2], '--request', sys.argv[3]]))
+"#;
+    for mode in ["success", "error"] {
+        let scratch = Scratch::new();
+        fs::create_dir(scratch.path("input")).unwrap();
+        fs::create_dir(scratch.path("output")).unwrap();
+        let request_path = scratch.path("input/request.json");
+        fs::write(&request_path, ifc_request().to_bytes().unwrap()).unwrap();
+        let status = Command::new("python3")
+            .args([
+                "-I",
+                "-c",
+                script,
+                root.to_str().unwrap(),
+                scratch.0.to_str().unwrap(),
+                request_path.to_str().unwrap(),
+                mode,
+            ])
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(if mode == "success" { 0 } else { 20 }));
+        let output = File::open(scratch.path("output")).unwrap();
+        let bytes = fs::read(scratch.path("output/ifc/response.json")).unwrap();
+        let captured = capture_ifc(&output, &ifc_request()).unwrap();
+        match captured {
+            CaptureOutcome::Success(value) if mode == "success" => {
+                assert_eq!(value.response_bytes(), bytes);
+                assert_eq!(value.artifacts().len(), 2);
+                assert_eq!(value.artifacts()[0].bytes(), b"actual-worker:model.ifc");
+            }
+            CaptureOutcome::WorkerError(value) if mode == "error" => {
+                assert_eq!(value.response_bytes(), bytes);
+                assert_eq!(
+                    value.bound_error().unwrap().code,
+                    ErrorCode::ArtifactInvalid
+                );
+                assert!(value.scratch_issue().is_none());
+                assert_eq!(
+                    capture_ifc(&output, &other_ifc_request()).unwrap_err().code,
+                    ErrorCode::ArtifactInvalid
+                );
+            }
+            other => panic!("unexpected worker capture: {other:?}"),
+        }
+        assert!(!scratch.path("published").exists());
+        let mut forged: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        forged["request_id"] = "forged".into();
+        fs::write(
+            scratch.path("output/ifc/response.json"),
+            serde_json::to_vec(&forged).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            capture_ifc(&output, &ifc_request()).unwrap_err().code,
+            ErrorCode::ArtifactInvalid
+        );
+        fs::remove_file(scratch.path("output/ifc/response.json")).unwrap();
+        assert_eq!(
+            capture_ifc(&output, &ifc_request()).unwrap_err().code,
+            ErrorCode::ArtifactInvalid
+        );
+        fs::write(scratch.path("output/ifc/response.json"), &bytes).unwrap();
+        fs::write(scratch.path("output/extra"), b"unexpected").unwrap();
+        assert_eq!(
+            capture_ifc(&output, &ifc_request()).unwrap_err().code,
+            ErrorCode::ArtifactInvalid
+        );
+    }
+}
+
+#[test]
+fn ifc_output_directory_cannot_be_a_symlink() {
+    let scratch = Scratch::new();
+    let outside = Scratch::new();
+    fs::write(outside.path("response.json"), b"sentinel").unwrap();
+    symlink(&outside.0, scratch.path("ifc")).unwrap();
+    assert_eq!(
+        capture_ifc(&scratch.dir(), &ifc_request())
+            .unwrap_err()
+            .code,
+        ErrorCode::ArtifactInvalid
+    );
+    assert_eq!(
+        fs::read(outside.path("response.json")).unwrap(),
+        b"sentinel"
+    );
+}
+
+#[test]
+fn actual_blender_worker_handled_error_uses_flat_production_layout() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scratch = Scratch::new();
+    fs::create_dir(scratch.path("input")).unwrap();
+    fs::create_dir(scratch.path("output")).unwrap();
+    let (spec, variant) = source();
+    let request = BlenderRequest::new(
+        &spec,
+        &variant,
+        "request-1",
+        "run-1",
+        &"a".repeat(64),
+        "output",
+    )
+    .unwrap();
+    let request_path = scratch.path("input/request.json");
+    fs::write(&request_path, request.to_bytes().unwrap()).unwrap();
+    let response_path = scratch.path("output/response.json");
+    let script = r#"
+import sys, types
+from unittest import mock
+sys.modules['bpy'] = types.ModuleType('bpy')
+sys.path.insert(0, sys.argv[1] + '/workers/blender')
+import worker, protocol
+sys.argv = ['worker.py', '--', '--request', sys.argv[2], '--response', sys.argv[3]]
+with mock.patch.object(worker, '_run', side_effect=protocol.ProtocolError(
+    'fixture render failure', 'backend', 'BACKEND_UNAVAILABLE')):
+    worker.main()
+"#;
+    let status = Command::new("python3")
+        .args([
+            "-I",
+            "-c",
+            script,
+            root.to_str().unwrap(),
+            request_path.to_str().unwrap(),
+            response_path.to_str().unwrap(),
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(status.code(), Some(20));
+    let output = File::open(scratch.path("output")).unwrap();
+    let bytes = fs::read(&response_path).unwrap();
+    let CaptureOutcome::WorkerError(failure) = capture_blender(&output, &request).unwrap() else {
+        panic!("expected handled Blender error")
+    };
+    assert_eq!(failure.binding(), ErrorBinding::UnboundDiagnostic);
+    assert_eq!(failure.response_bytes(), bytes);
+    assert_eq!(
+        failure.diagnostic_error().code,
+        ErrorCode::BackendUnavailable
+    );
+    assert!(!scratch.path("published").exists());
+    fs::write(&response_path, b"{\"status\":\"ok\"}").unwrap();
+    assert_eq!(
+        capture_blender(&output, &request).unwrap_err().code,
         ErrorCode::ArtifactInvalid
     );
 }

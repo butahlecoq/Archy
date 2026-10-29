@@ -155,7 +155,7 @@ def generate(source, vendor, metadata, rust_version, output_dir):
         rust_files.append({"path": path, "sha256": expected})
         chunks.append((f"Rust standard library {rust_version}: {path}", data))
     bundle = b"".join((f"\n===== {label} =====\n".encode() + data + b"\n") for label, data in chunks)
-    inventory = {"schema_version": 1, "graph": "archy-cli locked normal dependencies",
+    inventory = {"schema_version": 1, "graph": "archy-cli and archy-service-gate locked normal dependencies",
                  "crate_count": len(crates), "crates": crates,
                  "rust_std": {"version": rust_version, "files": rust_files},
                  "bundle_sha256": digest(bundle)}

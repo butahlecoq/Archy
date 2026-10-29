@@ -1,8 +1,9 @@
 //! Fixed transient user-service control boundary. The packaged gate is a separate prerequisite.
 
-use crate::{QuotaCheckedScratch, receive_quota_checked_scratch};
+use crate::{BlenderRequest, IfcRequest, QuotaCheckedScratch, receive_quota_checked_scratch};
 use archy_core::{ArchyError, ErrorCode};
 use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
+use rustix::io::Errno;
 use rustix::net::{AddressFamily, SendFlags, SocketFlags, SocketType, send, socketpair};
 use rustix::process::getuid;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,11 +24,81 @@ const MEMORY: u64 = 2 * 1024 * 1024 * 1024;
 const TASKS: u64 = 64;
 const SCRATCH_BYTES: u64 = 128 * 1024 * 1024;
 const SCRATCH_INODES: u64 = 256;
+const REQUEST_FRAME: &[u8] = b"ARCHY-REQUEST-1\n";
+const REQUEST_MAX: usize = 1024 * 1024;
+
+/// An owned, validated worker request. Its backend and wire identity travel together.
+pub enum ServiceRequest {
+    Blender(BlenderRequest),
+    Ifc(IfcRequest),
+}
+
+impl ServiceRequest {
+    fn prepare(&self) -> Result<(BackendKind, Vec<u8>), ArchyError> {
+        let (backend, bytes) = match self {
+            Self::Blender(request) => {
+                if request.wire().output_dir != "output" {
+                    return Err(unavailable("Blender output policy mismatch"));
+                }
+                (BackendKind::Blender, request.to_bytes()?)
+            }
+            Self::Ifc(request) => {
+                if request.wire().output_dir != "output/ifc"
+                    || !request.wire().source_artifacts.is_empty()
+                {
+                    return Err(unavailable("IFC output or source policy mismatch"));
+                }
+                (BackendKind::Ifc, request.to_bytes()?)
+            }
+        };
+        if bytes.is_empty() || bytes.len() > REQUEST_MAX {
+            return Err(unavailable("typed request size outside gate bound"));
+        }
+        let mut frame = Vec::with_capacity(REQUEST_FRAME.len() + bytes.len());
+        frame.extend_from_slice(REQUEST_FRAME);
+        frame.extend_from_slice(&bytes);
+        Ok((backend, frame))
+    }
+}
+
+fn send_packet(
+    channel: &OwnedFd,
+    bytes: &[u8],
+    cancel: &AtomicBool,
+    deadline: Instant,
+) -> Result<(), ArchyError> {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(ArchyError::new(
+                ErrorCode::BackendTimeout,
+                "service",
+                "request handoff cancelled",
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err(unavailable("request handoff deadline"));
+        }
+        match send(channel, bytes, SendFlags::DONTWAIT | SendFlags::NOSIGNAL) {
+            Ok(n) if n == bytes.len() => return Ok(()),
+            Ok(_) => return Err(unavailable("partial seqpacket handoff")),
+            Err(Errno::AGAIN | Errno::INTR) => thread::sleep(Duration::from_millis(1)),
+            Err(error) => return Err(unavailable(format!("request handoff: {error}"))),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendKind {
     Blender,
     Ifc,
+}
+
+/// Exit 20 means the gate observed a handled worker error response.
+/// The response still requires bounded, typed capture after teardown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerExit {
+    Success,
+    HandledError,
 }
 
 impl BackendKind {
@@ -437,11 +508,13 @@ pub struct ServiceSession {
     child: Option<Child>,
     channel: Option<OwnedFd>,
     scratch: Option<QuotaCheckedScratch>,
+    request_frame: Option<Vec<u8>>,
     verified_stopped: bool,
 }
 
 impl ServiceSession {
-    pub fn start(backend: BackendKind) -> Result<Self, ArchyError> {
+    pub fn start(request: ServiceRequest) -> Result<Self, ArchyError> {
+        let (backend, request_frame) = request.prepare()?;
         for binary in [SYSTEMD_RUN, SYSTEMCTL, GATE] {
             trusted_binary(binary)?;
         }
@@ -504,6 +577,7 @@ impl ServiceSession {
             child: Some(child),
             channel: Some(receiver),
             scratch: None,
+            request_frame: Some(request_frame),
             verified_stopped: false,
         };
         let ready = (|| {
@@ -536,17 +610,38 @@ impl ServiceSession {
     }
 
     /// Releases the fixed gate only after identity, limits, and scratch checks succeeded.
-    pub fn release(&mut self) -> Result<(), ArchyError> {
-        let channel = self
-            .channel
-            .take()
-            .ok_or_else(|| unavailable("start token already sent"))?;
-        let sent = send(&channel, b"GO", SendFlags::empty())
-            .map_err(|e| unavailable(format!("start token: {e}")))?;
-        if sent != 2 {
-            return Err(unavailable("short start token"));
+    pub fn release(&mut self, cancel: &AtomicBool) -> Result<(), ArchyError> {
+        let result = (|| {
+            let channel = self
+                .channel
+                .as_ref()
+                .ok_or_else(|| unavailable("start token already sent"))?;
+            let frame = self
+                .request_frame
+                .as_ref()
+                .ok_or_else(|| unavailable("typed request missing"))?;
+            let deadline = Instant::now() + Duration::from_secs(8);
+            send_packet(channel, b"GO", cancel, deadline)?;
+            send_packet(channel, frame, cancel, deadline)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.request_frame.take();
+                self.channel.take(); // EOF after exactly one request packet.
+                Ok(())
+            }
+            Err(error) => {
+                let cleanup = self.stop();
+                Err(match cleanup {
+                    Ok(()) => error,
+                    Err(teardown) => unavailable(format!(
+                        "{}; unit {} teardown uncertain: {}",
+                        error.message, self.unit, teardown.message
+                    )),
+                })
+            }
         }
-        Ok(())
     }
 
     /// Stops the entire unit and requires inactive/empty-cgroup evidence.
@@ -555,6 +650,7 @@ impl ServiceSession {
             return Ok(());
         }
         self.channel.take();
+        self.request_frame.take();
         let stop = command_output(
             SYSTEMCTL,
             &["--user", "stop", &self.unit],
@@ -632,7 +728,10 @@ impl ServiceSession {
     }
 
     /// Returns the retained scratch only after the unit and wrapper have stopped.
-    pub fn finish(mut self, cancel: &AtomicBool) -> Result<QuotaCheckedScratch, ArchyError> {
+    pub fn finish(
+        mut self,
+        cancel: &AtomicBool,
+    ) -> Result<(QuotaCheckedScratch, WorkerExit), ArchyError> {
         if self.channel.is_some() {
             if let Err(error) = self.stop() {
                 return Err(unavailable(format!(
@@ -675,12 +774,16 @@ impl ServiceSession {
                 self.unit, error.message
             )));
         }
-        if !status?.success() {
-            return Err(unavailable("worker service exited unsuccessfully"));
-        }
-        self.scratch
+        let exit = match status?.code() {
+            Some(0) => WorkerExit::Success,
+            Some(20) => WorkerExit::HandledError,
+            _ => return Err(unavailable("worker service exited unsuccessfully")),
+        };
+        let scratch = self
+            .scratch
             .take()
-            .ok_or_else(|| unavailable("retained scratch missing"))
+            .ok_or_else(|| unavailable("retained scratch missing"))?;
+        Ok((scratch, exit))
     }
 }
 
@@ -726,6 +829,209 @@ fn launch_argv(unit: &str, scratch: &Path, backend: BackendKind) -> Vec<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustix::net::{RecvFlags, recv};
+
+    fn requests() -> (ServiceRequest, ServiceRequest) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let spec = serde_json::from_slice(
+            &fs::read(root.join("tests/fixtures/briefs/courtyard.normalized.json")).unwrap(),
+        )
+        .unwrap();
+        let generation: serde_json::Value = serde_json::from_slice(
+            &fs::read(root.join("tests/fixtures/generation/courtyard.seed42.json")).unwrap(),
+        )
+        .unwrap();
+        let variant = serde_json::from_value(generation["variants"][0].clone()).unwrap();
+        let digest = "a".repeat(64);
+        (
+            ServiceRequest::Blender(
+                BlenderRequest::new(&spec, &variant, "request-1", "run-1", &digest, "output")
+                    .unwrap(),
+            ),
+            ServiceRequest::Ifc(
+                IfcRequest::new(
+                    &spec,
+                    &variant,
+                    "request-2",
+                    "run-1",
+                    &digest,
+                    "output/ifc",
+                    vec![],
+                )
+                .unwrap(),
+            ),
+        )
+    }
+
+    #[test]
+    fn private_seqpacket_handoff_has_one_typed_request_and_eof() {
+        for request in [requests().0, requests().1] {
+            let (backend, frame) = request.prepare().unwrap();
+            let (writer, reader) = socketpair(
+                AddressFamily::UNIX,
+                SocketType::SEQPACKET,
+                SocketFlags::CLOEXEC,
+                None,
+            )
+            .unwrap();
+            let cancel = AtomicBool::new(false);
+            send_packet(
+                &writer,
+                b"GO",
+                &cancel,
+                Instant::now() + Duration::from_secs(1),
+            )
+            .unwrap();
+            send_packet(
+                &writer,
+                &frame,
+                &cancel,
+                Instant::now() + Duration::from_secs(1),
+            )
+            .unwrap();
+            drop(writer);
+            let mut bytes = vec![0; REQUEST_FRAME.len() + REQUEST_MAX + 1];
+            let (n, total) = recv(&reader, &mut bytes, RecvFlags::empty()).unwrap();
+            assert_eq!(n, total);
+            assert_eq!(&bytes[..n], b"GO");
+            let (n, total) = recv(&reader, &mut bytes, RecvFlags::empty()).unwrap();
+            assert_eq!(n, total);
+            assert_eq!(&bytes[..n], frame);
+            let payload: serde_json::Value =
+                serde_json::from_slice(&bytes[REQUEST_FRAME.len()..n]).unwrap();
+            assert_eq!(payload["run_id"], "run-1");
+            assert!(!payload["project_id"].as_str().unwrap().is_empty());
+            assert_eq!(
+                payload["variant_id"],
+                payload[if backend == BackendKind::Blender {
+                    "params"
+                } else {
+                    "variant"
+                }]["id"]
+            );
+            assert_eq!(
+                payload[if backend == BackendKind::Blender {
+                    "input_digest"
+                } else {
+                    "source_digest"
+                }],
+                "a".repeat(64)
+            );
+            assert_eq!(recv(&reader, &mut bytes, RecvFlags::empty()).unwrap().0, 0);
+        }
+    }
+
+    #[test]
+    fn seqpacket_does_not_split_a_request_or_hide_missing_and_extra_bytes() {
+        let frame = requests().0.prepare().unwrap().1;
+        let (writer, reader) = socketpair(
+            AddressFamily::UNIX,
+            SocketType::SEQPACKET,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        send_packet(
+            &writer,
+            &frame,
+            &AtomicBool::new(false),
+            Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+        drop(writer);
+        let mut small = [0; 8];
+        let (received, full_len) = recv(&reader, &mut small, RecvFlags::TRUNC).unwrap();
+        assert_eq!(received, small.len());
+        assert_eq!(full_len, frame.len());
+        assert_eq!(recv(&reader, &mut small, RecvFlags::empty()).unwrap().0, 0);
+        let exact = |bytes: &[u8]| bytes == frame;
+        assert!(!exact(&frame[..frame.len() - 1]));
+        let mut extra = frame.clone();
+        extra.push(0);
+        assert!(!exact(&extra));
+    }
+
+    #[test]
+    fn refused_policy_cancel_backpressure_and_failed_token() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let spec = serde_json::from_slice(
+            &fs::read(root.join("tests/fixtures/briefs/courtyard.normalized.json")).unwrap(),
+        )
+        .unwrap();
+        let generation: serde_json::Value = serde_json::from_slice(
+            &fs::read(root.join("tests/fixtures/generation/courtyard.seed42.json")).unwrap(),
+        )
+        .unwrap();
+        let variant = serde_json::from_value(generation["variants"][0].clone()).unwrap();
+        let digest = "a".repeat(64);
+        let wrong = ServiceRequest::Blender(
+            BlenderRequest::new(
+                &spec,
+                &variant,
+                "request-1",
+                "run-1",
+                &digest,
+                "runs/run-1/blender",
+            )
+            .unwrap(),
+        );
+        assert!(wrong.prepare().is_err());
+        let (writer, reader) = socketpair(
+            AddressFamily::UNIX,
+            SocketType::SEQPACKET,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        let cancelled = AtomicBool::new(true);
+        assert!(
+            send_packet(
+                &writer,
+                b"GO",
+                &cancelled,
+                Instant::now() + Duration::from_secs(1)
+            )
+            .is_err()
+        );
+        let mut bytes = [0; 8];
+        assert!(matches!(
+            recv(&reader, &mut bytes, RecvFlags::DONTWAIT),
+            Err(Errno::AGAIN)
+        ));
+        drop(reader);
+        assert!(
+            send_packet(
+                &writer,
+                b"GO",
+                &AtomicBool::new(false),
+                Instant::now() + Duration::from_secs(1)
+            )
+            .is_err()
+        );
+        let (writer, _reader) = socketpair(
+            AddressFamily::UNIX,
+            SocketType::SEQPACKET,
+            SocketFlags::CLOEXEC,
+            None,
+        )
+        .unwrap();
+        loop {
+            match send(&writer, b"fill", SendFlags::DONTWAIT | SendFlags::NOSIGNAL) {
+                Ok(_) => {}
+                Err(Errno::AGAIN) => break,
+                Err(error) => panic!("unexpected fill error: {error}"),
+            }
+        }
+        assert!(
+            send_packet(
+                &writer,
+                b"GO",
+                &AtomicBool::new(false),
+                Instant::now() + Duration::from_millis(10)
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn launch_is_fixed_policy_without_shell_or_caller_argv() {
@@ -793,7 +1099,7 @@ mod tests {
     #[test]
     fn missing_packaged_gate_fails_closed_before_service_launch() {
         if !Path::new(GATE).exists() {
-            let error = ServiceSession::start(BackendKind::Ifc).err().unwrap();
+            let error = trusted_binary(GATE).unwrap_err();
             assert_eq!(error.code, ErrorCode::BackendUnavailable);
         }
     }

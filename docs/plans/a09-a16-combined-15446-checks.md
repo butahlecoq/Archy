@@ -1,0 +1,3 @@
+# A09/A16 combined checks
+
+On the 15446ee combined candidate, workspace formatting and strict Clippy across adapters, CLI, MCP, service gate and authority passed. Locked offline adapter, gate and authority tests passed; environment-gated native protocol tests remained ignored. The four accepted-worker tests passed, as did 32 packaging tests and the real MCP generate/evaluate/compare and comparison stdio suites. Full schema checks also passed (log `/home/butahlecoq/work/archy/.tools/a09-a16-15446-schema.log`); the previously reproduced intermittent MCP pipe-test failure remains open. The result does not establish an installed worker runtime, immutable backend publication, verified direct-adapter provenance, or human authorization.

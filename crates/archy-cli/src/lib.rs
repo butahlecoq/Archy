@@ -1,4 +1,6 @@
 //! Reusable local workflow service. The binary and later typed tools call the same API.
+#[cfg(target_os = "linux")]
+mod accepted_worker;
 mod ascii_json;
 mod compare;
 mod desktop_capabilities;
@@ -8,6 +10,10 @@ mod generate;
 mod project_read;
 mod run_integrity;
 
+#[cfg(target_os = "linux")]
+pub use accepted_worker::{
+    AcceptedWorkerBackend, accepted_service_request, run_accepted_service, start_accepted_service,
+};
 pub use ascii_json::{ascii_json_compact, ascii_json_pretty};
 pub use compare::{compare, render_verified_comparison};
 pub use desktop_capabilities::{

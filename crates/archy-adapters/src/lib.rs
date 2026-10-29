@@ -22,7 +22,7 @@ pub use response::{
     BackendContract, BlenderResponse, IfcResponse, decode_blender_response, decode_ifc_response,
 };
 #[cfg(target_os = "linux")]
-pub use service::{BackendKind, ServiceSession};
+pub use service::{BackendKind, ServiceRequest, ServiceSession, WorkerExit};
 
 pub fn backend_schema() -> schemars::Schema {
     schemars::schema_for!(BackendContract)
