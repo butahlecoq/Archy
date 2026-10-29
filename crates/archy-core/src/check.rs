@@ -3,7 +3,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CheckResult { Pass, Fail, Warn, Unknown }
+pub enum CheckResult {
+    Pass,
+    Fail,
+    Warn,
+    Unknown,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -18,5 +23,7 @@ pub struct Check {
 
 /// Required WARN is also not a demonstrated pass.
 pub fn required_checks_pass(checks: &[Check]) -> bool {
-    checks.iter().all(|c| !c.required || c.result == CheckResult::Pass)
+    checks
+        .iter()
+        .all(|c| !c.required || c.result == CheckResult::Pass)
 }

@@ -1,0 +1,153 @@
+{
+  "$defs": {
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "ShapeParameters": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "rectangle",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_width_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "l_shape",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m",
+            "notch_width_m",
+            "notch_depth_m"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "floor_to_floor_m": {
+      "format": "double",
+      "type": "number"
+    },
+    "footprint_xy_m": {
+      "items": {
+        "items": {
+          "format": "double",
+          "type": "number"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "generation_algorithm": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "parameters": {
+      "$ref": "#/$defs/ShapeParameters"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "seed": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "shape": {
+      "$ref": "#/$defs/Shape"
+    },
+    "storeys": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "id",
+    "seed",
+    "generation_algorithm",
+    "shape",
+    "parameters",
+    "footprint_xy_m",
+    "storeys",
+    "floor_to_floor_m"
+  ],
+  "title": "Variant",
+  "type": "object"
+}

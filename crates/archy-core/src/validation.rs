@@ -103,7 +103,7 @@ fn dimension(
     };
     positive(v, field)
 }
-fn identifier(value: &str, field: &str) -> Result<(), ArchyError> {
+pub(crate) fn identifier(value: &str, field: &str) -> Result<(), ArchyError> {
     if value.is_empty()
         || value.len() > 128
         || !value
@@ -113,6 +113,16 @@ fn identifier(value: &str, field: &str) -> Result<(), ArchyError> {
         return Err(ArchyError::schema(
             field,
             "Use 1-128 ASCII letters, digits, hyphens or underscores",
+        ));
+    }
+    Ok(())
+}
+pub(crate) fn constraint_identifier(value: &str, field: &str) -> Result<(), ArchyError> {
+    identifier(value, field)?;
+    if matches!(value, "site_containment" | "target_gfa") {
+        return Err(ArchyError::schema(
+            field,
+            "Constraint identifier is reserved for an internal check",
         ));
     }
     Ok(())
@@ -264,7 +274,7 @@ pub fn normalize(p: Project) -> Result<NormalizedSpec, ArchyError> {
     let mut setback = 0.0_f64;
     for (i, c) in p.constraints.into_iter().enumerate() {
         let path = format!("constraints[{i}]");
-        identifier(&c.id, &format!("{path}.id"))?;
+        constraint_identifier(&c.id, &format!("{path}.id"))?;
         if !ids.insert(c.id.clone()) {
             return Err(ArchyError::schema(
                 format!("{path}.id"),

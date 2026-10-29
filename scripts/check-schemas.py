@@ -10,12 +10,16 @@ ROOT = Path(__file__).resolve().parents[1]
 contracts = json.loads(subprocess.check_output(
     ['cargo', 'run', '--locked', '--quiet', '-p', 'archy-core', '--example', 'contracts'],
     cwd=ROOT, text=True))
+task02 = json.loads(subprocess.check_output(
+    ['cargo', 'run', '--locked', '--quiet', '-p', 'archy-generate', '--example', 'task02_contracts'],
+    cwd=ROOT, text=True))
+all_schemas = {**contracts['schemas'], **task02['schemas']}
 def read(path):
     return json.loads(path.read_text(encoding='utf-8-sig'))
 
 for path in sorted((ROOT / 'schemas').glob('*.schema.json')):
     Draft202012Validator.check_schema(read(path))
-    assert read(path) == contracts['schemas'][path.name.removesuffix('.schema.json')], path
+    assert read(path) == all_schemas[path.name.removesuffix('.schema.json')], path
     print(f'schema valid: {path.name}')
 for fixture, schema in [('courtyard.json', 'project'), ('courtyard.normalized.json', 'normalized-project')]:
     Draft202012Validator(read(ROOT / 'schemas' / f'{schema}.schema.json')).validate(read(ROOT / 'tests/fixtures/briefs' / fixture))
@@ -28,7 +32,13 @@ for key, schema in [('project', 'project'), ('normalized', 'normalized-project')
 assert contracts['normalized'] == read(ROOT / 'tests/fixtures/briefs/courtyard.normalized.json')
 for error in contracts['errors']:
     Draft202012Validator(read(ROOT / 'schemas/error.schema.json')).validate(error)
-print('source schemas match; actual Rust project/normalized/error serializers conform')
+for name in ('generation', 'evaluation'):
+    value = task02[name]
+    Draft202012Validator(read(ROOT / 'schemas' / f'{name}.schema.json')).validate(value)
+    assert value == read(ROOT / 'tests/fixtures' / name / 'courtyard.seed42.json')
+for variant in task02['generation']['variants']:
+    Draft202012Validator(read(ROOT / 'schemas/variant.schema.json')).validate(variant)
+print('source schemas match; actual Rust project/normalized/error/generation/variant/evaluation serializers conform')
 
 subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-cli'], cwd=ROOT, check=True)
 metadata = json.loads(subprocess.check_output(
