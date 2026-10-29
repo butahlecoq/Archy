@@ -1,4 +1,4 @@
-use archy_core::{ArchyError, InputFormat, parse_project};
+use archy_core::{ArchyError, InputFormat, parse_project_current};
 use std::{fs::File, io::Read, path::Path};
 
 pub fn run(path: &Path) -> Result<serde_json::Value, ArchyError> {
@@ -18,6 +18,6 @@ pub fn run(path: &Path) -> Result<serde_json::Value, ArchyError> {
         .take((archy_core::validation::MAX_INPUT_BYTES + 1) as u64)
         .read_to_string(&mut input)
         .map_err(|e| crate::io_error(path, e))?;
-    let normalized = parse_project(&input, format)?;
-    serde_json::to_value(normalized).map_err(|e| ArchyError::schema("$", e.to_string()))
+    let normalized = parse_project_current(&input, format)?;
+    serde_json::to_value(normalized.canonical).map_err(|e| ArchyError::schema("$", e.to_string()))
 }

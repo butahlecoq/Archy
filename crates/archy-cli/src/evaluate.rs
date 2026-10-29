@@ -1,12 +1,14 @@
 use crate::{
     EvaluateInput, RunPayload, VariantSelection, WorkflowReceipt, artifact_invalid, publish,
-    recorded_manifest_for_key, request_conflict, run_integrity::verify_locked, workflow_receipt,
+    recorded_manifest_for_key, request_conflict,
+    run_integrity::{migrate_claimed_v1_source, verify_locked},
+    workflow_receipt,
 };
 use archy_core::{
     ArchyError, ErrorCode, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest,
     sha256_hex,
 };
-use archy_eval::{EVALUATION_VERSION, evaluate_variant};
+use archy_eval::{evaluate_variant_v1, evaluate_variant_v2};
 
 pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
     let store = archy_core::ProjectStore::open(&input.project)?;
@@ -72,6 +74,32 @@ pub(crate) fn evaluate_locked(
         VariantSelection::All => serde_json::json!({"selector":"all"}),
         VariantSelection::One(id) => serde_json::json!({"selector":"one","variant":id}),
     };
+    let source = verify_locked(locked, &source_id)?;
+    if !matches!(source.manifest().operation.as_str(), "generate" | "edit") {
+        return Err(artifact_invalid(
+            "evaluation source must be a generation or edit run",
+        ));
+    }
+    let migration = if recorded.is_none() {
+        migrate_claimed_v1_source(&source)?
+    } else {
+        None
+    };
+    let canonical = migration
+        .as_ref()
+        .map(|current| &current.canonical)
+        .or(source.canonical());
+    let spec = migration
+        .as_ref()
+        .map_or(source.spec(), |current| &current.numeric);
+    let mut selection_bytes = selection_bytes;
+    let replay_current = match &recorded {
+        Some(run) => verify_locked(locked, &run.run_id)?.canonical().is_some(),
+        None => false,
+    };
+    if canonical.is_some() || replay_current {
+        selection_bytes["profile"] = "si-rectangle-v2".into();
+    }
     let request_bytes = serde_json::to_vec(&selection_bytes)
         .map_err(|e| ArchyError::new(ErrorCode::InternalError, "request", e.to_string()))?;
     let request = RunRequest {
@@ -132,23 +160,32 @@ pub(crate) fn evaluate_locked(
     };
     let evaluations = variants
         .iter()
-        .map(|variant| evaluate_variant(source.spec(), variant))
+        .map(|variant| {
+            if canonical.is_some() {
+                evaluate_variant_v2(spec, variant)
+            } else {
+                evaluate_variant_v1(spec, variant)
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let normalized = serde_json::to_vec(source.spec())
-        .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
+    let normalized = match canonical {
+        Some(canonical) => serde_json::to_vec(canonical),
+        None => serde_json::to_vec(spec),
+    }
+    .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
     let source_format = source
         .manifest()
         .source_format
         .as_deref()
         .ok_or_else(|| artifact_invalid("missing source format"))?;
     let metadata = RunMetadata {
-        project_id: source.spec().project_id.clone(),
+        project_id: spec.project_id.clone(),
         normalized_sha256: Some(sha256_hex(&normalized)),
         source_format: Some(source_format.into()),
         seed: None,
         count: None,
         parent_variant_id: None,
-        algorithm_version: EVALUATION_VERSION.into(),
+        algorithm_version: evaluations[0].evaluation_version.clone(),
     };
     let receipt = publish(
         pending,
@@ -158,7 +195,8 @@ pub(crate) fn evaluate_locked(
             parent_run_id: Some(&source_id),
             format: source_format,
             input: source.input(),
-            spec: source.spec(),
+            spec,
+            canonical,
             generation: None,
             params: None,
             variants: &variants,

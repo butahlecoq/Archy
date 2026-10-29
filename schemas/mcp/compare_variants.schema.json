@@ -397,6 +397,7 @@
             "type": "array"
           },
           "evaluation_version": {
+            "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$",
             "type": "string"
           },
           "geometry_parity_budget": {

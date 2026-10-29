@@ -1,5 +1,8 @@
 use archy_core::decision_contract::*;
-use archy_core::{CheckResult, InputFormat, ShapeParameters, Variant, parse_project, sha256_hex};
+use archy_core::{
+    CheckResult, InputFormat, ShapeParameters, Variant, parse_project, parse_project_current,
+    sha256_hex,
+};
 
 fn evidence(
     x: f64,
@@ -137,4 +140,151 @@ fn evaluator_explanation_preserves_long_valid_upstream_source() {
             .unwrap()
     );
     assert_eq!(e.constraints[0].source.chars().count(), 5000);
+}
+
+fn claimed_authority_evidence(
+    historical_v1: bool,
+    both: bool,
+) -> (ReviewEvidence, Vec<u8>, Vec<u8>, Vec<u8>) {
+    let (mut evidence, _, variant, _) = evidence(3.0, false, false, false);
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard.json"
+    ))
+    .unwrap();
+    source["constraints"][0]["source"] = "claimed_regulation".into();
+    if both {
+        source["constraints"][1]["source"] = "claimed_regulation".into();
+    }
+    let (spec, normalized) = if historical_v1 {
+        let spec = parse_project(&source.to_string(), InputFormat::Json).unwrap();
+        let normalized = serde_json::to_vec(&spec).unwrap();
+        (spec, normalized)
+    } else {
+        let current = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+        let normalized = serde_json::to_vec(&current.canonical).unwrap();
+        (current.numeric, normalized)
+    };
+    let variant_value: Variant = serde_json::from_slice(&variant).unwrap();
+    let report = if historical_v1 {
+        archy_eval::evaluate_variant_v1(&spec, &variant_value).unwrap()
+    } else {
+        archy_eval::evaluate_variant_v2(&spec, &variant_value).unwrap()
+    };
+    let evaluation = serde_json::to_vec(&report).unwrap();
+    evidence.constraints = spec
+        .constraints
+        .iter()
+        .map(ConstraintEvidence::from_normalized)
+        .collect();
+    evidence.checks = report.checks;
+    evidence.normalized_sha256 = sha256_hex(&normalized);
+    evidence.evaluation_sha256 = sha256_hex(&evaluation);
+    (evidence, normalized, variant, evaluation)
+}
+
+#[test]
+fn authority_v2_binds_as_nonpassing_and_requires_exact_inventory() {
+    let (e, n, v, evaluation) = claimed_authority_evidence(false, true);
+    assert!(
+        !e.claimed_checks_passed_against(&n, &v, &evaluation)
+            .unwrap()
+    );
+    for omitted_id in ["authority:height", "authority:setback"] {
+        let mut missing = e.clone();
+        missing.checks.retain(|c| c.constraint_id != omitted_id);
+        let mut altered: serde_json::Value = serde_json::from_slice(&evaluation).unwrap();
+        altered["checks"] = serde_json::to_value(&missing.checks).unwrap();
+        altered["required_checks_passed"] = false.into();
+        let bytes = serde_json::to_vec(&altered).unwrap();
+        missing.evaluation_sha256 = sha256_hex(&bytes);
+        assert_eq!(
+            missing
+                .claimed_checks_passed_against(&n, &v, &bytes)
+                .unwrap_err()
+                .field,
+            "checks"
+        );
+    }
+    let mut duplicate = e.clone();
+    duplicate
+        .checks
+        .push(duplicate.checks.last().unwrap().clone());
+    assert!(duplicate.validate().is_err());
+    let mut malformed = e.clone();
+    malformed.checks.last_mut().unwrap().measured = Some(1.0);
+    assert!(malformed.validate().is_err());
+    let mut extra = e.clone();
+    extra.checks.push(archy_core::Check {
+        constraint_id: "target_gfa".into(),
+        result: CheckResult::Fail,
+        measured: Some(1.0),
+        limit: Some(2.0),
+        explanation: "extra".into(),
+        required: true,
+    });
+    let mut altered: serde_json::Value = serde_json::from_slice(&evaluation).unwrap();
+    altered["checks"] = serde_json::to_value(&extra.checks).unwrap();
+    let bytes = serde_json::to_vec(&altered).unwrap();
+    extra.evaluation_sha256 = sha256_hex(&bytes);
+    assert_eq!(
+        extra
+            .claimed_checks_passed_against(&n, &v, &bytes)
+            .unwrap_err()
+            .field,
+        "checks"
+    );
+
+    // A rehashed v2 projection cannot erase its required authority check.
+    let mut stripped = e.clone();
+    stripped
+        .checks
+        .retain(|c| !c.constraint_id.starts_with("authority:"));
+    altered["checks"] = serde_json::to_value(&stripped.checks).unwrap();
+    altered["evaluation_version"] = "planar-massing-v1".into();
+    altered["required_checks_passed"] = true.into();
+    let bytes = serde_json::to_vec(&altered).unwrap();
+    stripped.evaluation_sha256 = sha256_hex(&bytes);
+    assert_eq!(
+        stripped
+            .claimed_checks_passed_against(&n, &v, &bytes)
+            .unwrap_err()
+            .field,
+        "evaluation_version"
+    );
+}
+
+#[test]
+fn historical_v1_marker_binds_exact_bytes_without_approving_claim() {
+    let (e, n, v, evaluation) = claimed_authority_evidence(true, false);
+    assert!(
+        !e.claimed_checks_passed_against(&n, &v, &evaluation)
+            .unwrap()
+    );
+}
+
+#[test]
+fn relabeled_v2_without_claim_and_v1_with_extra_authority_are_rejected() {
+    let (mut e, n, v, evaluation) = evidence(3.0, false, false, false);
+    let mut altered: serde_json::Value = serde_json::from_slice(&evaluation).unwrap();
+    altered["evaluation_version"] = "planar-massing-authority-v2".into();
+    let bytes = serde_json::to_vec(&altered).unwrap();
+    e.evaluation_sha256 = sha256_hex(&bytes);
+    assert_eq!(
+        e.claimed_checks_passed_against(&n, &v, &bytes)
+            .unwrap_err()
+            .field,
+        "evaluation_version"
+    );
+
+    let (mut e, n, v, evaluation) = claimed_authority_evidence(false, false);
+    let mut altered: serde_json::Value = serde_json::from_slice(&evaluation).unwrap();
+    altered["evaluation_version"] = "planar-massing-v1".into();
+    let bytes = serde_json::to_vec(&altered).unwrap();
+    e.evaluation_sha256 = sha256_hex(&bytes);
+    assert_eq!(
+        e.claimed_checks_passed_against(&n, &v, &bytes)
+            .unwrap_err()
+            .field,
+        "evaluation_version"
+    );
 }

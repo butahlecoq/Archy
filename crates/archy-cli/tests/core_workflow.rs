@@ -2,6 +2,7 @@ use archy_cli::{
     EvaluateInput, GenerateInput, GenerationMode, MutationOptions, VariantSelection,
     WorkflowReceipt,
 };
+use archy_core::decision_contract::{ConstraintEvidence, ReviewEvidence};
 use archy_core::{
     ArchyError, ErrorCode, InputFormat, LockedProject, ProjectStore, RevisionRecord, RunManifest,
     parse_project_v1, sha256_hex,
@@ -12,6 +13,20 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+
+fn copy_private_tree(source: &Path, destination: &Path) {
+    fs::create_dir(destination).unwrap();
+    fs::set_permissions(destination, fs::Permissions::from_mode(0o700)).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let dest = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_private_tree(&entry.path(), &dest);
+        } else {
+            fs::copy(entry.path(), dest).unwrap();
+        }
+    }
+}
 
 fn fixture() -> (PathBuf, PathBuf) {
     let root = std::env::temp_dir().join(format!("archy-cli-workflow-{}", uuid::Uuid::new_v4()));
@@ -534,6 +549,159 @@ fn rehash_forgery(
 }
 
 #[test]
+fn cli_claimed_regulation_is_unknown_and_rehashed_authority_forgery_is_rejected() {
+    let (root, project) = fixture();
+    let mut input: serde_json::Value =
+        serde_json::from_slice(&fs::read(&project).unwrap()).unwrap();
+    input["constraints"][0]["source"] = serde_json::json!("claimed_regulation");
+    input["constraints"][0]["authority"] = serde_json::json!("user claimed local rule");
+    fs::write(&project, serde_json::to_vec(&input).unwrap()).unwrap();
+    let generated = Command::new(env!("CARGO_BIN_EXE_archy"))
+        .args([
+            "generate",
+            "--project",
+            project.to_str().unwrap(),
+            "--count",
+            "1",
+            "--seed",
+            "42",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let receipt: WorkflowReceipt = serde_json::from_slice(&generated.stdout).unwrap();
+    let trusted = verify_run(&project, &receipt.run_id).unwrap();
+    let run_path = root.join(&receipt.path);
+    let normalized = fs::read(run_path.join("normalized.json")).unwrap();
+    let variant =
+        fs::read(run_path.join(format!("variants/{}.json", receipt.variant_ids[0]))).unwrap();
+    let evaluation_bytes =
+        fs::read(run_path.join(format!("evaluations/{}.json", receipt.variant_ids[0]))).unwrap();
+    let store = ProjectStore::open(&project).unwrap();
+    let history = store.read_history().unwrap();
+    let comparison = archy_cli::compare(&project, Some(&receipt.run_id)).unwrap();
+    let evidence = ReviewEvidence {
+        project_id: trusted.spec().project_id.clone(),
+        variant_id: receipt.variant_ids[0].clone(),
+        source_run_id: receipt.run_id.clone(),
+        expected_project_revision: history.revision(),
+        expected_head_sha256: history.head_sha256().unwrap().into(),
+        input_sha256: trusted.manifest().input_sha256.clone(),
+        normalized_sha256: sha256_hex(&normalized),
+        variant_sha256: sha256_hex(&variant),
+        evaluation_sha256: sha256_hex(&evaluation_bytes),
+        comparison_sha256: sha256_hex(&comparison.json),
+        constraints: trusted
+            .spec()
+            .constraints
+            .iter()
+            .map(ConstraintEvidence::from_normalized)
+            .collect(),
+        checks: trusted.evaluations()[0].checks.clone(),
+    };
+    assert!(
+        !evidence
+            .claimed_checks_passed_against(&normalized, &variant, &evaluation_bytes)
+            .unwrap()
+    );
+    let mut stripped = evidence.clone();
+    stripped
+        .checks
+        .retain(|check| check.constraint_id != "authority:height");
+    let mut altered: serde_json::Value = serde_json::from_slice(&evaluation_bytes).unwrap();
+    altered["checks"] = serde_json::to_value(&stripped.checks).unwrap();
+    altered["required_checks_passed"] = serde_json::json!(true);
+    let altered_bytes = serde_json::to_vec(&altered).unwrap();
+    stripped.evaluation_sha256 = sha256_hex(&altered_bytes);
+    assert_eq!(
+        stripped
+            .claimed_checks_passed_against(&normalized, &variant, &altered_bytes)
+            .unwrap_err()
+            .field,
+        "checks"
+    );
+    altered["evaluation_version"] = serde_json::json!("planar-massing-v1");
+    let relabeled_bytes = serde_json::to_vec(&altered).unwrap();
+    let mut relabeled = evidence.clone();
+    relabeled.evaluation_sha256 = sha256_hex(&relabeled_bytes);
+    assert!(
+        relabeled
+            .claimed_checks_passed_against(&normalized, &variant, &relabeled_bytes)
+            .is_err()
+    );
+    let evaluation = &trusted.evaluations()[0];
+    assert!(!evaluation.required_checks_passed);
+    assert!(
+        evaluation
+            .checks
+            .iter()
+            .any(|c| c.constraint_id == "authority:height"
+                && c.result == archy_core::CheckResult::Unknown)
+    );
+    assert!(
+        evaluation
+            .checks
+            .iter()
+            .any(|c| c.constraint_id == "height" && c.measured.is_some() && c.limit.is_some())
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(&receipt.path).join("report.json")).unwrap())
+            .unwrap();
+    assert_eq!(report["schema_version"], "archy-report-v2");
+    let profile: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(&receipt.path).join("profile.json")).unwrap())
+            .unwrap();
+    assert_eq!(profile["normalization_version"], "si-rectangle-v2");
+    assert_eq!(profile["source_schema_version"], "0.1.0");
+    assert_eq!(profile["evaluation_version"], "planar-massing-authority-v2");
+    assert_eq!(profile["report_version"], "archy-report-v2");
+    let evaluated = Command::new(env!("CARGO_BIN_EXE_archy"))
+        .args([
+            "evaluate",
+            "--project",
+            project.to_str().unwrap(),
+            "--run",
+            &receipt.run_id,
+            "--all",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        evaluated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&evaluated.stderr)
+    );
+    let evaluated: WorkflowReceipt = serde_json::from_slice(&evaluated.stdout).unwrap();
+    assert_eq!(
+        verify_run(&project, &evaluated.run_id)
+            .unwrap()
+            .manifest()
+            .algorithm_version,
+        "planar-massing-authority-v2"
+    );
+    let artifact = format!("evaluations/{}.json", receipt.variant_ids[0]);
+    rehash_forgery(&root, &receipt.path, &artifact, |value| {
+        let checks = value["checks"].as_array_mut().unwrap();
+        checks
+            .iter_mut()
+            .find(|c| c["constraint_id"] == "authority:height")
+            .unwrap()["result"] = serde_json::json!("PASS");
+        value["required_checks_passed"] = serde_json::json!(true);
+    });
+    assert_eq!(
+        verify_run(&project, &receipt.run_id).unwrap_err().code,
+        ErrorCode::ArtifactInvalid
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn consistently_rehashed_forgery_never_grants_trusted_status() {
     for class in [
         "metric",
@@ -545,6 +713,9 @@ fn consistently_rehashed_forgery_never_grants_trusted_status() {
         "variant-footprint",
         "project-binding",
         "normalized",
+        "rehashed-downgrade",
+        "evaluation-downgrade",
+        "profile-downgrade",
         "report",
     ] {
         let (root, project) = fixture();
@@ -556,13 +727,14 @@ fn consistently_rehashed_forgery_never_grants_trusted_status() {
         .unwrap();
         let variant_id = &receipt.variant_ids[0];
         let artifact = match class {
-            "metric" | "check" | "tolerance" | "parity" | "summary" => {
+            "metric" | "check" | "tolerance" | "parity" | "summary" | "evaluation-downgrade" => {
                 format!("evaluations/{variant_id}.json")
             }
             "variant-id" | "variant-footprint" | "project-binding" => {
                 format!("variants/{variant_id}.json")
             }
-            "normalized" => "normalized.json".into(),
+            "normalized" | "rehashed-downgrade" => "normalized.json".into(),
+            "profile-downgrade" => "profile.json".into(),
             "report" => "report.json".into(),
             _ => unreachable!(),
         };
@@ -581,6 +753,18 @@ fn consistently_rehashed_forgery_never_grants_trusted_status() {
             "variant-footprint" => value["footprint_xy_m"][0][0] = serde_json::json!(500.0),
             "project-binding" => value["project_id"] = serde_json::json!("another-project"),
             "normalized" => value["preferences"] = serde_json::json!(["forged"]),
+            "rehashed-downgrade" => {
+                value["schema_version"] = "0.1.0".into();
+                value["normalization_version"] = "si-rectangle-v1".into();
+            }
+            "evaluation-downgrade" => {
+                value["evaluation_version"] = "planar-massing-v1".into();
+            }
+            "profile-downgrade" => {
+                value["source_schema_version"] = "0.1.0".into();
+                value["normalization_version"] = "si-rectangle-v1".into();
+                value["evaluation_version"] = "planar-massing-v1".into();
+            }
             "report" => value["uncomputed"] = serde_json::json!(["approved"]),
             _ => unreachable!(),
         });
@@ -602,10 +786,14 @@ fn consistently_rehashed_forgery_never_grants_trusted_status() {
 fn legacy_preferences_keep_exact_v1_bytes_and_survive_source_edits() {
     let root = std::env::temp_dir().join(format!("archy-legacy-{}", uuid::Uuid::new_v4()));
     fs::create_dir(&root).unwrap();
+    let capture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/legacy-preference-run");
     let project = root.join("project.json");
     let source =
         include_bytes!("../../../tests/fixtures/briefs/legacy-adversarial-preferences.json");
     fs::write(&project, source).unwrap();
+    copy_private_tree(&capture.join(".archy"), &root.join(".archy"));
+    copy_private_tree(&capture.join("archived-runs"), &root.join("runs"));
     let spec = parse_project_v1(std::str::from_utf8(source).unwrap(), InputFormat::Json).unwrap();
     let normalized = serde_json::to_vec(&spec).unwrap();
     assert_eq!(spec.preferences.len(), 4);
@@ -624,12 +812,8 @@ fn legacy_preferences_keep_exact_v1_bytes_and_survive_source_edits() {
         expected_project_revision: Some(0),
         ..MutationOptions::default()
     };
-    let first = generate(GenerateInput {
-        project: project.clone(),
-        mode: GenerationMode::Sample { count: 1, seed: 42 },
-        mutation: mutation.clone(),
-    })
-    .unwrap();
+    let first: WorkflowReceipt =
+        serde_json::from_slice(&fs::read(capture.join("receipt.json")).unwrap()).unwrap();
     let run = root.join(&first.path);
     assert_eq!(fs::read(run.join("input.json")).unwrap(), source);
     assert_eq!(fs::read(run.join("normalized.json")).unwrap(), normalized);
@@ -639,9 +823,28 @@ fn legacy_preferences_keep_exact_v1_bytes_and_survive_source_edits() {
         serde_json::json!(spec.preferences)
     );
     verify_run(&project, &first.run_id).unwrap();
+    let desktop = archy_cli::desktop_status(archy_cli::DesktopStatusInput {
+        project: project.clone(),
+        run: Some(first.run_id.clone()),
+        limit: 10,
+        cursor: None,
+    })
+    .unwrap();
+    assert_eq!(desktop.selected_run.unwrap().summary.run_id, first.run_id);
 
     fs::write(&project, b"{bad json").unwrap();
     verify_run(&project, &first.run_id).unwrap();
+    let historical_status = archy_cli::desktop_status(archy_cli::DesktopStatusInput {
+        project: project.clone(),
+        run: Some(first.run_id.clone()),
+        limit: 10,
+        cursor: None,
+    })
+    .unwrap();
+    assert_eq!(
+        historical_status.selected_run.unwrap().summary.run_id,
+        first.run_id
+    );
     let changed = generate(GenerateInput {
         project: project.clone(),
         mode: GenerationMode::Sample { count: 1, seed: 42 },
@@ -667,6 +870,176 @@ fn legacy_preferences_keep_exact_v1_bytes_and_survive_source_edits() {
     });
     assert_eq!(
         verify_run(&project, &first.run_id).unwrap_err().code,
+        ErrorCode::ArtifactInvalid
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fresh_claimed_authority_uses_v2_for_native_and_imported_sources() {
+    let root = std::env::temp_dir().join(format!("archy-authority-gate-{}", uuid::Uuid::new_v4()));
+    for (profile, fixture) in [
+        (
+            "v2",
+            include_str!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        ),
+        (
+            "v1",
+            include_str!("../../../tests/fixtures/briefs/courtyard.json"),
+        ),
+    ] {
+        let directory = root.join(profile);
+        fs::create_dir_all(&directory).unwrap();
+        let project = directory.join("project.json");
+        let mut source: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        source["constraints"][0]["source"] = "claimed_regulation".into();
+        fs::write(&project, serde_json::to_vec(&source).unwrap()).unwrap();
+        let receipt = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let trusted = verify_run(&project, &receipt.run_id).unwrap();
+        assert!(trusted.canonical().is_some());
+        let run = directory.join(&receipt.path);
+        let recorded_profile: serde_json::Value =
+            serde_json::from_slice(&fs::read(run.join("profile.json")).unwrap()).unwrap();
+        assert_eq!(
+            recorded_profile["source_schema_version"],
+            if profile == "v2" { "0.2.0" } else { "0.1.0" }
+        );
+        assert_eq!(
+            trusted.evaluations()[0].evaluation_version,
+            "planar-massing-authority-v2"
+        );
+        assert!(!trusted.evaluations()[0].required_checks_passed);
+        assert!(trusted.evaluations()[0].checks.iter().any(|check| {
+            check.constraint_id == "authority:height"
+                && check.result == archy_core::CheckResult::Unknown
+                && check.measured.is_none()
+                && check.limit.is_none()
+        }));
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .read_history()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn current_and_imported_projects_share_design_bytes_but_keep_source_bytes() {
+    let root = std::env::temp_dir().join(format!("archy-v2-parity-{}", uuid::Uuid::new_v4()));
+    let legacy_dir = root.join("legacy");
+    let current_dir = root.join("current");
+    fs::create_dir_all(&legacy_dir).unwrap();
+    fs::create_dir_all(&current_dir).unwrap();
+    let legacy_project = legacy_dir.join("project.json");
+    let current_project = current_dir.join("project.json");
+    let mut legacy: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard.json"
+    ))
+    .unwrap();
+    legacy["preferences"] = serde_json::json!(["courtyard", "retain trees"]);
+    let legacy_source = serde_json::to_vec(&legacy).unwrap();
+    let current_source = include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json");
+    fs::write(&legacy_project, &legacy_source).unwrap();
+    fs::write(&current_project, current_source).unwrap();
+    let run = |project: &Path| {
+        generate(GenerateInput {
+            project: project.to_path_buf(),
+            mode: GenerationMode::Sample { count: 3, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap()
+    };
+    let old = run(&legacy_project);
+    let new = run(&current_project);
+    assert_eq!(old.variant_ids, new.variant_ids);
+    let old_dir = root.join("legacy").join(&old.path);
+    let new_dir = root.join("current").join(&new.path);
+    assert_eq!(fs::read(old_dir.join("input.json")).unwrap(), legacy_source);
+    assert_eq!(
+        fs::read(new_dir.join("input.json")).unwrap(),
+        current_source
+    );
+    assert_eq!(
+        fs::read(old_dir.join("normalized.json")).unwrap(),
+        fs::read(new_dir.join("normalized.json")).unwrap()
+    );
+    assert_eq!(
+        fs::read(old_dir.join("generation.json")).unwrap(),
+        fs::read(new_dir.join("generation.json")).unwrap()
+    );
+    for id in &old.variant_ids {
+        for folder in ["variants", "evaluations"] {
+            let path = format!("{folder}/{id}.json");
+            assert_eq!(
+                fs::read(old_dir.join(&path)).unwrap(),
+                fs::read(new_dir.join(&path)).unwrap()
+            );
+        }
+    }
+    let notes_dir = root.join("notes");
+    fs::create_dir(&notes_dir).unwrap();
+    let notes_project = notes_dir.join("project.json");
+    let mut with_notes: serde_json::Value = serde_json::from_slice(current_source).unwrap();
+    with_notes["notes"] = serde_json::json!(["<script>draw a tower</script>"]);
+    fs::write(&notes_project, serde_json::to_vec(&with_notes).unwrap()).unwrap();
+    let notes_run = run(&notes_project);
+    assert_eq!(notes_run.variant_ids, new.variant_ids);
+    let markdown = fs::read_to_string(notes_dir.join(&notes_run.path).join("report.md")).unwrap();
+    assert!(markdown.contains("&lt;script&gt;"));
+    assert!(!markdown.contains("<script>"));
+    assert!(
+        verify_run(&legacy_project, &old.run_id)
+            .unwrap()
+            .canonical()
+            .is_some()
+    );
+    assert!(
+        verify_run(&current_project, &new.run_id)
+            .unwrap()
+            .canonical()
+            .is_some()
+    );
+    let status = archy_cli::desktop_status(archy_cli::DesktopStatusInput {
+        project: current_project.clone(),
+        run: Some(new.run_id.clone()),
+        limit: 10,
+        cursor: None,
+    })
+    .unwrap();
+    assert_eq!(status.project.id, "courtyard-demo");
+    assert_eq!(status.selected_run.unwrap().summary.run_id, new.run_id);
+    let manifest: RunManifest =
+        serde_json::from_slice(&fs::read(new_dir.join("manifest.json")).unwrap()).unwrap();
+    let mutation = MutationOptions {
+        idempotency_key: Some(manifest.idempotency_key),
+        expected_project_revision: Some(0),
+        ..MutationOptions::default()
+    };
+    let replay = || {
+        generate(GenerateInput {
+            project: current_project.clone(),
+            mode: GenerationMode::Sample { count: 3, seed: 42 },
+            mutation: mutation.clone(),
+        })
+    };
+    assert_eq!(replay().unwrap().run_id, new.run_id);
+    fs::write(&current_project, b"{bad json").unwrap();
+    assert_eq!(replay().unwrap_err().code, ErrorCode::RevisionConflict);
+    fs::write(&current_project, current_source).unwrap();
+    rehash_forgery(&current_dir, &new.path, "normalized.json", |value| {
+        value["constraints"][0]["bound"] = serde_json::json!(11.0);
+    });
+    assert_eq!(
+        verify_run(&current_project, &new.run_id).unwrap_err().code,
         ErrorCode::ArtifactInvalid
     );
     fs::remove_dir_all(root).unwrap();

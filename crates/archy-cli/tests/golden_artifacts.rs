@@ -1,5 +1,6 @@
 use archy_cli::verify_run;
-use archy_core::{ErrorCode, RunManifest, sha256_hex};
+use archy_core::decision_contract::{ConstraintEvidence, ReviewEvidence};
+use archy_core::{ErrorCode, ProjectStore, RevisionRecord, RunManifest, sha256_hex};
 use serde_json::Value;
 use std::{
     fs,
@@ -53,6 +54,14 @@ fn assert_tree_bytes_match(saved: &Path, copy: &Path) {
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
+    if copy_entries.iter().any(|name| name == "staging")
+        && !saved_entries.iter().any(|name| name == "staging")
+    {
+        let staging = copy.join("staging");
+        assert!(staging.is_dir());
+        assert_eq!(fs::read_dir(staging).unwrap().count(), 0);
+        copy_entries.retain(|name| name != "staging");
+    }
     saved_entries.sort();
     copy_entries.sort();
     assert_eq!(copy_entries, saved_entries);
@@ -140,38 +149,41 @@ fn assert_inventory(project: &Path, receipt: &Value, saved_inventory: &Value) {
 fn assert_design_bytes(actual: &Path, saved: &Path, variant_ids: &[Value]) {
     for variant_id in variant_ids {
         let variant_id = variant_id.as_str().unwrap();
-        for folder in ["variants", "evaluations"] {
-            let relative = format!("{folder}/{variant_id}.json");
-            assert_eq!(
-                fs::read(actual.join(&relative)).unwrap(),
-                fs::read(saved.join(relative)).unwrap()
-            );
-        }
+        let relative = format!("variants/{variant_id}.json");
+        assert_eq!(
+            fs::read(actual.join(&relative)).unwrap(),
+            fs::read(saved.join(relative)).unwrap()
+        );
+        let relative = format!("evaluations/{variant_id}.json");
+        let mut current: Value =
+            serde_json::from_slice(&fs::read(actual.join(&relative)).unwrap()).unwrap();
+        let mut historical: Value =
+            serde_json::from_slice(&fs::read(saved.join(relative)).unwrap()).unwrap();
+        assert_eq!(current["evaluation_version"], "planar-massing-authority-v2");
+        assert_eq!(historical["evaluation_version"], "planar-massing-v1");
+        current
+            .as_object_mut()
+            .unwrap()
+            .remove("evaluation_version");
+        historical
+            .as_object_mut()
+            .unwrap()
+            .remove("evaluation_version");
+        assert_eq!(current, historical);
     }
 }
 
-fn assert_report(actual: &Path, saved: &Path, dynamic_ids: &[(&str, &str)]) {
-    let mut actual_json = String::from_utf8(fs::read(actual.join("report.json")).unwrap()).unwrap();
-    for (dynamic, saved) in dynamic_ids {
-        for field in ["run_id", "parent_run_id"] {
-            actual_json = actual_json.replace(
-                &format!("\"{field}\": \"{dynamic}\""),
-                &format!("\"{field}\": \"{saved}\""),
-            );
-        }
-    }
+fn assert_report(actual: &Path, saved: &Path) {
+    let actual_json: Value =
+        serde_json::from_slice(&fs::read(actual.join("report.json")).unwrap()).unwrap();
+    assert_eq!(actual_json["schema_version"], "archy-report-v2");
+    assert_eq!(actual_json["spec"]["schema_version"], "0.2.0");
+    assert_eq!(actual_json["spec"]["id"], "courtyard-demo");
+    assert_eq!(actual_json["spec"]["constraints"][0]["unit"], "m");
     assert!(
-        actual_json.as_bytes() == fs::read(saved.join("report.json")).unwrap(),
-        "report JSON differs after run ID fields are mapped"
-    );
-    let mut actual_markdown = fs::read_to_string(actual.join("report.md")).unwrap();
-    for (dynamic, saved) in dynamic_ids {
-        actual_markdown =
-            actual_markdown.replace(&dynamic.replace('-', "\\-"), &saved.replace('-', "\\-"));
-    }
-    assert!(
-        actual_markdown.as_bytes() == fs::read(saved.join("report.md")).unwrap(),
-        "Markdown differs after execution IDs are mapped"
+        fs::read_to_string(actual.join("report.md"))
+            .unwrap()
+            .contains("uncomputed and do not affect generation")
     );
     assert_eq!(
         fs::read(actual.join("events.jsonl")).unwrap(),
@@ -336,8 +348,17 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
         let evaluation_bytes =
             fs::read(first_generate.join(format!("evaluations/{variant_id}.json"))).unwrap();
         assert_eq!(sha256_hex(&variant_bytes), design["variant_sha256"]);
-        assert_eq!(sha256_hex(&evaluation_bytes), design["evaluation_sha256"]);
+        let saved_evaluation_bytes =
+            fs::read(saved_generate.join(format!("evaluations/{variant_id}.json"))).unwrap();
+        assert_eq!(
+            sha256_hex(&saved_evaluation_bytes),
+            design["evaluation_sha256"]
+        );
         let evaluation: Value = serde_json::from_slice(&evaluation_bytes).unwrap();
+        assert_eq!(
+            evaluation["evaluation_version"],
+            "planar-massing-authority-v2"
+        );
         let measured: serde_json::Map<String, Value> = evaluation["metrics"].as_array().unwrap().iter().map(|metric| {
             (metric["name"].as_str().unwrap().to_owned(), serde_json::json!({"value": metric["value"], "unit": metric["unit"], "method_version": metric["method_version"]}))
         }).collect();
@@ -423,10 +444,6 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
         ("edit", &edit),
         ("restore", &restore),
     ];
-    let dynamic_ids: Vec<_> = runs
-        .iter()
-        .map(|(name, receipt)| (receipt_id(receipt), receipt_id(&receipts[*name])))
-        .collect();
     for (name, receipt) in runs {
         let actual_run = run_path(&first_project, receipt);
         let saved_run = run_path(&saved_project, &receipts[name]);
@@ -435,7 +452,7 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
             &saved_run,
             receipt["variant_ids"].as_array().unwrap(),
         );
-        assert_report(&actual_run, &saved_run, &dynamic_ids);
+        assert_report(&actual_run, &saved_run);
         assert_eq!(
             verify_run(&first_project, receipt_id(receipt))
                 .unwrap()
@@ -451,5 +468,428 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
     for (relative, bytes) in original_files {
         assert_eq!(fs::read(first_generate.join(relative)).unwrap(), bytes);
     }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pre_a04_claimed_marker_chain_verifies_and_replays_exact_saved_bytes() {
+    const GENERATE: &str = "e80391ef-a7ec-4900-8d05-9409b250094e";
+    const EVALUATE: &str = "a112afe0-ab7b-414d-8f35-11d5f97814c9";
+    const VARIANT: &str =
+        "variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b";
+    let fixture = repository_path("tests/fixtures/historical-claimed-v1");
+    let root = temporary_root();
+    let saved = root.join("saved");
+    copy_tree(&fixture, &saved);
+    make_managed_directories_private(&saved.join(".archy"));
+    make_managed_directories_private(&saved.join("runs"));
+    assert_tree_bytes_match(&fixture, &saved);
+    let project = saved.join("project.json");
+
+    for (run_id, report_hash) in [
+        (
+            GENERATE,
+            "cfef835ba3545371dd171b190f7f6b648f78d8119ac32a7727a2284eef0cd655",
+        ),
+        (
+            EVALUATE,
+            "935bf86e70f372f341552fdf6fce60029d8402053678b6eb29c1592da83737a2",
+        ),
+    ] {
+        let verified = verify_run(&project, run_id).unwrap();
+        assert_eq!(verified.spec().constraints[0].source, "claimed_regulation");
+        let evaluation = &verified.evaluations()[0];
+        assert_eq!(evaluation.evaluation_version, "planar-massing-v1");
+        assert!(evaluation.required_checks_passed);
+        assert!(
+            evaluation
+                .checks
+                .iter()
+                .all(|check| !check.constraint_id.starts_with("authority:"))
+        );
+        let run = saved.join("runs").join(run_id);
+        let evaluation_bytes = fs::read(run.join(format!("evaluations/{VARIANT}.json"))).unwrap();
+        assert_eq!(
+            sha256_hex(&evaluation_bytes),
+            "9a7d6181a2b63e5facb6a1886914e60188e1a95e03c78569c4f275dadbed348d"
+        );
+        let report_bytes = fs::read(run.join("report.json")).unwrap();
+        assert_eq!(sha256_hex(&report_bytes), report_hash);
+        let report: Value = serde_json::from_slice(&report_bytes).unwrap();
+        assert_eq!(report["schema_version"], "archy-report-v1");
+    }
+    assert_eq!(
+        ProjectStore::open(&project)
+            .unwrap()
+            .read_history()
+            .unwrap()
+            .revision(),
+        2
+    );
+
+    let old = verify_run(&project, GENERATE).unwrap();
+    let normalized = fs::read(saved.join("runs").join(GENERATE).join("normalized.json")).unwrap();
+    let variant_bytes = fs::read(
+        saved
+            .join("runs")
+            .join(GENERATE)
+            .join(format!("variants/{VARIANT}.json")),
+    )
+    .unwrap();
+    let evaluation_bytes = fs::read(
+        saved
+            .join("runs")
+            .join(GENERATE)
+            .join(format!("evaluations/{VARIANT}.json")),
+    )
+    .unwrap();
+    let evidence = ReviewEvidence {
+        project_id: old.spec().project_id.clone(),
+        variant_id: VARIANT.into(),
+        source_run_id: GENERATE.into(),
+        expected_project_revision: 2,
+        expected_head_sha256: ProjectStore::open(&project)
+            .unwrap()
+            .read_history()
+            .unwrap()
+            .head_sha256()
+            .unwrap()
+            .into(),
+        input_sha256: sha256_hex(old.input()),
+        normalized_sha256: sha256_hex(&normalized),
+        variant_sha256: sha256_hex(&variant_bytes),
+        evaluation_sha256: sha256_hex(&evaluation_bytes),
+        comparison_sha256: "a".repeat(64),
+        constraints: old
+            .spec()
+            .constraints
+            .iter()
+            .map(ConstraintEvidence::from_normalized)
+            .collect(),
+        checks: old.evaluations()[0].checks.clone(),
+    };
+    assert!(
+        !evidence
+            .claimed_checks_passed_against(&normalized, &variant_bytes, &evaluation_bytes)
+            .unwrap()
+    );
+
+    let compared = Command::new(env!("CARGO_BIN_EXE_archy"))
+        .args(["compare", "--run", GENERATE])
+        .arg("--project")
+        .arg(&project)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!compared.status.success());
+    let compare_error: Value = serde_json::from_slice(&compared.stdout).unwrap();
+    assert_eq!(compare_error["code"], "INVALID_SCHEMA");
+    assert!(
+        compare_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("authority verification")
+    );
+
+    let generation = command(
+        &project,
+        &[
+            "generate",
+            "--count",
+            "1",
+            "--seed",
+            "42",
+            "--idempotency-key",
+            "historical-marker-generate-7728da0",
+            "--expected-project-revision",
+            "0",
+        ],
+    );
+    assert_eq!(receipt_id(&generation), GENERATE);
+    assert_eq!(generation["revision"], 1);
+    let evaluated = command(
+        &project,
+        &[
+            "evaluate",
+            "--run",
+            GENERATE,
+            "--all",
+            "--idempotency-key",
+            "historical-marker-evaluate-7728da0",
+            "--expected-project-revision",
+            "1",
+        ],
+    );
+    assert_eq!(receipt_id(&evaluated), EVALUATE);
+    assert_eq!(evaluated["revision"], 2);
+    assert_eq!(
+        ProjectStore::open(&project)
+            .unwrap()
+            .read_history()
+            .unwrap()
+            .revision(),
+        2
+    );
+    assert_tree_bytes_match(&fixture, &saved);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn new_children_of_authentic_claimed_v1_history_migrate_authority_profile() {
+    const GENERATE: &str = "e80391ef-a7ec-4900-8d05-9409b250094e";
+    const VARIANT: &str =
+        "variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b";
+    let fixture = repository_path("tests/fixtures/historical-claimed-v1");
+    for operation in ["evaluate", "evaluate-default", "edit"] {
+        let root = temporary_root();
+        let saved = root.join("saved");
+        copy_tree(&fixture, &saved);
+        make_managed_directories_private(&saved.join(".archy"));
+        make_managed_directories_private(&saved.join("runs"));
+        let project = saved.join("project.json");
+        let arguments = if operation == "evaluate" {
+            vec![
+                "evaluate",
+                "--run",
+                GENERATE,
+                "--all",
+                "--idempotency-key",
+                "new-evaluation",
+                "--expected-project-revision",
+                "2",
+            ]
+        } else if operation == "evaluate-default" {
+            vec![
+                "evaluate",
+                "--all",
+                "--idempotency-key",
+                "new-default-evaluation",
+                "--expected-project-revision",
+                "2",
+            ]
+        } else {
+            let variant: Value = serde_json::from_slice(
+                &fs::read(
+                    saved
+                        .join("runs")
+                        .join(GENERATE)
+                        .join(format!("variants/{VARIANT}.json")),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            fs::write(saved.join("edit.json"), serde_json::to_vec(&serde_json::json!({"parameters":variant["parameters"],"storeys":2,"floor_to_floor_m":variant["floor_to_floor_m"]})).unwrap()).unwrap();
+            vec![
+                "generate",
+                "--from-run",
+                GENERATE,
+                "--variant",
+                VARIANT,
+                "--params",
+                "edit.json",
+                "--idempotency-key",
+                "new-edit",
+                "--expected-project-revision",
+                "2",
+            ]
+        };
+        let receipt = command(&project, &arguments);
+        assert_eq!(receipt["revision"], 3, "{operation}");
+        let child = verify_run(&project, receipt_id(&receipt)).unwrap();
+        assert_eq!(child.manifest().parent_run_id.as_deref(), Some(GENERATE));
+        assert_eq!(
+            child.input(),
+            fs::read(fixture.join("project.json")).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(child.canonical().unwrap()).unwrap()["normalization_version"],
+            "si-rectangle-v2"
+        );
+        assert_eq!(
+            child.evaluations()[0].evaluation_version,
+            "planar-massing-authority-v2"
+        );
+        assert!(!child.evaluations()[0].required_checks_passed);
+        let authority = child.evaluations()[0]
+            .checks
+            .iter()
+            .find(|c| c.constraint_id == "authority:height")
+            .unwrap();
+        assert_eq!(authority.result, archy_core::CheckResult::Unknown);
+        assert_eq!((authority.measured, authority.limit), (None, None));
+        assert!(run_path(&project, &receipt).join("profile.json").is_file());
+        assert_eq!(
+            receipt_id(&command(&project, &arguments)),
+            receipt_id(&receipt)
+        );
+        if operation == "edit" {
+            let compared = command(&project, &["compare", "--run", receipt_id(&receipt)]);
+            assert_eq!(
+                compared["candidates"][0]["evaluation"]["required_checks_passed"],
+                false
+            );
+            let evaluated = command(
+                &project,
+                &[
+                    "evaluate",
+                    "--run",
+                    receipt_id(&receipt),
+                    "--all",
+                    "--idempotency-key",
+                    "migrated-edit-evaluation",
+                    "--expected-project-revision",
+                    "3",
+                ],
+            );
+            let evaluated_run = verify_run(&project, receipt_id(&evaluated)).unwrap();
+            assert_eq!(
+                evaluated_run.manifest().parent_run_id.as_deref(),
+                Some(receipt_id(&receipt))
+            );
+            assert_eq!(
+                evaluated_run.evaluations()[0].evaluation_version,
+                "planar-massing-authority-v2"
+            );
+            assert!(!evaluated_run.evaluations()[0].required_checks_passed);
+            let original: Value = serde_json::from_slice(
+                &fs::read(
+                    fixture
+                        .join("runs")
+                        .join(GENERATE)
+                        .join(format!("variants/{VARIANT}.json")),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            fs::write(saved.join("restore.json"), serde_json::to_vec(&serde_json::json!({"parameters":original["parameters"],"storeys":original["storeys"],"floor_to_floor_m":original["floor_to_floor_m"]})).unwrap()).unwrap();
+            let edited_variant = receipt["variant_ids"][0].as_str().unwrap();
+            let restored = command(
+                &project,
+                &[
+                    "generate",
+                    "--from-run",
+                    receipt_id(&receipt),
+                    "--variant",
+                    edited_variant,
+                    "--params",
+                    "restore.json",
+                    "--idempotency-key",
+                    "migrated-restore",
+                    "--expected-project-revision",
+                    "4",
+                ],
+            );
+            let restored_run = verify_run(&project, receipt_id(&restored)).unwrap();
+            assert_eq!(
+                restored_run.manifest().parent_run_id.as_deref(),
+                Some(receipt_id(&receipt))
+            );
+            assert_eq!(
+                restored_run.evaluations()[0].evaluation_version,
+                "planar-massing-authority-v2"
+            );
+            assert!(!restored_run.evaluations()[0].required_checks_passed);
+            fs::remove_file(saved.join("restore.json")).unwrap();
+        }
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .read_history()
+                .unwrap()
+                .revision(),
+            if operation == "edit" { 5 } else { 3 }
+        );
+        if operation == "edit" {
+            fs::remove_file(saved.join("edit.json")).unwrap();
+        }
+        assert_tree_bytes_match(
+            &fixture.join("runs").join(GENERATE),
+            &saved.join("runs").join(GENERATE),
+        );
+        assert_tree_bytes_match(
+            &fixture
+                .join("runs")
+                .join("a112afe0-ab7b-414d-8f35-11d5f97814c9"),
+            &saved
+                .join("runs")
+                .join("a112afe0-ab7b-414d-8f35-11d5f97814c9"),
+        );
+        for revision in ["00000000000000000001.json", "00000000000000000002.json"] {
+            assert_eq!(
+                fs::read(fixture.join(".archy/revisions").join(revision)).unwrap(),
+                fs::read(saved.join(".archy/revisions").join(revision)).unwrap()
+            );
+        }
+        if operation == "evaluate" {
+            let run = run_path(&project, &receipt);
+            let profile_path = run.join("profile.json");
+            let mut profile: Value =
+                serde_json::from_slice(&fs::read(&profile_path).unwrap()).unwrap();
+            profile["evaluation_version"] = "planar-massing-v1".into();
+            let profile_bytes = serde_json::to_vec(&profile).unwrap();
+            fs::write(&profile_path, &profile_bytes).unwrap();
+            let manifest_path = run.join("manifest.json");
+            let mut manifest: RunManifest =
+                serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+            let entry = manifest
+                .artifacts
+                .iter_mut()
+                .find(|artifact| artifact.path == "profile.json")
+                .unwrap();
+            entry.sha256 = sha256_hex(&profile_bytes);
+            entry.byte_len = profile_bytes.len() as u64;
+            let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+            fs::write(&manifest_path, &manifest_bytes).unwrap();
+            let revision_path = saved.join(".archy/revisions/00000000000000000003.json");
+            let mut revision: RevisionRecord =
+                serde_json::from_slice(&fs::read(&revision_path).unwrap()).unwrap();
+            revision.receipt.manifest_sha256 = sha256_hex(&manifest_bytes);
+            fs::write(&revision_path, serde_json::to_vec(&revision).unwrap()).unwrap();
+            assert_eq!(
+                verify_run(&project, receipt_id(&receipt)).unwrap_err().code,
+                ErrorCode::ArtifactInvalid
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn non_claimed_historical_v1_can_still_be_evaluated_and_compared() {
+    const RUN: &str = "5248af90-8dfe-4743-b056-7d3385c62c97";
+    let fixture = repository_path("tests/fixtures/legacy-preference-run");
+    let root = temporary_root();
+    let saved = root.join("saved");
+    fs::create_dir(&saved).unwrap();
+    fs::copy(fixture.join("project.json"), saved.join("project.json")).unwrap();
+    copy_tree(&fixture.join(".archy"), &saved.join(".archy"));
+    copy_tree(&fixture.join("archived-runs"), &saved.join("runs"));
+    make_managed_directories_private(&saved.join(".archy"));
+    make_managed_directories_private(&saved.join("runs"));
+    let project = saved.join("project.json");
+    let evaluated = command(
+        &project,
+        &[
+            "evaluate",
+            "--run",
+            RUN,
+            "--all",
+            "--idempotency-key",
+            "new-normal-v1",
+            "--expected-project-revision",
+            "1",
+        ],
+    );
+    let verified = verify_run(&project, receipt_id(&evaluated)).unwrap();
+    assert_eq!(
+        verified.evaluations()[0].evaluation_version,
+        "planar-massing-v1"
+    );
+    assert!(verified.evaluations()[0].required_checks_passed);
+    let compared = command(&project, &["compare", "--run", RUN]);
+    assert_eq!(
+        compared["candidates"][0]["evaluation"]["required_checks_passed"],
+        true
+    );
     fs::remove_dir_all(root).unwrap();
 }

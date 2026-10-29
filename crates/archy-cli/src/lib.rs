@@ -32,13 +32,14 @@ pub use generate::generate;
 pub use project_read::{BoundProjectRead, BoundReadSnapshot};
 pub use run_integrity::{TrustedRun, verify_run};
 
+use archy_core::project::v2;
 use archy_core::{
     ArchyError, ErrorCode, EvaluationReport, InputFormat, LockedProject, MutationContext,
     NormalizedSpec, PendingRun, RunManifest, RunMetadata, RunReceipt, Variant, VariantOutcome,
-    sha256_hex,
+    parse_project_current, sha256_hex,
 };
 use archy_generate::GenerationResult;
-use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report};
+use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report, render_report_v2};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -184,6 +185,7 @@ pub(crate) struct RunPayload<'a> {
     pub format: &'a str,
     pub input: &'a [u8],
     pub spec: &'a NormalizedSpec,
+    pub canonical: Option<&'a v2::NormalizedSpec>,
     pub generation: Option<&'a GenerationResult>,
     pub params: Option<&'a [u8]>,
     pub variants: &'a [Variant],
@@ -196,8 +198,11 @@ pub(crate) fn publish(
     payload: RunPayload<'_>,
     check: Option<&dyn Fn() -> Result<(), ArchyError>>,
 ) -> Result<RunReceipt, ArchyError> {
-    let normalized = serde_json::to_vec(payload.spec)
-        .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
+    let normalized = match payload.canonical {
+        Some(canonical) => serde_json::to_vec(canonical),
+        None => serde_json::to_vec(payload.spec),
+    }
+    .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
     let input_sha256 = sha256_hex(payload.input);
     let normalized_sha256 = sha256_hex(&normalized);
     let context = ReportContext {
@@ -219,12 +224,21 @@ pub(crate) fn publish(
             .generation
             .and_then(|g| g.attempt_diagnostics.clone()),
     };
-    let report = render_report(
-        payload.spec,
-        payload.variants,
-        payload.evaluations,
-        &context,
-    )?;
+    let report = match payload.canonical {
+        Some(canonical) => render_report_v2(
+            payload.spec,
+            canonical,
+            payload.variants,
+            payload.evaluations,
+            &context,
+        )?,
+        None => render_report(
+            payload.spec,
+            payload.variants,
+            payload.evaluations,
+            &context,
+        )?,
+    };
     let input_path = match payload.format {
         "json" => "input.json",
         "yaml" => "input.yaml",
@@ -247,6 +261,29 @@ pub(crate) fn publish(
         "application/json",
         "archy-core",
     )?;
+    if let Some(canonical) = payload.canonical {
+        let source = std::str::from_utf8(payload.input)
+            .map_err(|_| ArchyError::schema("project", "Project is not UTF-8"))?;
+        let format = if payload.format == "json" {
+            InputFormat::Json
+        } else {
+            InputFormat::Yaml
+        };
+        let parsed = parse_project_current(source, format)?;
+        if parsed.canonical != *canonical {
+            return Err(artifact_invalid("run source and canonical project differ"));
+        }
+        pending.write(
+            "profile.json",
+            &run_integrity::profile_bytes(
+                payload.operation,
+                &metadata.algorithm_version,
+                parsed.source_schema_version,
+            )?,
+            "application/json",
+            "archy-cli",
+        )?;
+    }
     if let Some(generation) = payload.generation {
         let bytes = serde_json::to_vec(generation)
             .map_err(|e| ArchyError::new(ErrorCode::InternalError, "generation", e.to_string()))?;

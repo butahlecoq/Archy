@@ -2,9 +2,11 @@
 use archy_core::*;
 
 fn main() {
-    let input = include_str!("../../../tests/fixtures/briefs/courtyard.json");
-    let project: Project = serde_json::from_str(input).unwrap();
-    let normalized = parse_project(input, InputFormat::Json).unwrap();
+    let input = include_str!("../../../tests/fixtures/briefs/courtyard-v2.json");
+    let project: project::v2::Project = serde_json::from_str(input).unwrap();
+    let normalized = parse_project_current(input, InputFormat::Json)
+        .unwrap()
+        .canonical;
     let codes = [
         ErrorCode::InvalidSchema,
         ErrorCode::InvalidGeometry,
@@ -22,6 +24,6 @@ fn main() {
         .collect();
     println!(
         "{}",
-        serde_json::json!({"schemas": {"project": project_schema(), "normalized-project": normalized_schema(), "error": error_schema(), "proposal": proposal_schema(), "decision-record": decision_record_schema()}, "project": project, "normalized": normalized, "errors": errors})
+        serde_json::json!({"schemas": {"project": project_schema(), "normalized-project": normalized_schema(), "error": error_schema(), "proposal": proposal_schema(), "decision-record": decision_record_schema(), "project-v1": project_schema_v1(), "normalized-project-v1": normalized_schema_v1()}, "project": project, "normalized": normalized, "errors": errors})
     );
 }

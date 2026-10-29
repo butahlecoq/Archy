@@ -4,6 +4,7 @@ use archy_core::*;
 use geo::{Area, BoundingRect};
 
 pub const EVALUATION_VERSION: &str = "planar-massing-v1";
+pub const AUTHORITY_EVALUATION_VERSION: &str = "planar-massing-authority-v2";
 pub const PROFESSIONAL_LIMITS: &str = "Measures declared geometric bounds only; not legal compliance or professional certification. Sources and authority are unverified declarations. GFA approximates repeated footprint area; daylight, structure, access, cost and local regulations are uncomputed.";
 pub const GEOMETRY_PARITY_POLICY_VERSION: &str = "polygon-coordinate-parity-v1";
 pub const RIGID_TRANSFORM_POLICY_VERSION: &str = "rigid-xy-ordered-v1";
@@ -137,6 +138,47 @@ pub fn compare_rigid_geometry(
 }
 
 pub fn evaluate_variant(
+    spec: &NormalizedSpec,
+    variant: &Variant,
+) -> Result<EvaluationReport, ArchyError> {
+    let mut report = evaluate_variant_v1(spec, variant)?;
+    for constraint in &spec.constraints {
+        if constraint.source == "claimed_regulation" {
+            report.checks.push(Check {
+                constraint_id: format!("authority:{}", constraint.id),
+                result: CheckResult::Unknown,
+                measured: None,
+                limit: None,
+                explanation: format!(
+                    "Legal authority evidence unverified; source={}; authority={} is a user declaration, not verified law; geometric result is recorded separately",
+                    constraint.source, constraint.authority
+                ),
+                required: true,
+            });
+        }
+    }
+    if report
+        .checks
+        .iter()
+        .any(|check| check.result == CheckResult::Unknown)
+    {
+        report.evaluation_version = AUTHORITY_EVALUATION_VERSION.into();
+        report.required_checks_passed = required_checks_pass(&report.checks);
+    }
+    Ok(report)
+}
+
+/// Fresh canonical v2 runs retain the authority profile even without a claim.
+pub fn evaluate_variant_v2(
+    spec: &NormalizedSpec,
+    variant: &Variant,
+) -> Result<EvaluationReport, ArchyError> {
+    let mut report = evaluate_variant(spec, variant)?;
+    report.evaluation_version = AUTHORITY_EVALUATION_VERSION.into();
+    Ok(report)
+}
+
+pub fn evaluate_variant_v1(
     spec: &NormalizedSpec,
     variant: &Variant,
 ) -> Result<EvaluationReport, ArchyError> {

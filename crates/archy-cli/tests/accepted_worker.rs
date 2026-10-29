@@ -8,8 +8,51 @@ use archy_core::{ErrorCode, ProjectStore, RevisionRecord, RunManifest, sha256_he
 use serde_json::Value;
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
+
+fn copy_managed_tree(source: &Path, destination: &Path) {
+    fs::create_dir(destination).unwrap();
+    fs::set_permissions(destination, fs::Permissions::from_mode(0o700)).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let target = destination.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_managed_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn authentic_v1_worker_source_remains_eligible_when_v2_import_rejects_preferences() {
+    let fixture = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/legacy-preference-run"
+    ));
+    let root = std::env::temp_dir().join(format!("archy-worker-v1-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&root).unwrap();
+    let project = root.join("project.json");
+    fs::copy(fixture.join("project.json"), &project).unwrap();
+    copy_managed_tree(&fixture.join(".archy"), &root.join(".archy"));
+    copy_managed_tree(&fixture.join("archived-runs"), &root.join("runs"));
+    let source = fs::read_to_string(&project).unwrap();
+    assert!(archy_core::parse_project_current(&source, archy_core::InputFormat::Json).is_err());
+    let receipt: archy_cli::WorkflowReceipt =
+        serde_json::from_slice(&fs::read(fixture.join("receipt.json")).unwrap()).unwrap();
+    let request = accepted_service_request(
+        &project,
+        &receipt.run_id,
+        &receipt.variant_ids[0],
+        "historical-job",
+        AcceptedWorkerBackend::Blender,
+    )
+    .unwrap();
+    assert_eq!(wire(request)["run_id"], receipt.run_id);
+    fs::remove_dir_all(root).unwrap();
+}
 
 fn temp_project() -> PathBuf {
     let root = std::env::temp_dir().join(format!("archy-worker-bind-{}", uuid::Uuid::new_v4()));

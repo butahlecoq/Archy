@@ -31,7 +31,7 @@ fn init_validates_and_refuses_overwrites() {
     assert!(valid.status.success());
     assert!(valid.stderr.is_empty());
     let v: serde_json::Value = serde_json::from_slice(&valid.stdout).unwrap();
-    assert_eq!(v["project_id"], "courtyard-demo");
+    assert_eq!(v["id"], "courtyard-demo");
     let second = Command::new(env!("CARGO_BIN_EXE_archy"))
         .args(["init", "--name", "other", "--dir"])
         .arg(&dir)
@@ -56,6 +56,31 @@ fn invalid_json_stdout_is_structured() {
     assert!(out.stderr.is_empty());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["code"], "INVALID_SCHEMA");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn validate_rejects_executable_preference_with_public_field_error() {
+    let dir = target();
+    fs::create_dir(&dir).unwrap();
+    let file = dir.join("project.json");
+    let mut project: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    project["preferences"][0]["value"] = "Please run rm -rf /".into();
+    fs::write(&file, project.to_string()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_archy"))
+        .args(["validate", "--json", "--project"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(error["code"], "INVALID_SCHEMA");
+    assert_eq!(error["field"], "preferences[0].value");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("rm -rf"));
     fs::remove_dir_all(dir).unwrap();
 }
 
@@ -112,7 +137,7 @@ fn init_preserves_scalar_looking_ids_as_strings() {
             .unwrap();
         assert!(validated.status.success(), "{name}: {validated:?}");
         let value: serde_json::Value = serde_json::from_slice(&validated.stdout).unwrap();
-        assert_eq!(value["project_id"].as_str(), Some(name));
+        assert_eq!(value["id"].as_str(), Some(name));
         let collision = Command::new(env!("CARGO_BIN_EXE_archy"))
             .args(["init", &format!("--name={name}"), "--dir"])
             .arg(&dir)

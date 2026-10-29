@@ -121,6 +121,7 @@
           "type": "array"
         },
         "evaluation_version": {
+          "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$",
           "type": "string"
         },
         "geometry_parity_budget": {
@@ -215,6 +216,12 @@
       ],
       "type": "object"
     },
+    "MeterUnit": {
+      "enum": [
+        "m"
+      ],
+      "type": "string"
+    },
     "Metric": {
       "additionalProperties": false,
       "properties": {
@@ -239,6 +246,12 @@
         "method_version"
       ],
       "type": "object"
+    },
+    "NormalizationVersion": {
+      "enum": [
+        "si-rectangle-v2"
+      ],
+      "type": "string"
     },
     "NormalizedBrief": {
       "additionalProperties": false,
@@ -272,8 +285,11 @@
       "additionalProperties": false,
       "properties": {
         "authority": {
-          "description": "User declaration only. Absent authority becomes `assumption`.",
           "type": "string"
+        },
+        "bound": {
+          "format": "double",
+          "type": "number"
         },
         "id": {
           "type": "string"
@@ -284,15 +300,15 @@
         "source": {
           "type": "string"
         },
-        "value_m": {
-          "format": "double",
-          "type": "number"
+        "unit": {
+          "$ref": "#/$defs/MeterUnit"
         }
       },
       "required": [
         "id",
         "kind",
-        "value_m",
+        "bound",
+        "unit",
         "source",
         "authority"
       ],
@@ -328,7 +344,6 @@
     },
     "NormalizedSpec": {
       "additionalProperties": false,
-      "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
       "properties": {
         "brief": {
           "$ref": "#/$defs/NormalizedBrief"
@@ -342,20 +357,29 @@
         "generation": {
           "$ref": "#/$defs/Generation"
         },
-        "normalization_version": {
+        "id": {
           "type": "string"
         },
-        "preferences": {
+        "normalization_version": {
+          "$ref": "#/$defs/NormalizationVersion"
+        },
+        "notes": {
           "items": {
             "type": "string"
           },
+          "maxItems": 4,
           "type": "array"
         },
-        "project_id": {
-          "type": "string"
+        "preferences": {
+          "items": {
+            "$ref": "#/$defs/Preference"
+          },
+          "maxItems": 8,
+          "type": "array",
+          "uniqueItems": true
         },
         "schema_version": {
-          "type": "string"
+          "$ref": "#/$defs/SchemaVersion"
         },
         "site": {
           "$ref": "#/$defs/NormalizedSite"
@@ -365,17 +389,18 @@
           "type": "number"
         },
         "units": {
-          "$ref": "#/$defs/Units"
+          "$ref": "#/$defs/MeterUnit"
         }
       },
       "required": [
         "schema_version",
-        "project_id",
+        "id",
         "units",
         "site",
         "brief",
         "constraints",
         "preferences",
+        "notes",
         "generation",
         "normalization_version",
         "tolerance_m"
@@ -418,6 +443,33 @@
         "count"
       ],
       "type": "object"
+    },
+    "Preference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "PreferenceKind": {
+      "enum": [
+        "massing_character",
+        "landscape_intent",
+        "architectural_intent"
+      ],
+      "type": "string"
     },
     "ReportContext": {
       "additionalProperties": false,
@@ -516,6 +568,18 @@
       ],
       "type": "object"
     },
+    "ReportVersionV2": {
+      "enum": [
+        "archy-report-v2"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "enum": [
+        "0.2.0"
+      ],
+      "type": "string"
+    },
     "Shape": {
       "enum": [
         "rectangle",
@@ -603,15 +667,6 @@
         }
       ]
     },
-    "Units": {
-      "enum": [
-        "m",
-        "mm",
-        "cm",
-        "ft"
-      ],
-      "type": "string"
-    },
     "Variant": {
       "additionalProperties": false,
       "properties": {
@@ -681,11 +736,15 @@
     "context": {
       "$ref": "#/$defs/ReportContext"
     },
+    "preference_status": {
+      "type": "string"
+    },
     "professional_limits": {
       "type": "string"
     },
     "schema_version": {
-      "type": "string"
+      "$ref": "#/$defs/ReportVersionV2"
+
     },
     "spec": {
       "$ref": "#/$defs/NormalizedSpec"
@@ -709,8 +768,9 @@
     "spec",
     "variants",
     "uncomputed",
-    "professional_limits"
+    "professional_limits",
+    "preference_status"
   ],
-  "title": "ReportDocument",
+  "title": "ReportDocumentV2",
   "type": "object"
 }

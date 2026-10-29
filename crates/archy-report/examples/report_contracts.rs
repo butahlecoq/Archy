@@ -1,7 +1,9 @@
-use archy_core::{InputFormat, parse_project};
-use archy_eval::evaluate_variant;
+use archy_core::{InputFormat, parse_project, parse_project_current};
+use archy_eval::{evaluate_variant, evaluate_variant_v2};
 use archy_generate::{ALGORITHM_VERSION, generate_variants};
-use archy_report::{ReportContext, render_report, report_schema};
+use archy_report::{
+    ReportContext, render_report, render_report_v2, report_schema, report_schema_v2,
+};
 
 fn main() {
     let spec = parse_project(
@@ -32,8 +34,28 @@ fn main() {
     };
     let artifacts = render_report(&spec, &generation.variants, &evaluations, &context).unwrap();
     let report: serde_json::Value = serde_json::from_slice(&artifacts.json).unwrap();
+    let current = parse_project_current(
+        include_str!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        InputFormat::Json,
+    )
+    .unwrap();
+    let current_evaluations: Vec<_> = generation
+        .variants
+        .iter()
+        .map(|variant| evaluate_variant_v2(&current.numeric, variant).unwrap())
+        .collect();
+    let current_artifacts = render_report_v2(
+        &current.numeric,
+        &current.canonical,
+        &generation.variants,
+        &current_evaluations,
+        &context,
+    )
+    .unwrap();
+    let current_report: serde_json::Value =
+        serde_json::from_slice(&current_artifacts.json).unwrap();
     println!(
         "{}",
-        serde_json::json!({"schemas": {"report": report_schema()}, "report": report})
+        serde_json::json!({"schemas": {"report": report_schema_v2(), "report-v1": report_schema()}, "report": current_report, "report_v1": report})
     );
 }

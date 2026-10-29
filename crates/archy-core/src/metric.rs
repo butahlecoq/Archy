@@ -30,6 +30,7 @@ pub struct GeometryParityBudget {
 #[serde(try_from = "EvaluationReportData", deny_unknown_fields)]
 pub struct EvaluationReport {
     pub variant_id: String,
+    #[schemars(regex(pattern = r"^(planar-massing-v1|planar-massing-authority-v2)$"))]
     pub evaluation_version: String,
     pub metrics: Vec<Metric>,
     pub checks: Vec<Check>,
@@ -44,6 +45,7 @@ pub struct EvaluationReport {
 #[schemars(rename = "EvaluationReport")]
 struct EvaluationReportData {
     variant_id: String,
+    #[schemars(regex(pattern = r"^(planar-massing-v1|planar-massing-authority-v2)$"))]
     evaluation_version: String,
     metrics: Vec<Metric>,
     checks: Vec<Check>,

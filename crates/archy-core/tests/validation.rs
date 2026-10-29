@@ -1,4 +1,303 @@
-use archy_core::{ErrorCode, InputFormat, parse_project};
+use archy_core::{ErrorCode, InputFormat, parse_project, parse_project_current};
+
+#[test]
+fn downgraded_v2_source_reports_a_public_version_error() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    source["schema_version"] = "0.1.0".into();
+    let error = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidSchema);
+    assert_eq!(error.field, "schema_version");
+    assert!(error.message.contains("0.2.0"));
+    assert!(!error.message.contains("ARCHY_PATH"));
+}
+
+#[test]
+fn canonical_project_has_explicit_identity_bounds_units_and_typed_intentions() {
+    let source = include_str!("../../../tests/fixtures/briefs/courtyard-v2.json");
+    let current = parse_project_current(source, InputFormat::Json).unwrap();
+    let value = serde_json::to_value(&current.canonical).unwrap();
+    assert_eq!(value["schema_version"], "0.2.0");
+    assert_eq!(value["normalization_version"], "si-rectangle-v2");
+    assert_eq!(value["id"], "courtyard-demo");
+    assert!(value.get("project_id").is_none());
+    for constraint in value["constraints"].as_array().unwrap() {
+        assert_eq!(constraint["unit"], "m");
+        for field in ["id", "kind", "bound", "source", "authority"] {
+            assert!(constraint.get(field).is_some());
+        }
+        assert!(constraint.get("value_m").is_none());
+    }
+    assert_eq!(
+        value["preferences"][0],
+        serde_json::json!({"kind":"massing_character","value":"courtyard"})
+    );
+    assert_eq!(current.canonical.numeric_view().unwrap(), current.numeric);
+}
+
+#[test]
+fn fresh_legacy_import_preserves_declarative_wishes_without_losing_geometry() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard.json"
+    ))
+    .unwrap();
+    source["preferences"] = serde_json::json!(["courtyard", "retain trees"]);
+    let current = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+    assert_eq!(
+        current.numeric,
+        parse_project(&source.to_string(), InputFormat::Json).unwrap()
+    );
+    assert_eq!(current.canonical.preferences.len(), 2);
+    for text in [
+        "Courtyard",
+        "warm brick facade",
+        "low rise massing",
+        "quiet shaded entry",
+    ] {
+        source["preferences"] = serde_json::json!([text]);
+        let parsed = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+        assert_eq!(parsed.canonical.preferences[0].value, text);
+        assert_eq!(parsed.numeric.preferences[0], text);
+    }
+    for text in [
+        "execute: python3 -c print(1)",
+        "guarantee 80% daylight autonomy",
+        "<script>alert(1)</script>",
+        "80% daylight autonomy",
+    ] {
+        source["preferences"] = serde_json::json!([text]);
+        let error = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidSchema);
+        assert_eq!(error.field, "preferences[0].value");
+        assert!(!error.message.contains(text));
+    }
+}
+
+#[test]
+fn fresh_preferences_reject_executable_requests_and_preserve_architectural_prose() {
+    let v2: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    let v1: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard.json"
+    ))
+    .unwrap();
+    for value in [
+        "Please run rm -rf /",
+        "PLEASE RUN RM -RF /",
+        "Please 'run' \"rm -rf /\"",
+        "Could you run rm -rf /?",
+        "Please run make install",
+        "Run a process outside the project",
+        "Could you launch a tool?",
+        "run python3 -c print(1)",
+        "Run the shell script",
+        "launch a bash script",
+        "Delete the files",
+        "curl https://example.invalid/",
+        "A courtyard; please run rm -rf /",
+    ] {
+        for (mut source, legacy) in [(v2.clone(), false), (v1.clone(), true)] {
+            source["preferences"] = if legacy {
+                serde_json::json!([value])
+            } else {
+                serde_json::json!([{"kind":"architectural_intent","value":value}])
+            };
+            let error = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+            assert_eq!(error.code, ErrorCode::InvalidSchema, "{value}");
+            assert_eq!(error.field, "preferences[0].value", "{value}");
+            assert!(!error.message.contains(value));
+        }
+    }
+    for value in [
+        "long run of south-facing glazing",
+        "warm shell-like brick facade",
+        "quiet courtyard with a shaded entry",
+        "retain mature trees along the north edge",
+        "open communal garden and flexible rooms",
+        "a Python-inspired courtyard arrangement",
+    ] {
+        let mut source = v2.clone();
+        source["preferences"] = serde_json::json!([{"kind":"architectural_intent","value":value}]);
+        assert_eq!(
+            parse_project_current(&source.to_string(), InputFormat::Json)
+                .unwrap()
+                .canonical
+                .preferences[0]
+                .value,
+            value
+        );
+    }
+    let mut canonical = parse_project_current(&v2.to_string(), InputFormat::Json)
+        .unwrap()
+        .canonical;
+    canonical.preferences[0].value = "Please run rm -rf /".into();
+    assert_eq!(
+        canonical.numeric_view().unwrap_err().field,
+        "preferences[0].value"
+    );
+}
+
+#[test]
+fn canonical_preferences_reject_extra_fields_duplicates_and_unknown_values() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    source["preferences"][0]["target"] = 80.into();
+    let extra = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+    assert_eq!(extra.code, ErrorCode::InvalidSchema);
+    source["preferences"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("target");
+    source["preferences"][0]["value"] = "low_rise".into();
+    assert!(parse_project_current(&source.to_string(), InputFormat::Json).is_ok());
+    source["preferences"][0]["value"] = "x".repeat(900_000).into();
+    let oversized = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+    assert_eq!(oversized.field, "preferences[0].value");
+    assert!(oversized.message.len() < 200);
+    source["preferences"][0]["value"] = "courtyard".into();
+    let first = source["preferences"][0].clone();
+    source["preferences"].as_array_mut().unwrap().push(first);
+    let duplicate = parse_project_current(&source.to_string(), InputFormat::Json).unwrap_err();
+    assert_eq!(duplicate.field, "preferences[2]");
+    source["preferences"].as_array_mut().unwrap().pop();
+    source["preferences"][1] = source["preferences"][0].clone();
+    assert_eq!(
+        parse_project_current(&source.to_string(), InputFormat::Json)
+            .unwrap_err()
+            .field,
+        "preferences[1]"
+    );
+}
+
+#[test]
+fn passive_notes_preserve_other_prose_without_changing_numeric_design() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    let baseline = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+    let note = "Prefer a warm brick facade; please retain the old orchard";
+    source["notes"] = serde_json::json!([note]);
+    let changed = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+    assert_eq!(changed.canonical.notes, vec![note]);
+    assert_eq!(changed.numeric, baseline.numeric);
+    source["notes"] = serde_json::json!(["x".repeat(513)]);
+    assert_eq!(
+        parse_project_current(&source.to_string(), InputFormat::Json)
+            .unwrap_err()
+            .field,
+        "notes[0]"
+    );
+}
+
+#[test]
+fn canonical_bound_converts_declared_unit_and_keeps_source_authority() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    source["constraints"][0]["bound"] = serde_json::json!(12.0 / 0.3048);
+    source["constraints"][0]["unit"] = "ft".into();
+    source["constraints"][0]["source"] = "architect_sketch".into();
+    source["constraints"][0]["authority"] = "unverified_client_note".into();
+    let current = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+    let constraint = &current.canonical.constraints[0];
+    assert!((constraint.bound - 12.0).abs() < 1e-12);
+    assert_eq!(serde_json::to_value(constraint.unit).unwrap(), "m");
+    assert_eq!(constraint.source, "architect_sketch");
+    assert_eq!(constraint.authority, "unverified_client_note");
+}
+
+#[test]
+fn canonical_preferences_keep_order_and_yaml_json_agree() {
+    let mut source: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    source["preferences"] = serde_json::json!([
+        {"kind":"architectural_intent","value":"warm brick facade"},
+        {"kind":"massing_character","value":"low_rise"},
+        {"kind":"landscape_intent","value":"retain mature trees"}
+    ]);
+    let json = parse_project_current(&source.to_string(), InputFormat::Json).unwrap();
+    let yaml = serde_saphyr::to_string(&source).unwrap();
+    let yaml = parse_project_current(&yaml, InputFormat::Yaml).unwrap();
+    assert_eq!(json.canonical, yaml.canonical);
+    assert_eq!(json.numeric, yaml.numeric);
+    assert_eq!(
+        json.canonical
+            .preferences
+            .iter()
+            .map(|p| p.value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["warm brick facade", "low_rise", "retain mature trees"]
+    );
+    assert_eq!(json.canonical.numeric_view().unwrap(), json.numeric);
+}
+
+#[test]
+fn canonical_semantic_errors_name_source_fields() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
+    for (field, change) in [
+        ("id", serde_json::json!({"id":"x".repeat(129)})),
+        (
+            "brief.floor_to_floor_m",
+            serde_json::json!({"brief":{"storeys":3,"floor_to_floor_m":-1,"target_gfa_m2":900}}),
+        ),
+    ] {
+        let mut source = fixture.clone();
+        for (key, value) in change.as_object().unwrap() {
+            source[key] = value.clone();
+        }
+        assert_eq!(
+            parse_project_current(&source.to_string(), InputFormat::Json)
+                .unwrap_err()
+                .field,
+            field
+        );
+    }
+    let mut source = fixture.clone();
+    source["constraints"][0]["bound"] = (-1).into();
+    assert_eq!(
+        parse_project_current(&source.to_string(), InputFormat::Json)
+            .unwrap_err()
+            .field,
+        "constraints[0].bound"
+    );
+    let yaml = include_str!("../../../examples/courtyard-housing/project-v2.yaml").to_owned()
+        + "\nschema_version: 0.1.0\n";
+    let duplicate = parse_project_current(&yaml, InputFormat::Yaml).unwrap_err();
+    assert_eq!(duplicate.field, "schema_version");
+    assert!(!duplicate.message.contains("ARCHY_PATH"));
+}
+
+#[test]
+fn public_canonical_values_must_revalidate_before_numeric_use() {
+    let source = include_str!("../../../tests/fixtures/briefs/courtyard-v2.json");
+    let mut spec = parse_project_current(source, InputFormat::Json)
+        .unwrap()
+        .canonical;
+    spec.constraints[0].bound = -1.0;
+    assert!(spec.numeric_view().is_err());
+    spec.constraints[0].bound = 12.0;
+    spec.tolerance_m = 0.01;
+    assert!(spec.numeric_view().is_err());
+    spec.tolerance_m = 1e-6;
+    spec.site.polygon_xy_m[1][1] = 10.0;
+    assert!(spec.numeric_view().is_err());
+    spec.site.polygon_xy_m[1][1] = 0.0;
+    spec.notes = vec!["x".repeat(513)];
+    assert!(spec.numeric_view().is_err());
+}
 
 const GOLDEN: &str = include_str!("../../../examples/courtyard-housing/project.yaml");
 fn parse(s: &str) -> archy_core::NormalizedSpec {

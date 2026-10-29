@@ -174,14 +174,16 @@ fn rehashed_metric_forgery_is_rejected() {
 #[test]
 fn cli_marks_directional_controls_in_markdown_and_preserves_json_and_history() {
     let (root, project) = fixture();
-    let mut brief: serde_json::Value =
-        serde_json::from_slice(&fs::read(&project).unwrap()).unwrap();
+    let mut brief: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard-v2.json"
+    ))
+    .unwrap();
     let authority = "user\u{202e}:devorppa";
     let source = "source\u{2066}isolate\u{2069} [link](url)|<script>";
     let preference = "café العربية 👩\u{200d}💻 \u{202d}override\u{202c}\u{061c}\u{001b}";
     brief["constraints"][0]["authority"] = authority.into();
     brief["constraints"][0]["source"] = source.into();
-    brief["preferences"] = serde_json::json!([preference]);
+    brief["notes"] = serde_json::json!([preference]);
     fs::write(&project, serde_json::to_vec(&brief).unwrap()).unwrap();
     let generated = Command::new(env!("CARGO_BIN_EXE_archy"))
         .arg("generate")
@@ -199,7 +201,7 @@ fn cli_marks_directional_controls_in_markdown_and_preserves_json_and_history() {
     let output = cli(&project, None, false);
     assert!(output.status.success());
     let markdown = String::from_utf8(output.stdout).unwrap();
-    for code in [0x202e, 0x2066, 0x2069, 0x202d, 0x202c, 0x061c, 0x001b] {
+    for code in [0x202e, 0x2066, 0x2069] {
         assert!(
             !markdown.contains(char::from_u32(code).unwrap()),
             "raw U+{code:04X}"
@@ -211,13 +213,24 @@ fn cli_marks_directional_controls_in_markdown_and_preserves_json_and_history() {
     }
     assert!(markdown.contains("user\\[U+202E\\]:devorppa"));
     assert!(markdown.contains("\\[link\\]\\(url\\)\\|&lt;script&gt;"));
-    assert!(markdown.contains("café العربية 👩\u{200d}💻"));
+    assert!(markdown.contains("courtyard"));
     let output = cli(&project, None, true);
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["constraints"][0]["authority"], authority);
     assert_eq!(json["constraints"][0]["source"], source);
-    assert_eq!(json["subjective_preferences"][0], preference);
+    assert_eq!(json["subjective_preferences"][0], "courtyard");
+    let generated: serde_json::Value = serde_json::from_slice(&generated.stdout).unwrap();
+    let run = root.join(generated["path"].as_str().unwrap());
+    let normalized: serde_json::Value =
+        serde_json::from_slice(&fs::read(run.join("normalized.json")).unwrap()).unwrap();
+    assert_eq!(normalized["notes"][0], preference);
+    let report_markdown = fs::read_to_string(run.join("report.md")).unwrap();
+    assert!(report_markdown.contains("café العربية 👩\u{200d}💻"));
+    assert!(!report_markdown.contains('\u{202d}'));
+    for code in [0x202d, 0x202c, 0x061c, 0x001b] {
+        assert!(report_markdown.contains(&format!("\\[U+{code:04X}\\]")));
+    }
     assert_eq!(before, inventory(&root));
     fs::remove_dir_all(root).unwrap();
 }

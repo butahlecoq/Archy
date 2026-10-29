@@ -65,6 +65,62 @@ fn data() -> (
 }
 
 #[test]
+fn claimed_regulation_has_separate_required_unknown_in_v2_report() {
+    let (mut spec, variants, _, context) = data();
+    spec.constraints[0].source = "claimed_regulation".into();
+    let evaluations: Vec<_> = variants
+        .iter()
+        .map(|v| evaluate_variant(&spec, v).unwrap())
+        .collect();
+    let artifact = render_report(&spec, &variants, &evaluations, &context).unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&artifact.json).unwrap();
+    assert_eq!(doc["schema_version"], "archy-report-v2");
+    for item in doc["variants"].as_array().unwrap() {
+        let checks = item["evaluation"]["checks"].as_array().unwrap();
+        assert!(
+            checks
+                .iter()
+                .any(|c| c["constraint_id"] == "authority:height"
+                    && c["result"] == "UNKNOWN"
+                    && c["required"] == true
+                    && c["measured"].is_null()
+                    && c["limit"].is_null())
+        );
+        assert!(checks.iter().any(|c| c["constraint_id"] == "height"
+            && (c["result"] == "PASS" || c["result"] == "FAIL")
+            && c["measured"].is_number()));
+        assert_eq!(item["evaluation"]["required_checks_passed"], false);
+    }
+    assert!(
+        String::from_utf8(artifact.markdown)
+            .unwrap()
+            .contains("authority:height: Unknown")
+    );
+    let mut forged = evaluations;
+    forged[0].checks.last_mut().unwrap().result = CheckResult::Pass;
+    assert_eq!(
+        render_report(&spec, &variants, &forged, &context)
+            .unwrap_err()
+            .code,
+        ErrorCode::ArtifactInvalid
+    );
+    let historical: Vec<_> = variants
+        .iter()
+        .map(|v| archy_eval::evaluate_variant_v1(&spec, v).unwrap())
+        .collect();
+    let old = render_report(&spec, &variants, &historical, &context).unwrap();
+    let old: serde_json::Value = serde_json::from_slice(&old.json).unwrap();
+    assert_eq!(old["schema_version"], "archy-report-v1");
+    assert!(
+        old["variants"][0]["evaluation"]["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["constraint_id"] != "authority:height")
+    );
+}
+
+#[test]
 fn json_and_markdown_preserve_declared_evidence_and_stable_order() {
     let (spec, variants, evaluations, context) = data();
     let first = render_report(&spec, &variants, &evaluations, &context).unwrap();

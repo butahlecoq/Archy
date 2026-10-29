@@ -1,20 +1,45 @@
 use crate::{artifact_invalid, generate::EditParameters};
+use archy_core::project::v2;
 use archy_core::{
-    AcceptedHistory, ArchyError, EvaluationReport, InputFormat, LockedProject, NormalizedSpec,
-    ProjectStore, RunManifest, Variant, parse_project_v1, sha256_hex,
+    AcceptedHistory, ArchyError, CurrentProject, EvaluationReport, InputFormat, LockedProject,
+    NormalizedSpec, ProjectStore, RunManifest, Variant, parse_project_current, parse_project_v1,
+    sha256_hex,
 };
-use archy_eval::{EVALUATION_VERSION, evaluate_variant};
+use archy_eval::{
+    AUTHORITY_EVALUATION_VERSION, EVALUATION_VERSION, evaluate_variant_v1, evaluate_variant_v2,
+};
 use archy_generate::{
     ALGORITHM_VERSION, DIAGNOSTIC_ALGORITHM_VERSION, GenerationResult, generate_variants,
     generate_variants_v1,
 };
-use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report};
+use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report, render_report_v2};
 use std::{collections::BTreeSet, path::Path};
+
+/// The inventoried profile fixes the supported tuple for every canonical v2 run.
+/// Historical v1 runs have no such artifact and retain their exact inventory.
+pub(crate) fn profile_bytes(
+    operation: &str,
+    algorithm: &str,
+    source_schema_version: &str,
+) -> Result<Vec<u8>, ArchyError> {
+    serde_json::to_vec(&serde_json::json!({
+        "schema_version": "archy-run-profile-v1",
+        "source_schema_version": source_schema_version,
+        "normalized_schema_version": "0.2.0",
+        "normalization_version": "si-rectangle-v2",
+        "operation": operation,
+        "algorithm_version": algorithm,
+        "evaluation_version": AUTHORITY_EVALUATION_VERSION,
+        "report_version": archy_report::AUTHORITY_REPORT_SCHEMA_VERSION,
+    }))
+    .map_err(|e| artifact_invalid(format!("serialize run profile: {e}")))
+}
 
 #[derive(Debug)]
 pub struct TrustedRun {
     manifest: RunManifest,
     spec: NormalizedSpec,
+    canonical: Option<v2::NormalizedSpec>,
     input: Vec<u8>,
     variants: Vec<Variant>,
     evaluations: Vec<EvaluationReport>,
@@ -26,6 +51,9 @@ impl TrustedRun {
     }
     pub fn spec(&self) -> &NormalizedSpec {
         &self.spec
+    }
+    pub fn canonical(&self) -> Option<&v2::NormalizedSpec> {
+        self.canonical.as_ref()
     }
     pub fn input(&self) -> &[u8] {
         &self.input
@@ -39,6 +67,42 @@ impl TrustedRun {
     pub fn exhaustion(&self) -> &[String] {
         &self.exhaustion
     }
+}
+
+fn has_claimed_regulation(spec: &NormalizedSpec) -> bool {
+    spec.constraints
+        .iter()
+        .any(|constraint| constraint.source == "claimed_regulation")
+}
+
+pub(crate) fn migrate_claimed_v1_source(
+    source: &TrustedRun,
+) -> Result<Option<CurrentProject>, ArchyError> {
+    if source.canonical.is_some() || !has_claimed_regulation(&source.spec) {
+        return Ok(None);
+    }
+    let format = match source.manifest.source_format.as_deref() {
+        Some("json") => InputFormat::Json,
+        Some("yaml") => InputFormat::Yaml,
+        _ => return Err(artifact_invalid("unsupported source format")),
+    };
+    let text = std::str::from_utf8(&source.input)
+        .map_err(|_| artifact_invalid("historical source is not UTF-8"))?;
+    let current = parse_project_current(text, format).map_err(|error| {
+        ArchyError::schema(
+            error.field,
+            format!(
+                "Cannot migrate historical claimed-regulation source to v2 authority profile: {}",
+                error.message
+            ),
+        )
+    })?;
+    if current.numeric != source.spec {
+        return Err(artifact_invalid(
+            "v2 authority migration changed historical numeric source",
+        ));
+    }
+    Ok(Some(current))
 }
 
 pub fn verify_run(project: &Path, run_id: &str) -> Result<TrustedRun, ArchyError> {
@@ -143,27 +207,60 @@ fn verify_one(
         .ok_or_else(|| artifact_invalid("missing normalized snapshot"))?;
     let recorded: serde_json::Value = serde_json::from_slice(recorded_normalized)
         .map_err(|_| artifact_invalid("invalid normalized snapshot"))?;
-    if recorded.get("schema_version").and_then(|v| v.as_str()) != Some("0.1.0")
-        || recorded
+    let profile = (
+        recorded.get("schema_version").and_then(|v| v.as_str()),
+        recorded
             .get("normalization_version")
-            .and_then(|v| v.as_str())
-            != Some("si-rectangle-v1")
-    {
-        return Err(artifact_invalid(
-            "unsupported recorded normalization profile",
-        ));
-    }
-    let spec = parse_project_v1(source, format)
-        .map_err(|e| artifact_invalid(format!("stored source invalid: {e}")))?;
+            .and_then(|v| v.as_str()),
+    );
+    let (spec, canonical, source_schema_version) = match profile {
+        (Some("0.1.0"), Some("si-rectangle-v1")) => (
+            parse_project_v1(source, format)
+                .map_err(|e| artifact_invalid(format!("stored source invalid: {e}")))?,
+            None,
+            None,
+        ),
+        (Some("0.2.0"), Some("si-rectangle-v2")) => {
+            let current = parse_project_current(source, format)
+                .map_err(|e| artifact_invalid(format!("stored source invalid: {e}")))?;
+            (
+                current.numeric,
+                Some(current.canonical),
+                Some(current.source_schema_version),
+            )
+        }
+        _ => {
+            return Err(artifact_invalid(
+                "unsupported recorded normalization profile",
+            ));
+        }
+    };
     if spec.project_id != manifest.project_id {
         return Err(artifact_invalid("project ID mismatch"));
     }
-    let normalized = serde_json::to_vec(&spec)
-        .map_err(|e| artifact_invalid(format!("serialize normalized: {e}")))?;
+    let normalized = match &canonical {
+        Some(value) => serde_json::to_vec(value),
+        None => serde_json::to_vec(&spec),
+    }
+    .map_err(|e| artifact_invalid(format!("serialize normalized: {e}")))?;
     if stored.artifact("normalized.json") != Some(normalized.as_slice())
         || manifest.normalized_sha256.as_deref() != Some(sha256_hex(&normalized).as_str())
     {
         return Err(artifact_invalid("source and normalized snapshot differ"));
+    }
+    if let Some(source_schema_version) = source_schema_version {
+        let expected = profile_bytes(
+            &manifest.operation,
+            &manifest.algorithm_version,
+            source_schema_version,
+        )?;
+        if stored.artifact("profile.json") != Some(expected.as_slice()) {
+            return Err(artifact_invalid(
+                "run profile disagrees with operation and source",
+            ));
+        }
+    } else if stored.artifact("profile.json").is_some() {
+        return Err(artifact_invalid("historical v1 run has a current profile"));
     }
     let supported = match manifest.operation.as_str() {
         "generate" => matches!(
@@ -171,7 +268,10 @@ fn verify_one(
             ALGORITHM_VERSION | DIAGNOSTIC_ALGORITHM_VERSION
         ),
         "edit" => manifest.algorithm_version == ALGORITHM_VERSION,
-        "evaluate" => manifest.algorithm_version == EVALUATION_VERSION,
+        "evaluate" => matches!(
+            manifest.algorithm_version.as_str(),
+            EVALUATION_VERSION | AUTHORITY_EVALUATION_VERSION
+        ),
         _ => return Err(artifact_invalid("unsupported run operation")),
     };
     if !supported {
@@ -193,8 +293,12 @@ fn verify_one(
             if prior.manifest.run_id != id {
                 return Err(artifact_invalid("wrong verified source run"));
             }
+            let authority_upgrade = prior.canonical.is_none()
+                && canonical.is_some()
+                && has_claimed_regulation(&prior.spec);
             if !matches!(prior.manifest.operation.as_str(), "generate" | "edit")
                 || prior.spec != spec
+                || (prior.canonical != canonical && !authority_upgrade)
                 || prior.input != input
             {
                 return Err(artifact_invalid("source run and input snapshot differ"));
@@ -244,6 +348,9 @@ fn verify_one(
     if generation.is_some() {
         expected_paths.insert("generation.json".into());
     }
+    if canonical.is_some() {
+        expected_paths.insert("profile.json".into());
+    }
     if manifest.operation == "edit" {
         expected_paths.insert("params.json".into());
     }
@@ -281,8 +388,27 @@ fn verify_one(
             .ok_or_else(|| artifact_invalid("missing evaluation artifact"))?;
         let evaluation: EvaluationReport = serde_json::from_slice(evaluation_bytes)
             .map_err(|e| artifact_invalid(format!("invalid stored evaluation: {e}")))?;
-        let recomputed = evaluate_variant(&spec, &variant)
-            .map_err(|e| artifact_invalid(format!("evaluation recomputation failed: {e}")))?;
+        if manifest.operation == "evaluate"
+            && evaluation.evaluation_version != manifest.algorithm_version
+        {
+            return Err(artifact_invalid("evaluation version differs from manifest"));
+        }
+        let expected_evaluation_version = if canonical.is_some() {
+            AUTHORITY_EVALUATION_VERSION
+        } else {
+            EVALUATION_VERSION
+        };
+        if evaluation.evaluation_version != expected_evaluation_version {
+            return Err(artifact_invalid(
+                "evaluation profile disagrees with source profile",
+            ));
+        }
+        let recomputed = if canonical.is_some() {
+            evaluate_variant_v2(&spec, &variant)
+        } else {
+            evaluate_variant_v1(&spec, &variant)
+        }
+        .map_err(|e| artifact_invalid(format!("evaluation recomputation failed: {e}")))?;
         if evaluation != recomputed
             || serde_json::to_vec(&recomputed).map_err(|e| artifact_invalid(e.to_string()))?
                 != evaluation_bytes
@@ -367,8 +493,23 @@ fn verify_one(
         return Err(artifact_invalid("operation artifact inventory differs"));
     }
     let context = report_context(&manifest, generation.as_ref(), &exhaustion)?;
-    let report = render_report(&spec, &variants, &evaluations, &context)
-        .map_err(|e| artifact_invalid(format!("report recomputation failed: {e}")))?;
+    if manifest.operation == "evaluate"
+        && manifest.algorithm_version
+            != if canonical.is_some() {
+                AUTHORITY_EVALUATION_VERSION
+            } else {
+                EVALUATION_VERSION
+            }
+    {
+        return Err(artifact_invalid(
+            "operation algorithm disagrees with source profile",
+        ));
+    }
+    let report = match &canonical {
+        Some(value) => render_report_v2(&spec, value, &variants, &evaluations, &context),
+        None => render_report(&spec, &variants, &evaluations, &context),
+    }
+    .map_err(|e| artifact_invalid(format!("report recomputation failed: {e}")))?;
     if stored.artifact("report.json") != Some(report.json.as_slice())
         || stored.artifact("report.md") != Some(report.markdown.as_slice())
         || stored.artifact("events.jsonl")
@@ -381,6 +522,7 @@ fn verify_one(
     Ok(TrustedRun {
         manifest,
         spec,
+        canonical,
         input,
         variants,
         evaluations,

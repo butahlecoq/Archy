@@ -171,7 +171,7 @@ pub fn render_comparison(
     Ok(ComparisonArtifacts { json, markdown })
 }
 
-fn escaped(value: &str) -> String {
+pub(crate) fn escaped(value: &str) -> String {
     let mut out = String::new();
     for ch in value.chars() {
         match ch {

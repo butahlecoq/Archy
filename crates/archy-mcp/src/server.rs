@@ -165,7 +165,7 @@ impl ArchyServer {
                     (
                         0,
                         None,
-                        snapshot.spec().clone(),
+                        NormalizedProject::Current(snapshot.canonical()?.clone()),
                         snapshot.source_sha256().to_owned(),
                     )
                 } else {
@@ -183,7 +183,10 @@ impl ArchyServer {
                     (
                         revision,
                         Some(receipt.run_id.clone()),
-                        run.spec().clone(),
+                        match run.canonical() {
+                            Some(canonical) => NormalizedProject::Current(canonical.clone()),
+                            None => NormalizedProject::Historical(run.spec().clone()),
+                        },
                         run.manifest().input_sha256.clone(),
                     )
                 }
@@ -191,7 +194,7 @@ impl ArchyServer {
                 (
                     snapshot.revision(),
                     None,
-                    snapshot.spec().clone(),
+                    NormalizedProject::Current(snapshot.canonical()?.clone()),
                     snapshot.source_sha256().to_owned(),
                 )
             };
@@ -219,7 +222,7 @@ impl ArchyServer {
             Ok(ValidateProjectData {
                 project_id: args.project_id,
                 source_sha256: snapshot.source_sha256().into(),
-                normalized: snapshot.spec().clone(),
+                normalized: NormalizedProject::Current(snapshot.canonical()?.clone()),
             })
         })())
     }

@@ -1,13 +1,14 @@
 use crate::{
     GenerateInput, GenerationMode, MutationOptions, RunPayload, WorkflowReceipt, artifact_invalid,
     input_format, publish, recorded_manifest_for_key, request_conflict,
-    run_integrity::verify_locked, workflow_receipt,
+    run_integrity::{migrate_claimed_v1_source, verify_locked},
+    workflow_receipt,
 };
 use archy_core::{
     ArchyError, ErrorCode, InputFormat, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata,
-    RunRequest, ShapeParameters, Variant, parse_project, sha256_hex,
+    RunRequest, ShapeParameters, Variant, parse_project_current, sha256_hex,
 };
-use archy_eval::evaluate_variant;
+use archy_eval::{evaluate_variant_v1, evaluate_variant_v2};
 use archy_generate::{ALGORITHM_VERSION, generate_variants};
 use serde::{Deserialize, Serialize};
 
@@ -64,11 +65,17 @@ pub(crate) fn generate_locked(
                 Some(bytes) => bytes.to_vec(),
                 None => locked.read_source()?,
             };
-            let request_bytes =
-                serde_json::to_vec(&serde_json::json!({"mode":"sample","count":count,"seed":seed}))
-                    .map_err(|e| {
-                        ArchyError::new(ErrorCode::InternalError, "request", e.to_string())
-                    })?;
+            let legacy_replay = match &recorded {
+                Some(run) => verify_locked(locked, &run.run_id)?.canonical().is_none(),
+                None => false,
+            };
+            let payload = if legacy_replay {
+                serde_json::json!({"mode":"sample","count":count,"seed":seed})
+            } else {
+                serde_json::json!({"mode":"sample","count":count,"seed":seed,"profile":"si-rectangle-v2"})
+            };
+            let request_bytes = serde_json::to_vec(&payload)
+                .map_err(|e| ArchyError::new(ErrorCode::InternalError, "request", e.to_string()))?;
             let request = RunRequest {
                 schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
                 context,
@@ -86,14 +93,15 @@ pub(crate) fn generate_locked(
             };
             let source = std::str::from_utf8(&raw)
                 .map_err(|_| ArchyError::schema("project", "Project is not UTF-8"))?;
-            let spec = parse_project(source, format)?;
-            let generation = generate_variants(&spec, count, seed)?;
+            let current = parse_project_current(source, format)?;
+            let spec = &current.numeric;
+            let generation = generate_variants(spec, count, seed)?;
             let evaluations = generation
                 .variants
                 .iter()
-                .map(|variant| evaluate_variant(&spec, variant))
+                .map(|variant| evaluate_variant_v2(spec, variant))
                 .collect::<Result<Vec<_>, _>>()?;
-            let normalized = serde_json::to_vec(&spec).map_err(|e| {
+            let normalized = serde_json::to_vec(&current.canonical).map_err(|e| {
                 ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string())
             })?;
             let metadata = RunMetadata {
@@ -113,7 +121,8 @@ pub(crate) fn generate_locked(
                     parent_run_id: None,
                     format: source_format,
                     input: &raw,
-                    spec: &spec,
+                    spec,
+                    canonical: Some(&current.canonical),
                     generation: Some(&generation),
                     params: None,
                     variants: &generation.variants,
@@ -138,7 +147,33 @@ pub(crate) fn generate_locked(
             }
             let params_bytes =
                 locked.read_project_file(&params, archy_core::validation::MAX_INPUT_BYTES)?;
-            let request_bytes = serde_json::to_vec(&serde_json::json!({"mode":"edit","from_run":from_run,"variant":variant,"params_sha256":sha256_hex(&params_bytes)}))
+            let parent = verify_locked(locked, &from_run)?;
+            if !matches!(parent.manifest().operation.as_str(), "generate" | "edit") {
+                return Err(artifact_invalid(
+                    "edit source must be a generation or edit run",
+                ));
+            }
+            let migration = if recorded.is_none() {
+                migrate_claimed_v1_source(&parent)?
+            } else {
+                None
+            };
+            let canonical = migration
+                .as_ref()
+                .map(|current| &current.canonical)
+                .or(parent.canonical());
+            let spec = migration
+                .as_ref()
+                .map_or(parent.spec(), |current| &current.numeric);
+            let mut request_payload = serde_json::json!({"mode":"edit","from_run":from_run,"variant":variant,"params_sha256":sha256_hex(&params_bytes)});
+            let replay_current = match &recorded {
+                Some(run) => verify_locked(locked, &run.run_id)?.canonical().is_some(),
+                None => false,
+            };
+            if canonical.is_some() || replay_current {
+                request_payload["profile"] = "si-rectangle-v2".into();
+            }
+            let request_bytes = serde_json::to_vec(&request_payload)
                 .map_err(|e| ArchyError::new(ErrorCode::InternalError, "request", e.to_string()))?;
             let request = RunRequest {
                 schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
@@ -158,12 +193,6 @@ pub(crate) fn generate_locked(
                 }
                 archy_core::BeginResult::Pending(pending) => pending,
             };
-            let parent = verify_locked(locked, &from_run)?;
-            if !matches!(parent.manifest().operation.as_str(), "generate" | "edit") {
-                return Err(artifact_invalid(
-                    "edit source must be a generation or edit run",
-                ));
-            }
             let parent_variant = parent
                 .variants()
                 .iter()
@@ -174,7 +203,7 @@ pub(crate) fn generate_locked(
             let edit: EditParameters = serde_json::from_slice(&params_bytes)
                 .map_err(|e| ArchyError::schema("params", e.to_string()))?;
             let derived = Variant::new(
-                parent.spec().project_id.clone(),
+                spec.project_id.clone(),
                 parent_variant.seed,
                 ALGORITHM_VERSION.into(),
                 edit.parameters,
@@ -187,18 +216,24 @@ pub(crate) fn generate_locked(
                     "Edit must change canonical geometry or storey inputs",
                 ));
             }
-            let evaluations = vec![evaluate_variant(parent.spec(), &derived)?];
+            let evaluations = vec![if canonical.is_some() {
+                evaluate_variant_v2(spec, &derived)?
+            } else {
+                evaluate_variant_v1(spec, &derived)?
+            }];
             let variants = vec![derived];
-            let normalized = serde_json::to_vec(parent.spec()).map_err(|e| {
-                ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string())
-            })?;
+            let normalized = match canonical {
+                Some(canonical) => serde_json::to_vec(canonical),
+                None => serde_json::to_vec(spec),
+            }
+            .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
             let source_format = parent
                 .manifest()
                 .source_format
                 .as_deref()
                 .ok_or_else(|| artifact_invalid("missing source format"))?;
             let metadata = RunMetadata {
-                project_id: parent.spec().project_id.clone(),
+                project_id: spec.project_id.clone(),
                 normalized_sha256: Some(sha256_hex(&normalized)),
                 source_format: Some(source_format.into()),
                 seed: Some(parent_variant.seed),
@@ -214,7 +249,8 @@ pub(crate) fn generate_locked(
                     parent_run_id: Some(&from_run),
                     format: source_format,
                     input: parent.input(),
-                    spec: parent.spec(),
+                    spec,
+                    canonical,
                     generation: None,
                     params: Some(&params_bytes),
                     variants: &variants,

@@ -28,6 +28,64 @@ fn metric(r: &EvaluationReport, name: &str) -> f64 {
     r.metrics.iter().find(|m| m.name == name).unwrap().value
 }
 #[test]
+fn explicit_regulatory_claim_adds_unknown_without_rewriting_geometry() {
+    let mut s = spec();
+    s.constraints[0].source = "claimed_regulation".into();
+    let v = rectangle(&s, [3., 3.]);
+    let r = evaluate_variant(&s, &v).unwrap();
+    assert_eq!(r.evaluation_version, "planar-massing-authority-v2");
+    assert!(!r.required_checks_passed);
+    assert_eq!(r.checks[0].result, CheckResult::Pass);
+    assert_eq!(r.checks[1].result, CheckResult::Pass);
+    assert!((r.checks[1].measured.unwrap() - 9.6).abs() < 1e-10);
+    assert_eq!(r.checks[1].limit, Some(12.));
+    assert_eq!(r.checks[2].result, CheckResult::Pass);
+    let authority = r
+        .checks
+        .iter()
+        .find(|c| c.constraint_id == "authority:height")
+        .unwrap();
+    assert_eq!(authority.result, CheckResult::Unknown);
+    assert_eq!(authority.measured, None);
+    assert_eq!(authority.limit, None);
+    assert!(authority.required);
+    assert!(authority.explanation.contains("unverified"));
+    assert!(authority.explanation.contains("claimed_regulation"));
+    s.constraints[0].authority = "claimed ordinance".into();
+    assert_eq!(
+        evaluate_variant(&s, &v).unwrap().checks[1].result,
+        CheckResult::Pass
+    );
+    assert_eq!(
+        evaluate_variant(&s, &v)
+            .unwrap()
+            .checks
+            .last()
+            .unwrap()
+            .result,
+        CheckResult::Unknown
+    );
+    s.constraints[0].value_m = 9.;
+    assert_eq!(
+        evaluate_variant(&s, &v).unwrap().checks[1].result,
+        CheckResult::Fail
+    );
+    s.constraints[0].source = "user_brief".into();
+    assert!(
+        evaluate_variant(&s, &v)
+            .unwrap()
+            .checks
+            .iter()
+            .all(|c| c.result != CheckResult::Unknown)
+    );
+    let mut invalid = v;
+    invalid.footprint_xy_m.pop();
+    assert_eq!(
+        evaluate_variant(&s, &invalid).unwrap_err().code,
+        ErrorCode::InvalidGeometry
+    );
+}
+#[test]
 fn rectangle_and_l_have_independent_analytic_measurements_and_translation() {
     let mut s = spec();
     let v = rectangle(&s, [3., 3.]);

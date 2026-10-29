@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import uuid
+import tempfile
 from pathlib import Path
 from jsonschema import Draft202012Validator
 
@@ -69,7 +70,7 @@ for path in sorted((ROOT / 'schemas').glob('*.schema.json')):
         assert name in all_schemas, f'unregistered schema owned by another slice: {path.name}'
         assert read(path) == all_schemas[name], path
     print(f'schema valid: {path.name}')
-for fixture, schema in [('courtyard.json', 'project'), ('courtyard.normalized.json', 'normalized-project')]:
+for fixture, schema in [('courtyard-v2.json', 'project'), ('courtyard-v2.normalized.json', 'normalized-project')]:
     Draft202012Validator(read(ROOT / 'schemas' / f'{schema}.schema.json')).validate(read(ROOT / 'tests/fixtures/briefs' / fixture))
     print(f'fixture conforms: {fixture}')
 for code in read(ROOT / 'schemas/error.schema.json')['$defs']['ErrorCode']['enum']:
@@ -77,7 +78,24 @@ for code in read(ROOT / 'schemas/error.schema.json')['$defs']['ErrorCode']['enum
 print('all nine stable error code fixtures conform')
 for key, schema in [('project', 'project'), ('normalized', 'normalized-project')]:
     Draft202012Validator(read(ROOT / 'schemas' / f'{schema}.schema.json')).validate(contracts[key])
-assert contracts['normalized'] == read(ROOT / 'tests/fixtures/briefs/courtyard.normalized.json')
+assert contracts['normalized'] == read(ROOT / 'tests/fixtures/briefs/courtyard-v2.normalized.json')
+for name in ('project', 'normalized-project'):
+    archived = read(ROOT / 'schemas/archive/v1' / f'{name}.schema.json')
+    assert archived == contracts['schemas'][f'{name}-v1']
+    Draft202012Validator.check_schema(archived)
+assert {'id', 'schema_version', 'site', 'brief', 'constraints'} <= set(contracts['normalized'])
+assert {'id', 'kind', 'bound', 'unit', 'source', 'authority'} <= set(contracts['normalized']['constraints'][0])
+assert 'project_id' not in contracts['normalized']
+assert 'value_m' not in contracts['normalized']['constraints'][0]
+project_schema = read(ROOT / 'schemas/project.schema.json')
+normalized_schema = read(ROOT / 'schemas/normalized-project.schema.json')
+assert project_schema['properties']['preferences']['maxItems'] == 8
+assert project_schema['properties']['notes']['maxItems'] == 4
+assert normalized_schema['properties']['preferences']['maxItems'] == 8
+assert normalized_schema['properties']['notes']['maxItems'] == 4
+assert normalized_schema['$defs']['MeterUnit']['enum'] == ['m']
+assert {'id', 'kind', 'bound', 'unit', 'source', 'authority'} <= set(
+    normalized_schema['$defs']['NormalizedConstraint']['required'])
 for error in contracts['errors']:
     Draft202012Validator(read(ROOT / 'schemas/error.schema.json')).validate(error)
 for name in ('generation', 'evaluation'):
@@ -180,7 +198,18 @@ for name, wire_type, response_type, script in [
 
 report_schema = read(ROOT / 'schemas/report.schema.json')
 Draft202012Validator(report_schema).validate(report['report'])
-assert report == read(ROOT / 'crates/archy-report/tests/fixtures/report-contracts.json')
+assert report == read(ROOT / 'crates/archy-report/tests/fixtures/report-contracts-v2.json')
+old_report = read(ROOT / 'schemas/archive/v1/report.schema.json')
+Draft202012Validator.check_schema(old_report)
+assert hashlib.sha256((ROOT / 'schemas/archive/v1/report.schema.json').read_bytes()).hexdigest() == '1ac061bf8c854800c07bfc64a4f928893b3507f0a2b90f82d37d7a77b135cc59'
+legacy_report = read(ROOT / 'tests/fixtures/legacy-preference-run/archived-runs/5248af90-8dfe-4743-b056-7d3385c62c97/report.json')
+Draft202012Validator(old_report).validate(legacy_report)
+assert {'schema_version', 'context', 'spec', 'variants', 'uncomputed', 'professional_limits', 'preference_status'} <= set(report['report'])
+assert report['report']['schema_version'] == 'archy-report-v2'
+current_v1_fixture = read(ROOT / 'crates/archy-report/tests/fixtures/report-contracts.json')
+assert report['schemas']['report-v1'] == current_v1_fixture['schemas']['report']
+assert report['report_v1'] == current_v1_fixture['report']
+
 for name, schema in [('capabilities', 'desktop-capabilities'), ('status', 'desktop-status'),
                      ('accepted_status', 'desktop-status')]:
     value = desktop[name]
@@ -199,7 +228,54 @@ def cli(path):
     assert not result.stderr, result.stderr
     return result.returncode, json.loads(result.stdout)
 
-status, value = cli(ROOT / 'examples/courtyard-housing/project.yaml')
+project_validator = Draft202012Validator(project_schema)
+base_project = read(ROOT / 'tests/fixtures/briefs/courtyard-v2.json')
+legitimate = copy.deepcopy(base_project)
+legitimate['preferences'] = [
+    {'kind': 'massing_character', 'value': 'low_rise'},
+    {'kind': 'architectural_intent', 'value': 'warm brick facade'},
+    {'kind': 'landscape_intent', 'value': 'shaded garden'},
+]
+assert project_validator.is_valid(legitimate)
+with tempfile.TemporaryDirectory(prefix='archy-a02-legitimate-') as temp:
+    path = Path(temp) / 'project.json'
+    path.write_text(json.dumps(legitimate))
+    status, normalized_legitimate = cli(path)
+assert status == 0 and normalized_legitimate['preferences'] == legitimate['preferences']
+def probe(mutator, field, schema_rejects=True):
+    value = copy.deepcopy(base_project)
+    mutator(value)
+    assert bool(list(project_validator.iter_errors(value))) == schema_rejects, (field, value)
+    with tempfile.TemporaryDirectory(prefix='archy-a02-schema-') as temp:
+        path = Path(temp) / 'project.json'
+        path.write_text(json.dumps(value))
+        status, error = cli(path)
+    assert status != 0 and error['field'] == field, (field, error)
+
+# Local, representable rules must agree with the actual parser.
+probe(lambda p: p.update(id='a'*129), 'id')
+probe(lambda p: p['constraints'][0].update(bound=-1), 'constraints[0].bound')
+probe(lambda p: p['brief'].update(storeys=0), 'brief.storeys')
+probe(lambda p: p['generation'].update(count=1001), 'generation.count')
+probe(lambda p: p['generation'].update(shapes=[]), 'generation.shapes')
+probe(lambda p: p.update(preferences=p['preferences']*5), 'preferences')
+probe(lambda p: p['preferences'][0].update(value='<script>alert(1)</script>'), 'preferences[0].value')
+probe(lambda p: p['preferences'][0].update(value='quiet\u0085courtyard'), 'preferences[0].value')
+probe(lambda p: p['preferences'][0].update(kind='execute'), 'preferences[0].kind')
+probe(lambda p: p['preferences'][0].update(value='x'*257), 'preferences[0].value')
+probe(lambda p: p.update(notes=['x'*513]), 'notes[0]')
+probe(lambda p: p['constraints'][0].update(id='site_containment'), 'constraints[0].id')
+probe(lambda p: p['site'].update(unknown_dimension=1), 'site.unknown_dimension')
+probe(lambda p: p.update(schema_version='0.1.0'), 'schema_version')
+
+# UTF-8 byte totals, arithmetic overflow, and geometric relationships cannot be
+# expressed faithfully by Draft 2020-12 local schema keywords.
+probe(lambda p: p.update(notes=['é'*300]), 'notes[0]', schema_rejects=False)
+probe(lambda p: p.update(notes=['a'*400]*3), 'notes', schema_rejects=False)
+probe(lambda p: p['preferences'][0].update(value='🎨'*200), 'preferences[0].value', schema_rejects=False)
+probe(lambda p: p['brief'].update(floor_to_floor_m=1e308, storeys=4294967295), 'brief.floor_to_floor_m', schema_rejects=False)
+
+status, value = cli(ROOT / 'examples/courtyard-housing/project-v2.yaml')
 assert status == 0 and value == contracts['normalized']
 Draft202012Validator(read(ROOT / 'schemas/normalized-project.schema.json')).validate(value)
 cases = read(ROOT / 'tests/fixtures/briefs/negative-cases.json')
@@ -238,7 +314,7 @@ subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check
 subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-mcp'], cwd=ROOT, check=True)
 for test in ('stdio_contract.py', 'parse_errors.py', 'compare_stdio.py', 'mutations.py'):
     subprocess.run([sys.executable, str(ROOT / 'crates' / 'archy-mcp' / 'tests' / test)],
-                   cwd=ROOT, timeout=300 if test == 'mutations.py' else 120, check=True)
+                   cwd=ROOT, timeout=360 if test == 'mutations.py' else 120, check=True)
 
 demo_env = dict(os.environ, ARCHY_BIN=str(binary))
 subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/demo', '-v'],

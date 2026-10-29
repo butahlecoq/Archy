@@ -255,7 +255,8 @@
           }
         },
         "evaluation_version": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$"
         },
         "geometry_parity_budget": {
           "$ref": "#/$defs/GeometryParityBudget"

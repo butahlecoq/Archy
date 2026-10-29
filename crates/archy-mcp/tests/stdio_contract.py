@@ -181,6 +181,39 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-revision-zero-') as td:
     assert __import__('hashlib').sha256(project.read_bytes()).hexdigest()==new_digest
 print('MCP historical zero refuses without genesis snapshot; current source stays current: PASS')
 
+with tempfile.TemporaryDirectory(prefix='archy-mcp-v2-history-') as td:
+    project=pathlib.Path(td)/'project.json'
+    shutil.copyfile(ROOT/'tests/fixtures/briefs/courtyard-v2.json',project)
+    p=start(project)
+    current=call(p,'validate_project',{'project_id':'courtyard-demo'},1)['result']['structuredContent']['data']['normalized']
+    assert current['schema_version']=='0.2.0' and current['normalization_version']=='si-rectangle-v2'
+    assert current['id']=='courtyard-demo' and current['constraints'][0]['bound']>0
+    finish(p)
+    subprocess.run([str(TARGET/'debug/archy'),'generate','--project',str(project),'--count','1','--seed','42','--json'],capture_output=True,check=True)
+    p=start(project)
+    historical=call(p,'get_project',{'project_id':'courtyard-demo','revision':'1'},2)['result']['structuredContent']['data']['normalized']
+    assert historical==current
+    finish(p)
+print('MCP current v2 and verified historical v2 normalized profiles: PASS')
+
+with tempfile.TemporaryDirectory(prefix='archy-mcp-v1-marker-history-') as td:
+    capture=ROOT/'tests/fixtures/legacy-preference-run'
+    project=pathlib.Path(td)/'project.json'
+    shutil.copyfile(capture/'project.json',project)
+    shutil.copytree(capture/'.archy',pathlib.Path(td)/'.archy')
+    shutil.copytree(capture/'archived-runs',pathlib.Path(td)/'runs')
+    for directory in [pathlib.Path(td)/'.archy',pathlib.Path(td)/'runs']:
+        for child in [directory,*directory.rglob('*')]:
+            if child.is_dir(): child.chmod(0o700)
+    project.write_bytes(b'{bad json')
+    p=start(project)
+    historical=call(p,'get_project',{'project_id':'courtyard-demo','revision':'1'},3)['result']['structuredContent']['data']['normalized']
+    assert historical['schema_version']=='0.1.0' and historical['normalization_version']=='si-rectangle-v1'
+    rejected=call(p,'validate_project',{'project_id':'courtyard-demo'},4)['result']['structuredContent']
+    assert rejected['ok'] is False and rejected['error']['code']=='INVALID_SCHEMA'
+    finish(p)
+print('MCP authentic v1 history survives malformed current source without claiming current validity: PASS')
+
 # A lone UTF-16 surrogate is not a Unicode scalar. The input adapter reports
 # a parse error, and schemas reject it while retaining valid pairs.
 with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:

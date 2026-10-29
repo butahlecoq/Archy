@@ -1,4 +1,5 @@
 use archy_cli::WorkflowReceipt;
+use archy_core::project::v2;
 use archy_core::{ArchyError, NormalizedSpec};
 use archy_report::ComparisonDocument;
 use rmcp::model::{Tool, ToolAnnotations};
@@ -95,13 +96,19 @@ pub struct Envelope<T> {
     pub error: Option<ArchyError>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum NormalizedProject {
+    Historical(NormalizedSpec),
+    Current(v2::NormalizedSpec),
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetProjectData {
     pub project_id: String,
     pub revision: String,
     pub source_sha256: String,
     pub source_run: Option<String>,
-    pub normalized: NormalizedSpec,
+    pub normalized: NormalizedProject,
     pub read_operations: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -109,7 +116,7 @@ pub struct GetProjectData {
 pub struct ValidateProjectData {
     pub project_id: String,
     pub source_sha256: String,
-    pub normalized: NormalizedSpec,
+    pub normalized: NormalizedProject,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -63,6 +63,25 @@ fn evidence() -> ReviewEvidence {
 }
 
 #[test]
+fn review_evidence_keeps_claimed_authority_unknown_beside_geometry_pass() {
+    let mut e = evidence();
+    e.constraints[0].source = "claimed_regulation".into();
+    e.checks.push(Check {
+        constraint_id: "authority:height".into(),
+        result: CheckResult::Unknown,
+        measured: None,
+        limit: None,
+        explanation: "Unverified legal authority declaration".into(),
+        required: true,
+    });
+    e.validate().unwrap();
+    assert_eq!(e.checks[1].result, CheckResult::Pass);
+    assert!(!archy_core::required_checks_pass(&e.checks));
+    e.checks[2].result = CheckResult::Pass;
+    assert_eq!(e.validate().unwrap_err().code, ErrorCode::InvalidSchema);
+}
+
+#[test]
 fn proposal_preserves_evidence_but_rejects_actor_and_decision_in_json() {
     let proposal = Proposal {
         schema_version: PROPOSAL_SCHEMA_VERSION.into(),

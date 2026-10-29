@@ -9,7 +9,7 @@ use crate::{
 };
 use archy_core::{
     AcceptedHistory, ArchyError, ErrorCode, InputFormat, NormalizedSpec, PinnedProjectSource,
-    ProjectStore, RunReceipt, parse_project, sha256_hex,
+    ProjectStore, RunReceipt, parse_project_current, parse_project_v1, sha256_hex,
 };
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,10 @@ pub struct BoundProjectRead {
     source_bytes: Vec<u8>,
     source_sha256: String,
     spec: NormalizedSpec,
+    canonical: Option<archy_core::project::v2::NormalizedSpec>,
+    source_error: Option<ArchyError>,
+    legacy_source_valid: bool,
+    project_id: String,
     root_path: PathBuf,
     identity: String,
     format: InputFormat,
@@ -36,7 +40,24 @@ impl BoundProjectRead {
         let source_bytes = source.read()?;
         let text = std::str::from_utf8(&source_bytes)
             .map_err(|_| ArchyError::schema("project", "Project is not UTF-8"))?;
-        let spec = parse_project(text, format)?;
+        let current = parse_project_current(text, format);
+        let (spec, canonical, source_error, legacy_source_valid) = match current {
+            Ok(current) => (current.numeric, Some(current.canonical), None, false),
+            Err(error) => {
+                let legacy = parse_project_v1(text, format).ok();
+                let history = store.read_history()?;
+                let receipt = history.receipts().last().ok_or_else(|| error.clone())?;
+                let trusted = verify_history(&history, &receipt.run_id)?;
+                let legacy_source_valid = legacy.is_some();
+                (
+                    legacy.unwrap_or_else(|| trusted.spec().clone()),
+                    None,
+                    Some(error),
+                    legacy_source_valid,
+                )
+            }
+        };
+        let project_id = spec.project_id.clone();
         let source_sha256 = sha256_hex(&source_bytes);
         let identity = store.identity_digest()?;
         Ok(Self {
@@ -45,6 +66,10 @@ impl BoundProjectRead {
             source_bytes,
             source_sha256,
             spec,
+            canonical,
+            source_error,
+            legacy_source_valid,
+            project_id,
             root_path,
             identity,
             format,
@@ -66,6 +91,19 @@ impl BoundProjectRead {
         }
         Ok(())
     }
+    fn require_current_source(&self) -> Result<(), ArchyError> {
+        match &self.source_error {
+            Some(error) => Err(error.clone()),
+            None => Ok(()),
+        }
+    }
+    fn require_worker_source(&self) -> Result<(), ArchyError> {
+        if self.canonical.is_some() || self.legacy_source_valid {
+            Ok(())
+        } else {
+            self.require_current_source()
+        }
+    }
     pub fn snapshot(&self) -> Result<BoundReadSnapshot<'_>, ArchyError> {
         self.check_binding()?;
         Ok(BoundReadSnapshot {
@@ -78,6 +116,7 @@ impl BoundProjectRead {
         run_id: &str,
         use_run: impl FnOnce(&TrustedRun) -> Result<T, ArchyError>,
     ) -> Result<T, ArchyError> {
+        self.require_worker_source()?;
         let locked = self.store.lock()?;
         self.check_binding()?;
         let run = crate::run_integrity::verify_locked(&locked, run_id)?;
@@ -91,7 +130,7 @@ impl BoundProjectRead {
         Ok(result)
     }
     pub fn project_id(&self) -> &str {
-        &self.spec.project_id
+        &self.project_id
     }
     pub fn identity(&self) -> &str {
         &self.identity
@@ -103,6 +142,7 @@ impl BoundProjectRead {
             &dyn Fn() -> Result<(), ArchyError>,
         ) -> Result<WorkflowReceipt, ArchyError>,
     ) -> Result<WorkflowReceipt, ArchyError> {
+        self.require_current_source()?;
         self.check_binding()?;
         self.store.read_history()?;
         let locked = self.store.lock()?;
@@ -192,6 +232,14 @@ impl BoundReadSnapshot<'_> {
     pub fn spec(&self) -> &NormalizedSpec {
         &self.owner.spec
     }
+    pub fn canonical(&self) -> Result<&archy_core::project::v2::NormalizedSpec, ArchyError> {
+        self.owner.canonical.as_ref().ok_or_else(|| {
+            self.owner
+                .source_error
+                .clone()
+                .expect("missing current project error")
+        })
+    }
     pub fn source_sha256(&self) -> &str {
         &self.owner.source_sha256
     }
@@ -206,7 +254,7 @@ impl BoundReadSnapshot<'_> {
     }
     pub fn verify_run(&self, run_id: &str) -> Result<TrustedRun, ArchyError> {
         let run = verify_history(&self.history, run_id)?;
-        if run.manifest().project_id != self.owner.spec.project_id {
+        if run.manifest().project_id != self.owner.project_id {
             return Err(artifact_invalid(
                 "Accepted run belongs to another project ID",
             ));

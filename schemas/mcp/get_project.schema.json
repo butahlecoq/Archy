@@ -101,7 +101,7 @@
         "additionalProperties": false,
         "properties": {
           "normalized": {
-            "$ref": "#/$defs/NormalizedSpec"
+            "$ref": "#/$defs/NormalizedProject"
           },
           "project_id": {
             "type": "string"
@@ -133,6 +133,18 @@
           "read_operations"
         ],
         "type": "object"
+      },
+      "MeterUnit": {
+        "enum": [
+          "m"
+        ],
+        "type": "string"
+      },
+      "NormalizationVersion": {
+        "enum": [
+          "si-rectangle-v2"
+        ],
+        "type": "string"
       },
       "NormalizedBrief": {
         "additionalProperties": false,
@@ -191,6 +203,49 @@
           "authority"
         ],
         "type": "object"
+      },
+      "NormalizedConstraint2": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "bound": {
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/ConstraintKind"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/$defs/MeterUnit"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "bound",
+          "unit",
+          "source",
+          "authority"
+        ],
+        "type": "object"
+      },
+      "NormalizedProject": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NormalizedSpec"
+          },
+          {
+            "$ref": "#/$defs/NormalizedSpec2"
+          }
+        ]
       },
       "NormalizedSite": {
         "additionalProperties": false,
@@ -275,6 +330,104 @@
           "tolerance_m"
         ],
         "type": "object"
+      },
+      "NormalizedSpec2": {
+        "additionalProperties": false,
+        "properties": {
+          "brief": {
+            "$ref": "#/$defs/NormalizedBrief"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/$defs/NormalizedConstraint2"
+            },
+            "type": "array"
+          },
+          "generation": {
+            "$ref": "#/$defs/Generation"
+          },
+          "id": {
+            "type": "string"
+          },
+          "normalization_version": {
+            "$ref": "#/$defs/NormalizationVersion"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "preferences": {
+            "items": {
+              "$ref": "#/$defs/Preference"
+            },
+            "maxItems": 8,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "schema_version": {
+            "$ref": "#/$defs/SchemaVersion"
+          },
+          "site": {
+            "$ref": "#/$defs/NormalizedSite"
+          },
+          "tolerance_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "units": {
+            "$ref": "#/$defs/MeterUnit"
+          }
+        },
+        "required": [
+          "schema_version",
+          "id",
+          "units",
+          "site",
+          "brief",
+          "constraints",
+          "preferences",
+          "notes",
+          "generation",
+          "normalization_version",
+          "tolerance_m"
+        ],
+        "type": "object"
+      },
+      "Preference": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/PreferenceKind"
+          },
+          "value": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "type": "object"
+      },
+      "PreferenceKind": {
+        "enum": [
+          "massing_character",
+          "landscape_intent",
+          "architectural_intent"
+        ],
+        "type": "string"
+      },
+      "SchemaVersion": {
+        "enum": [
+          "0.2.0"
+        ],
+        "type": "string"
       },
       "Shape": {
         "enum": [

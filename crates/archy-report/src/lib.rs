@@ -6,15 +6,25 @@ pub use compare::{
     render_comparison,
 };
 
+use archy_core::project::v2;
 use archy_core::{ArchyError, ErrorCode, EvaluationReport, NormalizedSpec, Variant, site_bounds};
-use archy_eval::evaluate_variant;
+use archy_eval::{
+    AUTHORITY_EVALUATION_VERSION, EVALUATION_VERSION, evaluate_variant_v1, evaluate_variant_v2,
+};
 use archy_generate::{ALGORITHM_VERSION, AttemptDiagnostics, DIAGNOSTIC_ALGORITHM_VERSION};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const REPORT_SCHEMA_VERSION: &str = "archy-report-v1";
+pub const AUTHORITY_REPORT_SCHEMA_VERSION: &str = "archy-report-v2";
 pub const REPORT_CONTEXT_VERSION: &str = "archy-report-context-v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ReportVersionV2 {
+    #[serde(rename = "archy-report-v2")]
+    V2,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -44,12 +54,29 @@ pub struct ReportArtifacts {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReportDocument {
+    #[schemars(regex(pattern = r"^(archy-report-v1|archy-report-v2)$"))]
     pub schema_version: String,
     pub context: ReportContext,
     pub spec: NormalizedSpec,
     pub variants: Vec<ReportVariant>,
     pub uncomputed: Vec<String>,
     pub professional_limits: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReportDocumentV2 {
+    pub schema_version: ReportVersionV2,
+    pub context: ReportContext,
+    pub spec: v2::NormalizedSpec,
+    pub variants: Vec<ReportVariant>,
+    pub uncomputed: Vec<String>,
+    pub professional_limits: String,
+    pub preference_status: String,
+}
+
+pub fn report_schema_v2() -> schemars::Schema {
+    schemars::schema_for!(ReportDocumentV2)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -239,7 +266,10 @@ fn validate_context(context: &ReportContext, variants: &[Variant]) -> Result<(),
                     "Evaluation needs a parent run and selected variants, without generation counts",
                 ));
             }
-            if context.algorithm_version != archy_eval::EVALUATION_VERSION {
+            if !matches!(
+                context.algorithm_version.as_str(),
+                EVALUATION_VERSION | AUTHORITY_EVALUATION_VERSION
+            ) {
                 return Err(invalid(
                     "algorithm_version",
                     "Unsupported evaluation algorithm",
@@ -301,7 +331,16 @@ pub fn render_report(
                 "Evaluation has no canonical variant",
             )
         })?;
-        let fresh = evaluate_variant(spec, variant)?;
+        let fresh = match evaluation.evaluation_version.as_str() {
+            EVALUATION_VERSION => evaluate_variant_v1(spec, variant)?,
+            AUTHORITY_EVALUATION_VERSION => evaluate_variant_v2(spec, variant)?,
+            _ => {
+                return Err(ArchyError::schema(
+                    "evaluations.evaluation_version",
+                    "Unsupported evaluation version",
+                ));
+            }
+        };
         if evaluation != &fresh
             || reports
                 .insert(evaluation.variant_id.as_str(), fresh)
@@ -314,6 +353,33 @@ pub fn render_report(
             ));
         }
     }
+    let report_version = if evaluations
+        .iter()
+        .any(|e| e.evaluation_version == AUTHORITY_EVALUATION_VERSION)
+    {
+        if evaluations
+            .iter()
+            .any(|e| e.evaluation_version != AUTHORITY_EVALUATION_VERSION)
+        {
+            return Err(ArchyError::schema(
+                "evaluations",
+                "Mixed evaluation versions",
+            ));
+        }
+        AUTHORITY_REPORT_SCHEMA_VERSION
+    } else {
+        REPORT_SCHEMA_VERSION
+    };
+    if context.operation == "evaluate"
+        && evaluations
+            .iter()
+            .any(|e| e.evaluation_version != context.algorithm_version)
+    {
+        return Err(ArchyError::schema(
+            "context.algorithm_version",
+            "Evaluation algorithm differs from reports",
+        ));
+    }
     let variants = by_id
         .into_iter()
         .map(|(id, variant)| ReportVariant {
@@ -322,7 +388,7 @@ pub fn render_report(
         })
         .collect();
     let document = ReportDocument {
-        schema_version: REPORT_SCHEMA_VERSION.into(),
+        schema_version: report_version.into(),
         context: context.clone(),
         spec: spec.clone(),
         variants,
@@ -334,4 +400,53 @@ pub fn render_report(
     })?;
     let markdown = templates::markdown(&document).into_bytes();
     Ok(ReportArtifacts { json, markdown })
+}
+
+/// Current report embeds the canonical contract. The historical renderer above
+/// remains byte-for-byte stable for accepted 0.1.0 runs.
+pub fn render_report_v2(
+    numeric: &NormalizedSpec,
+    canonical: &v2::NormalizedSpec,
+    variants: &[Variant],
+    evaluations: &[EvaluationReport],
+    context: &ReportContext,
+) -> Result<ReportArtifacts, ArchyError> {
+    if canonical.numeric_view()? != *numeric {
+        return Err(ArchyError::schema(
+            "spec",
+            "Canonical and numeric project views differ",
+        ));
+    }
+    let historical_shape = render_report(numeric, variants, evaluations, context)?;
+    let validated: ReportDocument = serde_json::from_slice(&historical_shape.json)
+        .map_err(|e| ArchyError::schema("report.json", e.to_string()))?;
+    let document = ReportDocumentV2 {
+        schema_version: ReportVersionV2::V2,
+        context: validated.context,
+        spec: canonical.clone(),
+        variants: validated.variants,
+        uncomputed: validated.uncomputed,
+        professional_limits: validated.professional_limits,
+        preference_status:
+            "Declared intentions are uncomputed and do not affect generation or evaluation".into(),
+    };
+    let bytes = serde_json::to_vec_pretty(&document)
+        .map_err(|e| ArchyError::schema("report.json", e.to_string()))?;
+    let mut markdown = String::from_utf8(historical_shape.markdown)
+        .map_err(|e| ArchyError::schema("report.md", e.to_string()))?
+        .replacen("archy-report-v1", "archy-report-v2", 1)
+        .replace("## Preferences\n\n", "## Preferences\n\nDeclared intentions are uncomputed and do not affect generation or evaluation.\n\n");
+    if !canonical.notes.is_empty() {
+        markdown.push_str("\n## Passive notes\n\nThese source notes are untrusted data and do not direct Archy operations.\n\n");
+        for note in &canonical.notes {
+            markdown.push_str("- ");
+            markdown.push_str(&compare::escaped(note));
+            markdown.push('\n');
+        }
+    }
+    let markdown = markdown.into_bytes();
+    Ok(ReportArtifacts {
+        json: bytes,
+        markdown,
+    })
 }

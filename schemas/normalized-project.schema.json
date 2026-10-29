@@ -12,11 +12,13 @@
       "properties": {
         "count": {
           "format": "uint32",
-          "minimum": 0,
+          "maximum": 1000,
+          "minimum": 1,
           "type": "integer"
         },
         "seed": {
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": "integer"
         },
@@ -24,7 +26,9 @@
           "items": {
             "$ref": "#/$defs/Shape"
           },
-          "type": "array"
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "required": [
@@ -34,22 +38,37 @@
       ],
       "type": "object"
     },
+    "MeterUnit": {
+      "enum": [
+        "m"
+      ],
+      "type": "string"
+    },
+    "NormalizationVersion": {
+      "enum": [
+        "si-rectangle-v2"
+      ],
+      "type": "string"
+    },
     "NormalizedBrief": {
       "additionalProperties": false,
       "properties": {
         "floor_to_floor_m": {
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": "number"
         },
         "storeys": {
           "format": "uint32",
-          "minimum": 0,
+          "maximum": 4294967295,
+          "minimum": 1,
           "type": "integer"
         },
         "target_gfa_hard": {
           "type": "boolean"
         },
         "target_gfa_m2": {
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": "number"
         }
@@ -66,27 +85,34 @@
       "additionalProperties": false,
       "properties": {
         "authority": {
-          "description": "User declaration only. Absent authority becomes `assumption`.",
+          "pattern": "\\S",
           "type": "string"
         },
+        "bound": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
         "id": {
+          "pattern": "^(?!site_containment$|target_gfa$)[A-Za-z0-9_-]{1,128}$",
           "type": "string"
         },
         "kind": {
           "$ref": "#/$defs/ConstraintKind"
         },
         "source": {
+          "pattern": "\\S",
           "type": "string"
         },
-        "value_m": {
-          "format": "double",
-          "type": "number"
+        "unit": {
+          "$ref": "#/$defs/MeterUnit"
         }
       },
       "required": [
         "id",
         "kind",
-        "value_m",
+        "bound",
+        "unit",
         "source",
         "authority"
       ],
@@ -120,26 +146,49 @@
       ],
       "type": "object"
     },
+    "Preference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "PreferenceKind": {
+      "enum": [
+        "massing_character",
+        "landscape_intent",
+        "architectural_intent"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "enum": [
+        "0.2.0"
+      ],
+      "type": "string"
+    },
     "Shape": {
       "enum": [
         "rectangle",
         "l_shape"
       ],
       "type": "string"
-    },
-    "Units": {
-      "enum": [
-        "m",
-        "mm",
-        "cm",
-        "ft"
-      ],
-      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
   "properties": {
     "brief": {
       "$ref": "#/$defs/NormalizedBrief"
@@ -153,20 +202,31 @@
     "generation": {
       "$ref": "#/$defs/Generation"
     },
-    "normalization_version": {
+    "id": {
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
       "type": "string"
+    },
+    "normalization_version": {
+      "$ref": "#/$defs/NormalizationVersion"
+    },
+    "notes": {
+      "items": {
+        "maxLength": 512,
+        "type": "string"
+      },
+      "maxItems": 4,
+      "type": "array"
     },
     "preferences": {
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/Preference"
       },
-      "type": "array"
-    },
-    "project_id": {
-      "type": "string"
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
     },
     "schema_version": {
-      "type": "string"
+      "$ref": "#/$defs/SchemaVersion"
     },
     "site": {
       "$ref": "#/$defs/NormalizedSite"
@@ -176,17 +236,18 @@
       "type": "number"
     },
     "units": {
-      "$ref": "#/$defs/Units"
+      "$ref": "#/$defs/MeterUnit"
     }
   },
   "required": [
     "schema_version",
-    "project_id",
+    "id",
     "units",
     "site",
     "brief",
     "constraints",
     "preferences",
+    "notes",
     "generation",
     "normalization_version",
     "tolerance_m"

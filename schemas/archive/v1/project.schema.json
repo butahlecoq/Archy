@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "Brief": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor_to_floor_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target_gfa": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "target_gfa_hard": {
+          "default": false,
+          "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "storeys"
+      ],
+      "type": "object"
+    },
+    "Constraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Units"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "value_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "Generation": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "Site": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "depth_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "north_deg": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "polygon_xy_m": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "width": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "width_m": {
+          "default": null,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Structural input contract. Generic dimensions obey declared units; explicit\n_m/_m2 fields always mean SI. Core additionally enforces exclusive dimension\nrepresentations, positive finite values, version and rectangular geometry.",
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/Brief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/Constraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation",
+      "default": {
+        "count": 3,
+        "seed": 42,
+        "shapes": [
+          "rectangle",
+          "l_shape"
+        ]
+      }
+    },
+    "preferences": {
+      "default": [],
+      "description": "Text preferences survive normalization without invented metrics.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "site": {
+      "$ref": "#/$defs/Site"
+    },
+    "units": {
+      "$ref": "#/$defs/Units"
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "units",
+    "site",
+    "brief",
+    "constraints"
+  ],
+  "title": "Project",
+  "type": "object"
+}

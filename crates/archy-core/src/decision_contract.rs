@@ -138,7 +138,14 @@ impl ReviewEvidence {
         let mut seen = HashSet::new();
         for check in &self.checks {
             let id = check.constraint_id.as_str();
-            if !(ids.contains(id) || matches!(id, "site_containment" | "target_gfa"))
+            let authority_claim = id.strip_prefix("authority:").and_then(|constraint_id| {
+                self.constraints
+                    .iter()
+                    .find(|c| c.id == constraint_id && c.source == "claimed_regulation")
+            });
+            if !(ids.contains(id)
+                || matches!(id, "site_containment" | "target_gfa")
+                || authority_claim.is_some())
                 || !seen.insert(id)
                 || !check.required
             {
@@ -183,6 +190,16 @@ impl ReviewEvidence {
                     "PASS requires measured and limit",
                 ));
             }
+            if authority_claim.is_some()
+                && (check.result != CheckResult::Unknown
+                    || check.measured.is_some()
+                    || check.limit.is_some())
+            {
+                return Err(ArchyError::schema(
+                    "checks.result",
+                    "Unverified authority requires UNKNOWN without fabricated measurements",
+                ));
+            }
         }
         if !seen.contains("site_containment") || ids.iter().any(|id| !seen.contains(id)) {
             return Err(ArchyError::schema(
@@ -195,6 +212,8 @@ impl ReviewEvidence {
 
     /// Bind the projection to exact normalized, variant and evaluation bytes and their inventory.
     /// This does not prove their origin, recompute the evaluator, verify history, or authorize a decision.
+    /// A fully rewritten local chain including its source can still masquerade as historical v1
+    /// without an external trust anchor; callers must verify the accepted run and its policy.
     pub fn claimed_checks_passed_against(
         &self,
         normalized: &[u8],
@@ -214,17 +233,50 @@ impl ReviewEvidence {
                 ));
             }
         }
-        let spec: NormalizedSpec = serde_json::from_slice(normalized)
+        let profile: serde_json::Value = serde_json::from_slice(normalized)
             .map_err(|_| ArchyError::schema("normalized", "Invalid normalized project"))?;
+        let current = match (
+            profile.get("schema_version").and_then(|v| v.as_str()),
+            profile
+                .get("normalization_version")
+                .and_then(|v| v.as_str()),
+        ) {
+            (Some("0.2.0"), Some("si-rectangle-v2")) => true,
+            (Some("0.1.0"), Some("si-rectangle-v1")) => false,
+            _ => {
+                return Err(ArchyError::schema(
+                    "normalized",
+                    "Unsupported normalized profile",
+                ));
+            }
+        };
+        let spec: NormalizedSpec = if current {
+            serde_json::from_slice::<crate::project::v2::NormalizedSpec>(normalized)
+                .map_err(|_| ArchyError::schema("normalized", "Invalid canonical project"))?
+                .numeric_view()?
+        } else {
+            serde_json::from_slice(normalized)
+                .map_err(|_| ArchyError::schema("normalized", "Invalid normalized project"))?
+        };
         let variant: Variant = serde_json::from_slice(variant)
             .map_err(|_| ArchyError::schema("variant", "Invalid variant"))?;
         let evaluation: EvaluationReport = serde_json::from_slice(evaluation)
             .map_err(|_| ArchyError::schema("evaluation", "Invalid evaluation"))?;
         site_bounds(&spec)?;
-        if evaluation.evaluation_version != "planar-massing-v1" {
+        let authority_v2 = match evaluation.evaluation_version.as_str() {
+            "planar-massing-v1" => false,
+            "planar-massing-authority-v2" => true,
+            _ => {
+                return Err(ArchyError::schema(
+                    "evaluation_version",
+                    "Unsupported evaluation version",
+                ));
+            }
+        };
+        if authority_v2 != current {
             return Err(ArchyError::schema(
                 "evaluation_version",
-                "Unsupported evaluation version",
+                "Evaluation profile disagrees with normalized project",
             ));
         }
         if spec.project_id != self.project_id
@@ -248,14 +300,31 @@ impl ReviewEvidence {
                 "Projection differs from bound evidence",
             ));
         }
-        let has_target = self.checks.iter().any(|c| c.constraint_id == "target_gfa");
-        if has_target != spec.brief.target_gfa_hard {
+        let claimed: Vec<_> = spec
+            .constraints
+            .iter()
+            .filter(|c| c.source == "claimed_regulation")
+            .collect();
+        let mut expected: HashSet<String> = spec.constraints.iter().map(|c| c.id.clone()).collect();
+        expected.insert("site_containment".into());
+        if spec.brief.target_gfa_hard {
+            expected.insert("target_gfa".into());
+        }
+        if authority_v2 {
+            expected.extend(claimed.iter().map(|c| format!("authority:{}", c.id)));
+        }
+        let actual: HashSet<_> = self
+            .checks
+            .iter()
+            .map(|c| c.constraint_id.clone())
+            .collect();
+        if actual != expected {
             return Err(ArchyError::schema(
                 "checks",
-                "Hard target check inventory differs from brief",
+                "Check inventory differs from evaluation version and normalized constraints",
             ));
         }
-        if has_target
+        if spec.brief.target_gfa_hard
             && self
                 .checks
                 .iter()
@@ -268,7 +337,8 @@ impl ReviewEvidence {
                 "Target limit differs from brief",
             ));
         }
-        Ok(self.checks.iter().all(|c| c.result == CheckResult::Pass))
+        Ok((claimed.is_empty() || authority_v2)
+            && self.checks.iter().all(|c| c.result == CheckResult::Pass))
     }
 }
 

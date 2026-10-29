@@ -67,6 +67,18 @@ pub fn render_verified_comparison(
             "Comparison source must be a generation or edit run",
         ));
     }
+    if trusted.canonical().is_none()
+        && trusted
+            .spec()
+            .constraints
+            .iter()
+            .any(|constraint| constraint.source == "claimed_regulation")
+    {
+        return Err(ArchyError::schema(
+            "run",
+            "Historical v1 claimed-regulation checks lack authority verification; comparison requires a v2 authority-profile run with explicit lineage.",
+        ));
+    }
     let source = ComparisonSource {
         run_id: manifest.run_id.clone(),
         manifest_sha256: manifest_sha256.to_owned(),

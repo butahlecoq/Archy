@@ -5,6 +5,7 @@
       "properties": {
         "floor_to_floor": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -13,6 +14,7 @@
         },
         "floor_to_floor_m": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -21,11 +23,13 @@
         },
         "storeys": {
           "format": "uint32",
-          "minimum": 0,
+          "maximum": 4294967295,
+          "minimum": 1,
           "type": "integer"
         },
         "target_gfa": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -38,6 +42,7 @@
         },
         "target_gfa_m2": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -54,53 +59,36 @@
       "additionalProperties": false,
       "properties": {
         "authority": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "bound": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
         },
         "id": {
+          "pattern": "^(?!site_containment$|target_gfa$)[A-Za-z0-9_-]{1,128}$",
           "type": "string"
         },
         "kind": {
           "$ref": "#/$defs/ConstraintKind"
         },
         "source": {
+          "pattern": "\\S",
           "type": "string"
         },
         "unit": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Units"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "value": {
-          "default": null,
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "value_m": {
-          "default": null,
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
+          "$ref": "#/$defs/Units"
         }
       },
       "required": [
         "id",
         "kind",
-        "source"
+        "bound",
+        "unit",
+        "source",
+        "authority"
       ],
       "type": "object"
     },
@@ -116,11 +104,13 @@
       "properties": {
         "count": {
           "format": "uint32",
-          "minimum": 0,
+          "maximum": 1000,
+          "minimum": 1,
           "type": "integer"
         },
         "seed": {
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": "integer"
         },
@@ -128,7 +118,9 @@
           "items": {
             "$ref": "#/$defs/Shape"
           },
-          "type": "array"
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
         }
       },
       "required": [
@@ -137,6 +129,39 @@
         "shapes"
       ],
       "type": "object"
+    },
+    "Preference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "PreferenceKind": {
+      "enum": [
+        "massing_character",
+        "landscape_intent",
+        "architectural_intent"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "enum": [
+        "0.2.0"
+      ],
+      "type": "string"
     },
     "Shape": {
       "enum": [
@@ -150,6 +175,7 @@
       "properties": {
         "depth": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -158,6 +184,7 @@
         },
         "depth_m": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -180,6 +207,8 @@
             "minItems": 2,
             "type": "array"
           },
+          "maxItems": 5,
+          "minItems": 5,
           "type": [
             "array",
             "null"
@@ -196,6 +225,8 @@
             "minItems": 2,
             "type": "array"
           },
+          "maxItems": 5,
+          "minItems": 5,
           "type": [
             "array",
             "null"
@@ -203,6 +234,7 @@
         },
         "width": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -211,6 +243,7 @@
         },
         "width_m": {
           "default": null,
+          "exclusiveMinimum": 0,
           "format": "double",
           "type": [
             "number",
@@ -232,7 +265,6 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "Structural input contract. Generic dimensions obey declared units; explicit\n_m/_m2 fields always mean SI. Core additionally enforces exclusive dimension\nrepresentations, positive finite values, version and rectangular geometry.",
   "properties": {
     "brief": {
       "$ref": "#/$defs/Brief"
@@ -254,19 +286,32 @@
         ]
       }
     },
-    "preferences": {
+    "id": {
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "type": "string"
+    },
+    "notes": {
       "default": [],
-      "description": "Text preferences survive normalization without invented metrics.",
+      "description": "Passive source text. It does not set a constraint or direct an operation.",
       "items": {
+        "maxLength": 512,
         "type": "string"
       },
+      "maxItems": 4,
       "type": "array"
     },
-    "project_id": {
-      "type": "string"
+    "preferences": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Preference"
+      },
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
     },
     "schema_version": {
-      "type": "string"
+      "$ref": "#/$defs/SchemaVersion"
     },
     "site": {
       "$ref": "#/$defs/Site"
@@ -277,7 +322,7 @@
   },
   "required": [
     "schema_version",
-    "project_id",
+    "id",
     "units",
     "site",
     "brief",
