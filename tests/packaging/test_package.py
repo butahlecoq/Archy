@@ -38,18 +38,24 @@ class StageTests(unittest.TestCase):
         (self.source / "data/schema.json").write_text("{}\n")
         self.binary = self.base / "archy"
         self.binary.write_bytes(b"ELF fixture")
+        self.notices = self.base / "THIRD-PARTY-NOTICES.txt"
+        self.notices.write_bytes(b"notice fixture\n")
+        self.notice_inventory = self.base / "third-party-notices.json"
+        self.notice_inventory.write_text(json.dumps({"bundle_sha256": hashlib.sha256(self.notices.read_bytes()).hexdigest()}))
         self.manifest = self.base / "files.txt"
-        self.manifest.write_text("@binary\tusr/bin/archy\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\ndata/schema.json\tusr/share/archy/schema.json\t0644\n")
+        self.manifest.write_text("@binary\tusr/bin/archy\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\ndata/schema.json\tusr/share/archy/schema.json\t0644\n@notices\tusr/share/licenses/archy/THIRD-PARTY-NOTICES.txt\t0644\n@notice-inventory\tusr/share/archy/third-party-notices.json\t0644\n")
         self.inventory = self.base / "inventory.json"
 
     def stage(self):
         return run_tool("stage", "--source", self.source, "--binary", self.binary,
-                        "--manifest", self.manifest, "--dest", self.dest, "--inventory", self.inventory)
+                        "--manifest", self.manifest, "--dest", self.dest, "--inventory", self.inventory,
+                        "--notices-file", self.notices, "--notice-inventory-file", self.notice_inventory)
 
     def stage_direct(self):
         return PACKAGE.stage(SimpleNamespace(source=str(self.source), binary=str(self.binary),
                                              manifest=str(self.manifest), dest=str(self.dest),
-                                             inventory=str(self.inventory)))
+                                             inventory=str(self.inventory), notices_file=str(self.notices),
+                                             notice_inventory_file=str(self.notice_inventory)))
 
     def test_stage_inventory_and_simulated_removal_preserves_sentinels(self):
         sentinels = ["home/person/project/run.json", "home/person/approval.json",
@@ -61,8 +67,8 @@ class StageTests(unittest.TestCase):
         result = self.stage()
         self.assertEqual(result.returncode, 0, result.stderr)
         entries = json.loads(self.inventory.read_text())
-        self.assertEqual([e["path"] for e in entries], ["usr/bin/archy", "usr/share/archy/schema.json", "usr/share/licenses/archy/LICENSE"])
-        self.assertEqual([e["mode"] for e in entries], ["0755", "0644", "0644"])
+        self.assertEqual([e["path"] for e in entries], ["usr/bin/archy", "usr/share/archy/schema.json", "usr/share/archy/third-party-notices.json", "usr/share/licenses/archy/LICENSE", "usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt"])
+        self.assertEqual([e["mode"] for e in entries], ["0755", "0644", "0644", "0644", "0644"])
         for entry in entries:
             path = self.dest / entry["path"]
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), entry["sha256"])
@@ -79,6 +85,53 @@ class StageTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(target.read_text(), "previous")
         self.assertFalse((self.dest / "usr/share/archy/schema.json").exists())
+
+    def test_stage_rejects_manifest_without_notice_pair_before_writing(self):
+        lines = self.manifest.read_text().splitlines(keepends=True)
+        self.manifest.write_text("".join(line for line in lines if not line.startswith(("@notices\t", "@notice-inventory\t"))))
+        result = self.stage()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required", result.stderr)
+        self.assertFalse((self.dest / "usr").exists())
+        self.assertFalse(self.inventory.exists())
+
+    def test_stage_uses_notice_bytes_validated_before_source_changes(self):
+        original = self.notices.read_bytes()
+        original_inventory = self.notice_inventory.read_bytes()
+        real_read = PACKAGE.read_regular_nofollow
+        changed = False
+
+        def mutate_after_preflight(path, *args, **kwargs):
+            nonlocal changed
+            data = real_read(path, *args, **kwargs)
+            if path == self.notice_inventory and not changed:
+                changed = True
+                self.notices.write_bytes(b"changed after preflight\n")
+            return data
+
+        with patch.object(PACKAGE, "read_regular_nofollow", side_effect=mutate_after_preflight):
+            self.stage_direct()
+        self.assertTrue(changed)
+        self.assertEqual((self.dest / "usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt").read_bytes(), original)
+        self.assertEqual((self.dest / "usr/share/archy/third-party-notices.json").read_bytes(), original_inventory)
+        self.assertEqual(json.loads(original_inventory)["bundle_sha256"], hashlib.sha256(original).hexdigest())
+        entries = json.loads(self.inventory.read_text())
+        for entry in entries:
+            self.assertEqual(entry["sha256"], hashlib.sha256((self.dest / entry["path"]).read_bytes()).hexdigest())
+
+    def test_stage_rejects_oversized_notice_inputs_before_writing(self):
+        for path, limit in ((self.notices, PACKAGE.NOTICE_LIMIT),
+                            (self.notice_inventory, PACKAGE.NOTICE_INVENTORY_LIMIT)):
+            with self.subTest(path=path.name):
+                with path.open("wb") as stream:
+                    stream.truncate(limit + 1)
+                result = self.stage()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("byte limit", result.stderr)
+                self.assertFalse((self.dest / "usr").exists())
+                self.assertFalse(self.inventory.exists())
+                if path == self.notices:
+                    self.notices.write_bytes(b"notice fixture\n")
 
     def test_rejects_escaping_and_special_entries(self):
         for source, destination in [("../outside", "usr/share/archy/x"),
@@ -185,6 +238,23 @@ class StageTests(unittest.TestCase):
 
 
 class RecipeTests(unittest.TestCase):
+    def test_recipe_rejects_archive_manifest_without_notice_pair(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            archive = base / "source.tar.gz"
+            with tarfile.open(archive, "w:gz") as tf:
+                for name in ("Cargo.lock", "packaging/arch/package.py", "packaging/arch/notices.py",
+                             "packaging/arch/notice-inputs.json", "packaging/arch/files.txt"):
+                    data = b"@binary\tusr/bin/archy\t0755\n" if name.endswith("files.txt") else b"fixture"
+                    info = tarfile.TarInfo("archy-source/" + name)
+                    info.size = len(data)
+                    tf.addfile(info, io.BytesIO(data))
+            output = base / "PKGBUILD"
+            result = run_tool("recipe", "--archive", archive, "--source-id", "v0.1.0-test",
+                              "--sha256", hashlib.sha256(archive.read_bytes()).hexdigest(), "--output", output)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(output.exists())
+
     def test_recipe_does_not_follow_substituted_archive_parent(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -193,7 +263,8 @@ class RecipeTests(unittest.TestCase):
             archive = source_dir / "source.tar.gz"
             with tarfile.open(archive, "w:gz") as tf:
                 for name in ("archy-source/Cargo.lock", "archy-source/packaging/arch/files.txt",
-                             "archy-source/packaging/arch/package.py"):
+                             "archy-source/packaging/arch/package.py", "archy-source/packaging/arch/notices.py",
+                             "archy-source/packaging/arch/notice-inputs.json"):
                     info = tarfile.TarInfo(name)
                     info.size = 4
                     tf.addfile(info, io.BytesIO(b"test"))
@@ -225,7 +296,8 @@ class RecipeTests(unittest.TestCase):
             base = Path(td)
             archive = base / "source.tar.gz"
             required = ["archy-source/Cargo.lock", "archy-source/packaging/arch/files.txt",
-                        "archy-source/packaging/arch/package.py"]
+                        "archy-source/packaging/arch/package.py", "archy-source/packaging/arch/notices.py",
+                        "archy-source/packaging/arch/notice-inputs.json"]
             cases = [
                 [(x, "file") for x in required] + [("archy-source/Cargo.lock", "file")],
                 [(required[0], "directory")] + [(x, "file") for x in required[1:]],
@@ -261,8 +333,10 @@ class RecipeTests(unittest.TestCase):
             (src / "Cargo.lock").write_text("lock")
             package = src / "packaging/arch"
             package.mkdir(parents=True)
-            (package / "files.txt").write_text("@binary\tusr/bin/archy\t0755\n")
+            (package / "files.txt").write_text("@binary\tusr/bin/archy\t0755\n@notices\tusr/share/licenses/archy/THIRD-PARTY-NOTICES.txt\t0644\n@notice-inventory\tusr/share/archy/third-party-notices.json\t0644\n")
             (package / "package.py").write_text("tool")
+            (package / "notices.py").write_text("tool")
+            (package / "notice-inputs.json").write_text("{}")
             with tarfile.open(archive, "w:gz") as tf:
                 tf.add(src, arcname="archy-source")
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -276,6 +350,7 @@ class RecipeTests(unittest.TestCase):
             recipe = output.read_text()
             self.assertIn(digest, recipe)
             self.assertIn("cargo build --offline --locked --release -p archy-cli", recipe)
+            self.assertIn("python3 packaging/arch/notices.py", recipe)
             self.assertIn("RUSTUP_AUTO_INSTALL=0", recipe)
             self.assertIn("depends=('glibc' 'libgcc')", recipe)
             self.assertIn("url='https://github.com/butahlecoq/Archy'", recipe)

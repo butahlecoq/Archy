@@ -16,6 +16,10 @@ import tarfile
 
 PREFIXES = ("usr/bin/", "usr/share/archy/", "usr/share/licenses/archy/")
 DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+NOTICE_LIMIT = 16 * 1024 * 1024
+NOTICE_INVENTORY_LIMIT = 2 * 1024 * 1024
+NOTICE_PATH = "usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt"
+NOTICE_INVENTORY_PATH = "usr/share/archy/third-party-notices.json"
 
 
 def open_directory(path):
@@ -33,14 +37,20 @@ def open_directory(path):
         raise
 
 
-def read_regular_nofollow(path):
+def read_regular_nofollow(path, *, max_bytes=None):
     parent_fd = open_directory(path.parent)
     try:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
         with os.fdopen(fd, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode):
                 raise ValueError(f"non-regular source: {path}")
-            return stream.read()
+            if max_bytes is not None and info.st_size > max_bytes:
+                raise ValueError(f"source exceeds byte limit: {path}")
+            data = stream.read(max_bytes + 1 if max_bytes is not None else -1)
+            if max_bytes is not None and len(data) > max_bytes:
+                raise ValueError(f"source exceeds byte limit: {path}")
+            return data
     finally:
         os.close(parent_fd)
 
@@ -140,15 +150,24 @@ def stage(args):
         if len(fields) != 3:
             raise ValueError("inventory needs source, destination, mode")
         src, dst, mode = fields
-        if src != "@binary":
+        if src not in ("@binary", "@notices", "@notice-inventory"):
             relative(src)
         relative(dst)
         if not dst.startswith(PREFIXES) or dst in seen:
             raise ValueError(f"unowned or duplicate destination: {dst}")
+        reserved = {"@notices": NOTICE_PATH,
+                    "@notice-inventory": NOTICE_INVENTORY_PATH}
+        if (src in reserved and dst != reserved[src]) or (dst in reserved.values() and src not in reserved):
+            raise ValueError(f"invalid notice destination/source: {dst}")
         if mode not in ("0644", "0755") or (dst == "usr/bin/archy") != (mode == "0755"):
             raise ValueError(f"invalid mode: {dst}")
         seen.add(dst)
-        origin = binary if src == "@binary" else source / src
+        special = {"@binary": binary,
+                   "@notices": getattr(args, "notices_file", None),
+                   "@notice-inventory": getattr(args, "notice_inventory_file", None)}
+        if src in special and special[src] is None:
+            raise ValueError(f"missing generated notice input: {src}")
+        origin = Path(special[src]) if src in special else source / src
         regular_nofollow(origin)
         target = dest / dst
         for parent in reversed(target.parents):
@@ -162,6 +181,14 @@ def stage(args):
         rows.append((origin, target, mode, dst))
     if not rows or "usr/bin/archy" not in seen or "usr/share/licenses/archy/LICENSE" not in seen:
         raise ValueError("missing required core paths")
+    if NOTICE_PATH not in seen or NOTICE_INVENTORY_PATH not in seen:
+        raise ValueError("missing required notice bundle/inventory paths")
+    notices = read_regular_nofollow(Path(args.notices_file), max_bytes=NOTICE_LIMIT)
+    inventory_bytes = read_regular_nofollow(Path(args.notice_inventory_file), max_bytes=NOTICE_INVENTORY_LIMIT)
+    metadata = json.loads(inventory_bytes)
+    if not isinstance(metadata, dict) or metadata.get("bundle_sha256") != hashlib.sha256(notices).hexdigest():
+        raise ValueError("notice bundle/inventory checksum mismatch")
+    validated_notices = {NOTICE_PATH: notices, NOTICE_INVENTORY_PATH: inventory_bytes}
     inventory = []
     with ExitStack() as stack:
         root_fd = open_directory(dest)
@@ -169,7 +196,7 @@ def stage(args):
         created = []
         try:
             for origin, target, mode, dst in rows:
-                data = read_regular_nofollow(origin)
+                data = validated_notices[dst] if dst in validated_notices else read_regular_nofollow(origin)
                 parent_fd = open_stage_parent(root_fd, dst, create=True)
                 stack.callback(os.close, parent_fd)
                 fd = os.open(target.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -231,9 +258,21 @@ def recipe(args):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", root):
             raise ValueError("unsafe archive root")
         required = (f"{root}/Cargo.lock", f"{root}/packaging/arch/files.txt",
-                    f"{root}/packaging/arch/package.py")
+                    f"{root}/packaging/arch/package.py", f"{root}/packaging/arch/notices.py",
+                    f"{root}/packaging/arch/notice-inputs.json")
         if any(name not in by_name or not by_name[name].isfile() for name in required):
             raise ValueError("archive lacks regular locked package sources")
+        manifest_member = by_name[f"{root}/packaging/arch/files.txt"]
+        if manifest_member.size > NOTICE_INVENTORY_LIMIT:
+            raise ValueError("archive package manifest exceeds byte limit")
+        manifest_bytes = tf.extractfile(manifest_member).read(NOTICE_INVENTORY_LIMIT + 1)
+        if len(manifest_bytes) > NOTICE_INVENTORY_LIMIT:
+            raise ValueError("archive package manifest exceeds byte limit")
+        manifest_lines = manifest_bytes.decode("utf-8").splitlines()
+        required_notices = (f"@notices\t{NOTICE_PATH}\t0644",
+                            f"@notice-inventory\t{NOTICE_INVENTORY_PATH}\t0644")
+        if any(manifest_lines.count(line) != 1 for line in required_notices):
+            raise ValueError("archive package manifest lacks required notice pair")
     version = args.source_id.removeprefix("v").replace("-", "_")
     if not re.fullmatch(r"[0-9][A-Za-z0-9._+]*", version):
         raise ValueError("source identity cannot form pkgver")
@@ -256,6 +295,9 @@ build() {{
   cd "$srcdir/{root}"
   export RUSTUP_AUTO_INSTALL=0 CARGO_NET_OFFLINE=true
   export CARGO_TARGET_DIR="$srcdir/archy-target"
+  mkdir -p "$srcdir/archy-notices"
+  python3 packaging/arch/notices.py --source . --vendor vendor \\
+    --output-dir "$srcdir/archy-notices"
   cargo build --offline --locked --release -p archy-cli
 }}
 
@@ -263,7 +305,9 @@ package() {{
   cd "$srcdir/{root}"
   python3 packaging/arch/package.py stage --source . \\
     --binary "$srcdir/archy-target/release/archy" \\
-    --manifest packaging/arch/files.txt --dest "$pkgdir"
+    --manifest packaging/arch/files.txt --dest "$pkgdir" \\
+    --notices-file "$srcdir/archy-notices/THIRD-PARTY-NOTICES.txt" \\
+    --notice-inventory-file "$srcdir/archy-notices/third-party-notices.json"
 }}
 '''
     output = Path(args.output)
@@ -279,6 +323,8 @@ def main():
     for flag in ("source", "binary", "manifest", "dest"):
         s.add_argument(f"--{flag}", required=True)
     s.add_argument("--inventory")
+    s.add_argument("--notices-file")
+    s.add_argument("--notice-inventory-file")
     r = subs.add_parser("recipe")
     for flag in ("archive", "source-id", "sha256", "output"):
         r.add_argument(f"--{flag}", required=True)
