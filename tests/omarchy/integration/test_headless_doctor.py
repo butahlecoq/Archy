@@ -9,6 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 HERE = pathlib.Path(__file__).parent
 IMAGE = "sha256:c4050a4bcd4c1f640d8c77b9635bfa70f448da232f1e4b878ce2258c3998de05"
+DOCTOR_BINARY = pathlib.Path(os.environ.get("ARCHY_TEST_DOCTOR_BINARY", str(ROOT / "target/debug/archy")))
 
 
 def run_case(mode, qml_file="shell.qml"):
@@ -17,6 +18,9 @@ def run_case(mode, qml_file="shell.qml"):
         fixture_dir.chmod(0o755)  # Read-only bind must be traversable with dropped DAC capabilities.
         (fixture_dir / "mode").write_text(mode)
         (fixture_dir / "report.json").write_bytes((HERE / "fixtures/doctor-report.json").read_bytes())
+        fixture_binary = fixture_dir / "archy"
+        fixture_binary.write_bytes((HERE / "fixtures/archy-doctor-fixture.sh").read_bytes())
+        fixture_binary.chmod(0o755)
         cmd = [
             "docker", "run", "--rm", "--network", "none", "--read-only",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--user", "65534:65534",
@@ -25,9 +29,9 @@ def run_case(mode, qml_file="shell.qml"):
             "--mount", f"type=bind,src={fixture_dir},dst=/run/archy-fixture,readonly",
         ]
         if mode == "real-doctor":
-            cmd += ["--mount", f"type=bind,src={ROOT / 'target/debug/archy'},dst=/usr/bin/archy,readonly"]
+            cmd += ["--mount", f"type=bind,src={DOCTOR_BINARY},dst=/usr/bin/archy,readonly"]
         elif mode != "startfailure":
-            cmd += ["--mount", f"type=bind,src={HERE / 'fixtures/archy-doctor-fixture.sh'},dst=/usr/bin/archy,readonly"]
+            cmd += ["--mount", f"type=bind,src={fixture_binary},dst=/usr/bin/archy,readonly"]
         cmd += [
             "--env", f"ARCHY_HARNESS_CASE={mode}",
             "--env", "QT_QPA_PLATFORM=offscreen", "--env", "QT_QUICK_BACKEND=software",

@@ -15,20 +15,25 @@ Item {
     window.visible = true
     doctor.panelOpen = true
     doctor.refresh(true)
+    desktop.panelOpen = true
+    desktop.refreshCapabilities()
   }
   function close() {
     closingFromHost = true
     doctor.panelOpen = false
+    desktop.panelOpen = false
     window.visible = false
     closingFromHost = false
   }
   function requestClose() {
     doctor.panelOpen = false
+    desktop.panelOpen = false
     if (shell && typeof shell.hide === "function") shell.hide("archy.status")
     else window.visible = false
   }
 
   DoctorProcess { id: doctor }
+  DesktopProcess { id: desktop }
   FloatingWindow {
     id: window
     title: "Archy status"
@@ -72,10 +77,34 @@ Item {
             delegate: Text { required property var modelData; width: scrollArea.availableWidth; text: modelData.id + ": " + modelData.reason; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
           }
           PanelSeparator {}
-          PanelSectionHeader { text: "PROJECT ACTIONS" }
-          Text { width: parent.width; text: "Project, run, report, preview and Blender actions unavailable until H1–H3 typed CLI capabilities exist."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          PanelSectionHeader { text: "SELECTED PROJECT · READ ONLY" }
+          Text { width: parent.width; text: "Enter the absolute path to a local project.yaml, project.yml or project.json manifest. Nothing is scanned or saved."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          TextField { id: manifestInput; width: parent.width; placeholderText: "/absolute/path/to/project.yaml"; selectByMouse: true }
+          Button { text: "Load selected manifest"; focusable: true; enabled: !desktop.busy; onClicked: desktop.selectManifest(manifestInput.text) }
+          Text { width: parent.width; text: desktop.error || (desktop.stale ? "Project status stale" : "Verified project status available"); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: desktop.error ? Commons.Color.urgent : Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Text { width: parent.width; text: desktop.capabilities ? (desktop.hasStatusCapability() ? "Project and run status available" : "Desktop status capability unavailable") : "Checking desktop capabilities"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Button { text: desktop.busy ? "Reading…" : "Refresh status"; focusable: true; enabled: !desktop.busy && desktop.manifest !== ""; onClicked: desktop.refreshStatus() }
+          Button { text: "Refresh first page"; focusable: true; enabled: !desktop.busy && desktop.manifest !== ""; onClicked: desktop.firstPage() }
+          Text { width: parent.width; text: desktop.status ? ("Project " + desktop.status.project.id + " · revision " + desktop.status.project.revision + " · source " + desktop.status.project.source_sha256) : "No verified project snapshot"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          PanelSectionHeader { text: "NEWEST VERIFIED RUNS" }
           Repeater {
-            model: ["Project status", "Run status", "Open report", "Open preview", "Open Blender"]
+            model: desktop.status ? desktop.status.runs : []
+            delegate: Button { required property var modelData; width: scrollArea.availableWidth; text: modelData.run_id + " · " + modelData.operation + " · revision " + modelData.revision + " · required checks " + (modelData.all_required_checks_passed ? "passed" : "unmet"); focusable: true; enabled: !desktop.busy; onClicked: desktop.selectRun(modelData.run_id) }
+          }
+          Text { width: parent.width; text: desktop.status && desktop.status.runs.length === 0 ? "No accepted runs" : ""; textFormat: Text.PlainText; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Button { text: "Next 20 verified runs"; focusable: true; enabled: !desktop.busy && desktop.status && desktop.status.next_cursor !== null; onClicked: desktop.nextPage() }
+          PanelSectionHeader { text: "SELECTED RUN · VERIFIED METADATA" }
+          Text { width: parent.width; text: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.run_id + " · " + desktop.status.selected_run.summary.operation + " · variants " + desktop.status.selected_run.summary.variant_count + " · required checks " + (desktop.status.selected_run.summary.all_required_checks_passed ? "passed" : "unmet")) : "No run selected"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Repeater {
+            model: desktop.status && desktop.status.selected_run ? desktop.status.selected_run.artifacts : []
+            delegate: Text { required property var modelData; width: scrollArea.availableWidth; text: modelData.id + " · " + modelData.kind + " · " + modelData.byte_len + " bytes · " + modelData.integrity + "\nSHA-256 " + modelData.sha256; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          }
+          Text { width: parent.width; text: desktop.status ? ("Backend jobs: " + desktop.status.backend_jobs.status + " · " + desktop.status.backend_jobs.reason) : "Backend jobs: unknown"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          PanelSeparator {}
+          PanelSectionHeader { text: "OPEN ACTIONS · UNAVAILABLE" }
+          Text { width: parent.width; text: "Report, preview and Blender opening require the H3 verified opener. Artifact metadata does not enable launching."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Repeater {
+            model: ["Open report", "Open preview", "Open Blender"]
             delegate: Button { required property string modelData; text: modelData + " · unavailable"; enabled: false; focusable: false }
           }
           Button { text: "Close"; focusable: true; onClicked: root.requestClose() }

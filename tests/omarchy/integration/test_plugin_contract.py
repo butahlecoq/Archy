@@ -32,7 +32,7 @@ class PluginContract(unittest.TestCase):
             "schemaVersion": 1, "id": "archy.status", "name": "Archy", "version": "0.1.0",
             "kinds": ["panel"], "entryPoints": {"panel": "Main.qml"},
         })
-        self.assertEqual({p.name for p in PLUGIN.iterdir()}, {"manifest.json", "Main.qml", "DoctorProcess.qml", "DoctorModel.js"})
+        self.assertEqual({p.name for p in PLUGIN.iterdir()}, {"manifest.json", "Main.qml", "DoctorProcess.qml", "DoctorModel.js", "DesktopProcess.qml", "DesktopModel.js"})
 
     def test_bad_manifest_cases(self):
         import tempfile
@@ -66,7 +66,17 @@ class PluginContract(unittest.TestCase):
         for token in ('FloatingWindow', 'shell.hide("archy.status")', 'Text.PlainText', 'PanelSectionHeader', 'PanelSeparator', 'Style.space(', 'DoctorProcess'):
             self.assertIn(token, main)
         for token in ('Project status', 'Run status', 'Open report', 'Open preview', 'Open Blender', 'enabled: false'):
+            if token in ('Project status', 'Run status'):
+                continue
             self.assertIn(token, main)
+        self.assertIn('DesktopProcess { id: desktop }', main)
+        self.assertIn('desktop.selectManifest(manifestInput.text)', main)
+        desktop = (PLUGIN / "DesktopProcess.qml").read_text()
+        self.assertIn('Model.capabilitiesArgv()', desktop)
+        self.assertIn('Model.statusArgv(manifest, requestedRunId, pageCursor || null)', desktop)
+        self.assertIn('Model.newProbe(generation, kind, requestedRunId)', desktop)
+        self.assertIn('clearEnvironment: true', desktop)
+        self.assertNotRegex(desktop, r"StdioCollector|Qt\.openUrlExternally|eval\(|createQmlObject|mise\b")
 
     def test_tagged_source_contract(self):
         evidence = json.loads(FIXTURE.read_text())
