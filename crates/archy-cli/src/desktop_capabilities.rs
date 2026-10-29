@@ -15,6 +15,9 @@ pub struct DesktopOperation {
 pub enum DesktopOperationId {
     ProjectStatus,
     RunStatus,
+    OpenReport,
+    OpenPreview,
+    OpenBlender,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -28,12 +31,18 @@ pub fn desktop_capabilities() -> DesktopCapabilities {
         operations: [
             DesktopOperationId::ProjectStatus,
             DesktopOperationId::RunStatus,
+            DesktopOperationId::OpenReport,
+            DesktopOperationId::OpenPreview,
+            DesktopOperationId::OpenBlender,
         ]
         .into_iter()
-        .map(|id| DesktopOperation {
-            id,
-            available: true,
-            reason: None,
+        .map(|id| {
+            let available = match id {
+                DesktopOperationId::ProjectStatus | DesktopOperationId::RunStatus => true,
+                DesktopOperationId::OpenReport | DesktopOperationId::OpenPreview => std::path::Path::new("/usr/bin/xdg-open").is_file(),
+                DesktopOperationId::OpenBlender => std::path::Path::new("/usr/bin/blender").is_file(),
+            };
+            DesktopOperation { id, available, reason: (!available).then(|| "Fixed viewer unavailable; artifact also must be verified in the selected accepted run".into()) }
         })
         .collect(),
     }

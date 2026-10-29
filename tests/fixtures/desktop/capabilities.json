@@ -9,6 +9,21 @@
       "available": true,
       "id": "run_status",
       "reason": null
+    },
+    {
+      "available": false,
+      "id": "open_report",
+      "reason": "Fixed viewer unavailable; artifact also must be verified in the selected accepted run"
+    },
+    {
+      "available": false,
+      "id": "open_preview",
+      "reason": "Fixed viewer unavailable; artifact also must be verified in the selected accepted run"
+    },
+    {
+      "available": false,
+      "id": "open_blender",
+      "reason": "Fixed viewer unavailable; artifact also must be verified in the selected accepted run"
     }
   ],
   "schema_version": "archy-desktop-capabilities-v1"

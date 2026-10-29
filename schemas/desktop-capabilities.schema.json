@@ -25,7 +25,10 @@
     "DesktopOperationId": {
       "enum": [
         "project_status",
-        "run_status"
+        "run_status",
+        "open_report",
+        "open_preview",
+        "open_blender"
       ],
       "type": "string"
     }

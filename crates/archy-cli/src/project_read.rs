@@ -213,4 +213,12 @@ impl BoundReadSnapshot<'_> {
         }
         Ok(run)
     }
+    pub fn verified_artifact(&self, run_id: &str, artifact: &str) -> Result<Vec<u8>, ArchyError> {
+        self.verify_run(run_id)?;
+        self.history
+            .read_run(run_id)?
+            .artifact(artifact)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| artifact_invalid("artifact is absent from accepted run"))
+    }
 }

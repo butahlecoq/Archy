@@ -112,6 +112,24 @@ enum DesktopCommand {
         #[arg(long, required = true)]
         json: bool,
     },
+    Open {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        run: String,
+        #[arg(long)]
+        artifact: String,
+        #[arg(long, value_enum)]
+        kind: OpenKind,
+        #[arg(long, required = true)]
+        json: bool,
+    },
+}
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum OpenKind {
+    Report,
+    Preview,
+    Blender,
 }
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
@@ -173,6 +191,26 @@ fn main() -> std::process::ExitCode {
                 run,
                 limit,
                 cursor,
+            })
+            .and_then(|value| {
+                serde_json::to_value(value)
+                    .map_err(|e| ArchyError::new(ErrorCode::InternalError, "$", e.to_string()))
+            }),
+            DesktopCommand::Open {
+                project,
+                run,
+                artifact,
+                kind,
+                ..
+            } => archy_cli::desktop_open(archy_cli::DesktopOpenInput {
+                project,
+                run,
+                artifact,
+                kind: match kind {
+                    OpenKind::Report => archy_cli::DesktopOpenKind::Report,
+                    OpenKind::Preview => archy_cli::DesktopOpenKind::Preview,
+                    OpenKind::Blender => archy_cli::DesktopOpenKind::Blender,
+                },
             })
             .and_then(|value| {
                 serde_json::to_value(value)

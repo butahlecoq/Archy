@@ -22,10 +22,10 @@ function statusArgv(manifest, run, cursor) {
   a.push('--json'); return a;
 }
 function validCapabilities(c) {
-  if (!obj(c,['schema_version','operations']) || c.schema_version !== 'archy-desktop-capabilities-v1' || !Array.isArray(c.operations) || c.operations.length !== 2) return false;
-  var ids = ['project_status','run_status'];
+  if (!obj(c,['schema_version','operations']) || c.schema_version !== 'archy-desktop-capabilities-v1' || !Array.isArray(c.operations) || c.operations.length !== 5) return false;
+  var ids = ['project_status','run_status','open_report','open_preview','open_blender'];
   return c.operations.every(function(o) { return obj(o,['id','available','reason']) && ids.indexOf(o.id) >= 0 && typeof o.available === 'boolean' && (o.reason === null || str(o.reason)); })
-    && c.operations[0].id !== c.operations[1].id;
+    && ids.every(function(id) { return c.operations.filter(function(o) { return o.id === id }).length === 1 });
 }
 function validSummary(r) {
   return obj(r,['run_id','revision','operation','variant_count','all_required_checks_passed','artifact_count'])

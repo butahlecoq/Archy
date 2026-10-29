@@ -4,6 +4,7 @@ mod accepted_worker;
 mod ascii_json;
 mod compare;
 mod desktop_capabilities;
+mod desktop_open;
 mod desktop_status;
 mod evaluate;
 mod generate;
@@ -18,6 +19,10 @@ pub use ascii_json::{ascii_json_compact, ascii_json_pretty};
 pub use compare::{compare, render_verified_comparison};
 pub use desktop_capabilities::{
     DesktopCapabilities, desktop_capabilities, desktop_capabilities_schema,
+};
+pub use desktop_open::{
+    DesktopOpenInput, DesktopOpenKind, DesktopOpenReceipt, DesktopOpenStatus, desktop_open,
+    desktop_open_schema,
 };
 pub use desktop_status::{
     DesktopStatus, DesktopStatusInput, desktop_status, desktop_status_schema,

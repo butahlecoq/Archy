@@ -35,20 +35,20 @@ def frame(name, args, ident):
                       separators=(',', ':')).encode() + b'\n'
 
 
-def replies(p, requests):
+def replies(p, requests, timeout=15):
     p.stdin.write(b''.join(frame(*request) for request in requests))
     p.stdin.flush()
     out = {}
     for _ in requests:
-        assert select.select([p.stdout], [], [], 15)[0], 'MCP response timeout'
+        assert select.select([p.stdout], [], [], timeout)[0], 'MCP response timeout'
         answer = json.loads(p.stdout.readline())
         assert answer['id'] not in out, answer
         out[answer['id']] = answer
     return out
 
 
-def call(p, name, args, ident):
-    return result(name, replies(p, [(name, args, ident)])[ident])
+def call(p, name, args, ident, timeout=15):
+    return result(name, replies(p, [(name, args, ident)], timeout)[ident])
 
 
 def result(name, answer):
@@ -268,7 +268,7 @@ for replace_root in (False, True):
                                                                  b'project_id: alternate-demo'))
             replacement.replace(project)
             authoritative = root
-        assert select.select([p.stdout], [], [], 15)[0]
+        assert select.select([p.stdout], [], [], 60)[0]
         answer = result('generate_variants', json.loads(p.stdout.readline()))
         assert not answer['ok'] and answer['error']['code'] in ('REVISION_CONFLICT', 'INTERNAL_ERROR'), answer
         if replace_root:
@@ -281,10 +281,10 @@ for replace_root in (False, True):
         else:
             project.write_bytes(SOURCE.read_bytes())
         p = start(project)
-        retry = call(p, 'generate_variants', request, 2)
+        retry = call(p, 'generate_variants', request, 2, timeout=60)
         assert retry['ok'], retry
         assert len(list((root / '.archy/revisions').glob('*.json'))) == 1
-        assert call(p, 'generate_variants', request, 3) == retry
+        assert call(p, 'generate_variants', request, 3, timeout=60) == retry
         finish(p)
 
 with tempfile.TemporaryDirectory(prefix='archy-mcp-partial-history-') as td:

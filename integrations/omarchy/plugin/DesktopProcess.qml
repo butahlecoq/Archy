@@ -21,7 +21,10 @@ Item {
 
   function hasStatusCapability() {
     if (!capabilities) return false
-    return capabilities.operations.every(function(o) { return o.available })
+    return capabilities.operations.filter(function(o) { return o.id === "project_status" || o.id === "run_status" }).every(function(o) { return o.available })
+  }
+  function hasOpenCapability(kind) {
+    return capabilities && capabilities.operations.some(function(o) { return o.id === "open_" + kind && o.available })
   }
   function start(kind) {
     if (!panelOpen) return

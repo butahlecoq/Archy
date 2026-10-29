@@ -32,7 +32,7 @@ class PluginContract(unittest.TestCase):
             "schemaVersion": 1, "id": "archy.status", "name": "Archy", "version": "0.1.0",
             "kinds": ["panel"], "entryPoints": {"panel": "Main.qml"},
         })
-        self.assertEqual({p.name for p in PLUGIN.iterdir()}, {"manifest.json", "Main.qml", "DoctorProcess.qml", "DoctorModel.js", "DesktopProcess.qml", "DesktopModel.js"})
+        self.assertEqual({p.name for p in PLUGIN.iterdir()}, {"manifest.json", "Main.qml", "DoctorProcess.qml", "DoctorModel.js", "DesktopProcess.qml", "DesktopModel.js", "OpenProcess.qml", "OpenModel.js"})
 
     def test_bad_manifest_cases(self):
         import tempfile
@@ -65,10 +65,8 @@ class PluginContract(unittest.TestCase):
         self.assertNotRegex(process + main, r"StdioCollector|Qt\.openUrlExternally|eval\(|createQmlObject|mise\b")
         for token in ('FloatingWindow', 'shell.hide("archy.status")', 'Text.PlainText', 'PanelSectionHeader', 'PanelSeparator', 'Style.space(', 'DoctorProcess'):
             self.assertIn(token, main)
-        for token in ('Project status', 'Run status', 'Open report', 'Open preview', 'Open Blender', 'enabled: false'):
-            if token in ('Project status', 'Run status'):
-                continue
-            self.assertIn(token, main)
+        self.assertIn('OpenProcess { id: opener }', main)
+        self.assertIn('opener.openArtifact(desktop.manifest, desktop.status, openKind, modelData.id)', main)
         self.assertIn('DesktopProcess { id: desktop }', main)
         self.assertIn('desktop.selectManifest(manifestInput.text)', main)
         desktop = (PLUGIN / "DesktopProcess.qml").read_text()

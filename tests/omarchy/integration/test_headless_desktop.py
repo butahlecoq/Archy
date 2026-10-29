@@ -31,7 +31,10 @@ def run_case(mode, real_binary=False):
         if mode == "wrong-default":
             status["selected_run"]["summary"] = status["runs"][1]
         (fixture / "status.json").write_text(json.dumps(status, ensure_ascii=True))
-        binary = PUBLICATION_BINARY if real_binary else HERE / "fixtures/archy-desktop-fixture.sh"
+        binary = PUBLICATION_BINARY if real_binary else fixture / "archy-desktop-fixture.sh"
+        if not real_binary:
+            binary.write_bytes((HERE / "fixtures/archy-desktop-fixture.sh").read_bytes())
+            binary.chmod(0o755)
         cmd = [
             "docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges", "--user", "65534:65534",

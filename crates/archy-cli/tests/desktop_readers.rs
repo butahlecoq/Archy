@@ -58,7 +58,7 @@ fn inventory(root: &Path) -> BTreeMap<PathBuf, (u32, SystemTime, Option<Vec<u8>>
     out
 }
 #[test]
-fn capabilities_only_advertise_readers_and_genesis_status_creates_nothing() {
+fn capabilities_advertise_bounded_operations_and_genesis_status_creates_nothing() {
     let (exit, caps) = cli(&["desktop", "capabilities", "--json"]);
     assert_eq!(exit, 0);
     let ids: Vec<_> = caps["operations"]
@@ -67,7 +67,16 @@ fn capabilities_only_advertise_readers_and_genesis_status_creates_nothing() {
         .iter()
         .map(|op| op["id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids, ["project_status", "run_status"]);
+    assert_eq!(
+        ids,
+        [
+            "project_status",
+            "run_status",
+            "open_report",
+            "open_preview",
+            "open_blender"
+        ]
+    );
     let project = temp_project();
     let project_arg = project.to_str().unwrap();
     let before = fs::read(&project).unwrap();
@@ -232,6 +241,70 @@ fn tampered_accepted_artifact_refuses_without_cleanup() {
     assert_ne!(exit, 0);
     assert_eq!(error["code"], "ARTIFACT_INVALID");
     assert_eq!(inventory(project.parent().unwrap()), before);
+}
+
+#[test]
+fn desktop_open_refuses_injected_paths_missing_artifacts_and_tampering() {
+    let project = temp_project();
+    let receipt = archy_cli::generate(archy_cli::GenerateInput {
+        project: project.clone(),
+        mode: archy_cli::GenerationMode::Sample { count: 1, seed: 42 },
+        mutation: archy_cli::MutationOptions::default(),
+    })
+    .unwrap();
+    let project_arg = project.to_str().unwrap();
+    let baseline = inventory(project.parent().unwrap());
+    for (run, artifact, kind) in [
+        (receipt.run_id.as_str(), "../report.md", "report"),
+        (
+            receipt.run_id.as_str(),
+            "report.md;touch /tmp/injected",
+            "report",
+        ),
+        (receipt.run_id.as_str(), "report.md", "preview"),
+        (receipt.run_id.as_str(), "previews/fake.png", "preview"),
+        (receipt.run_id.as_str(), "scenes/fake.blend", "blender"),
+        ("../outside", "report.md", "report"),
+    ] {
+        let (exit, error) = cli(&[
+            "desktop",
+            "open",
+            "--project",
+            project_arg,
+            "--run",
+            run,
+            "--artifact",
+            artifact,
+            "--kind",
+            kind,
+            "--json",
+        ]);
+        assert_ne!(exit, 0, "{run} {artifact} {kind}");
+        assert!(error["code"] == "PERMISSION_DENIED" || error["code"] == "ARTIFACT_INVALID");
+        assert_eq!(inventory(project.parent().unwrap()), baseline);
+    }
+    let report = project
+        .parent()
+        .unwrap()
+        .join("runs")
+        .join(&receipt.run_id)
+        .join("report.md");
+    fs::write(&report, b"tampered").unwrap();
+    let (exit, error) = cli(&[
+        "desktop",
+        "open",
+        "--project",
+        project_arg,
+        "--run",
+        &receipt.run_id,
+        "--artifact",
+        "report.md",
+        "--kind",
+        "report",
+        "--json",
+    ]);
+    assert_ne!(exit, 0);
+    assert_eq!(error["code"], "ARTIFACT_INVALID");
 }
 
 #[test]
