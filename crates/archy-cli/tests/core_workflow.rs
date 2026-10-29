@@ -3,7 +3,8 @@ use archy_cli::{
     WorkflowReceipt,
 };
 use archy_core::{
-    ArchyError, ErrorCode, LockedProject, ProjectStore, RevisionRecord, RunManifest, sha256_hex,
+    ArchyError, ErrorCode, InputFormat, LockedProject, ProjectStore, RevisionRecord, RunManifest,
+    parse_project_v1, sha256_hex,
 };
 use std::{
     fs,
@@ -446,6 +447,80 @@ fn consistently_rehashed_forgery_never_grants_trusted_status() {
         assert_eq!(error.code, ErrorCode::ArtifactInvalid, "{class}");
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+#[test]
+fn legacy_preferences_keep_exact_v1_bytes_and_survive_source_edits() {
+    let root = std::env::temp_dir().join(format!("archy-legacy-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&root).unwrap();
+    let project = root.join("project.json");
+    let source =
+        include_bytes!("../../../tests/fixtures/briefs/legacy-adversarial-preferences.json");
+    fs::write(&project, source).unwrap();
+    let spec = parse_project_v1(std::str::from_utf8(source).unwrap(), InputFormat::Json).unwrap();
+    let normalized = serde_json::to_vec(&spec).unwrap();
+    assert_eq!(spec.preferences.len(), 4);
+    assert_eq!(spec.normalization_version, "si-rectangle-v1");
+    assert_eq!(
+        sha256_hex(source),
+        "d3b51c16a980a422b60b972de9e47ca176f9ed2d937706743efac191950fdd75"
+    );
+    assert_eq!(
+        sha256_hex(&normalized),
+        "5665a318acf3abe884945905371fab72415405276bcb99783bc78fec2ea10bf3"
+    );
+
+    let mutation = MutationOptions {
+        idempotency_key: Some("legacy-pref-key".into()),
+        expected_project_revision: Some(0),
+        ..MutationOptions::default()
+    };
+    let first = generate(GenerateInput {
+        project: project.clone(),
+        mode: GenerationMode::Sample { count: 1, seed: 42 },
+        mutation: mutation.clone(),
+    })
+    .unwrap();
+    let run = root.join(&first.path);
+    assert_eq!(fs::read(run.join("input.json")).unwrap(), source);
+    assert_eq!(fs::read(run.join("normalized.json")).unwrap(), normalized);
+    let report = fs::read(run.join("report.json")).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&report).unwrap()["spec"]["preferences"],
+        serde_json::json!(spec.preferences)
+    );
+    verify_run(&project, &first.run_id).unwrap();
+
+    fs::write(&project, b"{bad json").unwrap();
+    verify_run(&project, &first.run_id).unwrap();
+    let changed = generate(GenerateInput {
+        project: project.clone(),
+        mode: GenerationMode::Sample { count: 1, seed: 42 },
+        mutation: mutation.clone(),
+    })
+    .unwrap_err();
+    assert_eq!(changed.code, ErrorCode::RevisionConflict);
+    fs::write(&project, source).unwrap();
+    let replay = generate(GenerateInput {
+        project: project.clone(),
+        mode: GenerationMode::Sample { count: 1, seed: 42 },
+        mutation,
+    })
+    .unwrap();
+    assert_eq!(
+        (replay.run_id, replay.revision),
+        (first.run_id.clone(), first.revision)
+    );
+    assert_eq!(fs::read(run.join("report.json")).unwrap(), report);
+
+    rehash_forgery(&root, &first.path, "normalized.json", |value| {
+        value["normalization_version"] = serde_json::json!("si-rectangle-v2");
+    });
+    assert_eq!(
+        verify_run(&project, &first.run_id).unwrap_err().code,
+        ErrorCode::ArtifactInvalid
+    );
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

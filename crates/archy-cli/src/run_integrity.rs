@@ -1,7 +1,7 @@
 use crate::{artifact_invalid, generate::EditParameters};
 use archy_core::{
     AcceptedHistory, ArchyError, EvaluationReport, InputFormat, LockedProject, NormalizedSpec,
-    ProjectStore, RunManifest, Variant, parse_project, sha256_hex,
+    ProjectStore, RunManifest, Variant, parse_project_v1, sha256_hex,
 };
 use archy_eval::{EVALUATION_VERSION, evaluate_variant};
 use archy_generate::{ALGORITHM_VERSION, GenerationResult, generate_variants};
@@ -134,7 +134,22 @@ fn verify_one(
         return Err(artifact_invalid("input digest mismatch"));
     }
     let source = std::str::from_utf8(&input).map_err(|_| artifact_invalid("input is not UTF-8"))?;
-    let spec = parse_project(source, format)
+    let recorded_normalized = stored
+        .artifact("normalized.json")
+        .ok_or_else(|| artifact_invalid("missing normalized snapshot"))?;
+    let recorded: serde_json::Value = serde_json::from_slice(recorded_normalized)
+        .map_err(|_| artifact_invalid("invalid normalized snapshot"))?;
+    if recorded.get("schema_version").and_then(|v| v.as_str()) != Some("0.1.0")
+        || recorded
+            .get("normalization_version")
+            .and_then(|v| v.as_str())
+            != Some("si-rectangle-v1")
+    {
+        return Err(artifact_invalid(
+            "unsupported recorded normalization profile",
+        ));
+    }
+    let spec = parse_project_v1(source, format)
         .map_err(|e| artifact_invalid(format!("stored source invalid: {e}")))?;
     if spec.project_id != manifest.project_id {
         return Err(artifact_invalid("project ID mismatch"));

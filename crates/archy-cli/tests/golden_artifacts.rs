@@ -44,6 +44,34 @@ fn copy_tree(source: &Path, destination: &Path) {
     }
 }
 
+fn assert_tree_bytes_match(saved: &Path, copy: &Path) {
+    let mut saved_entries: Vec<_> = fs::read_dir(saved)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    let mut copy_entries: Vec<_> = fs::read_dir(copy)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    saved_entries.sort();
+    copy_entries.sort();
+    assert_eq!(copy_entries, saved_entries);
+    for name in saved_entries {
+        let original = saved.join(&name);
+        let copied = copy.join(&name);
+        if original.is_dir() {
+            assert_tree_bytes_match(&original, &copied);
+        } else {
+            assert_eq!(
+                fs::read(&copied).unwrap(),
+                fs::read(&original).unwrap(),
+                "{}",
+                original.display()
+            );
+        }
+    }
+}
+
 fn make_managed_directories_private(directory: &Path) {
     fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
     for entry in fs::read_dir(directory).unwrap() {
@@ -167,8 +195,12 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
         evidence["source_sha256"]
     );
     let root = temporary_root();
+    let baseline = root.join("baseline");
     let saved_copy = root.join("saved");
+    copy_tree(&fixture, &baseline);
     copy_tree(&fixture, &saved_copy);
+    assert_tree_bytes_match(&baseline, &fixture);
+    assert_tree_bytes_match(&baseline, &saved_copy);
     let saved_project = saved_copy.join("project.yaml");
     let receipts = &evidence["capture_receipts"];
     assert_eq!(
@@ -242,7 +274,23 @@ fn curated_run_chain_and_fresh_cli_workflow_match_golden_evidence() {
             &receipts[operation],
             &evidence["accepted_runs"][operation],
         );
+        assert_eq!(
+            verify_run(&saved_project, receipt_id(&receipts[operation]))
+                .unwrap()
+                .spec()
+                .normalization_version,
+            "si-rectangle-v1"
+        );
     }
+    let lock = saved_copy.join(".archy/lock");
+    assert!(fs::symlink_metadata(&lock).unwrap().file_type().is_file());
+    assert!(fs::read(&lock).unwrap().is_empty());
+    fs::remove_file(lock).unwrap();
+    let staging = saved_copy.join(".archy/staging");
+    assert!(fs::symlink_metadata(&staging).unwrap().file_type().is_dir());
+    fs::remove_dir(staging).unwrap();
+    assert_tree_bytes_match(&baseline, &fixture);
+    assert_tree_bytes_match(&baseline, &saved_copy);
 
     let first_root = root.join("first");
     let second_root = root.join("second");

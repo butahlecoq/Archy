@@ -16,7 +16,7 @@ pub use project::*;
 pub use run::*;
 pub use state::*;
 pub use storage::*;
-pub use validation::{InputFormat, normalize, parse_project};
+pub use validation::{InputFormat, normalize, parse_project, parse_project_v1};
 pub use variant::*;
 
 pub fn project_schema() -> schemars::Schema {
