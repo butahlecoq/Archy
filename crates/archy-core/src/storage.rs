@@ -268,6 +268,20 @@ pub struct ProjectStore {
 pub struct LockedProject<'a> {
     store: &'a ProjectStore,
     _lock: File,
+    owner: Option<(u32, u64, u64)>,
+}
+fn lock_process_identity() -> Option<(u32, u64, u64)> {
+    let namespace = std::fs::metadata("/proc/thread-self/ns/pid").ok()?;
+    Some((std::process::id(), namespace.dev(), namespace.ino()))
+}
+impl Drop for LockedProject<'_> {
+    fn drop(&mut self) {
+        // PID namespaces can assign the same PID to a parent and child.
+        // Without a verified identity, closing the descriptor preserves exclusion.
+        if self.owner.is_some() && self.owner == lock_process_identity() {
+            let _ = self._lock.unlock();
+        }
+    }
 }
 /// A validated revision prefix. Each run read rechecks manifest and artifact bytes.
 pub struct AcceptedHistory<'store> {
@@ -451,6 +465,7 @@ impl ProjectStore {
             Ok(()) => Ok(LockedProject {
                 store: self,
                 _lock: lock,
+                owner: lock_process_identity(),
             }),
             Err(std::fs::TryLockError::WouldBlock) => {
                 let mut c = conflict("project lock held by another process");
@@ -669,6 +684,16 @@ fn read_record_run(root: &File, record: &RevisionRecord) -> Result<VerifiedRun, 
 }
 
 impl LockedProject<'_> {
+    fn require_owner(&self) -> Result<(), ArchyError> {
+        if self.owner.is_some() && self.owner != lock_process_identity() {
+            return Err(err(
+                ErrorCode::PermissionDenied,
+                "project lock belongs to another process or its identity cannot be verified",
+            ));
+        }
+        Ok(())
+    }
+
     fn recover_orphan(
         &self,
         request: &RunRequest,
@@ -762,6 +787,7 @@ impl LockedProject<'_> {
         Ok(None)
     }
     fn revisions(&self) -> Result<(Vec<RevisionRecord>, Option<String>, File), ArchyError> {
+        self.require_owner()?;
         revisions_from(&self.store.root, false)?.ok_or_else(|| invalid("missing managed history"))
     }
     fn read_record_run(&self, record: &RevisionRecord) -> Result<VerifiedRun, ArchyError> {
@@ -792,11 +818,13 @@ impl LockedProject<'_> {
         self.read_record_run(record)
     }
     pub fn read_source(&self) -> Result<Vec<u8>, ArchyError> {
+        self.require_owner()?;
         let mut file = existing_file(&self.store.root, &self.store.project_file)?;
         read_bounded(&mut file, crate::validation::MAX_INPUT_BYTES)
     }
     /// Read bounded project-relative bytes through the pinned root descriptor.
     pub fn read_project_file(&self, path: &str, limit: usize) -> Result<Vec<u8>, ArchyError> {
+        self.require_owner()?;
         let components = name_path(path)?;
         if components[0] == ".archy" || limit > crate::validation::MAX_INPUT_BYTES {
             return Err(err(
@@ -808,6 +836,7 @@ impl LockedProject<'_> {
         read_bounded(&mut file, limit)
     }
     pub fn begin<'a>(&'a self, request: RunRequest) -> Result<BeginResult<'a>, ArchyError> {
+        self.require_owner()?;
         if request.schema_version != RUN_REQUEST_SCHEMA_VERSION {
             return Err(err(
                 ErrorCode::InvalidSchema,
@@ -898,6 +927,7 @@ impl PendingRun<'_> {
         media_type: &str,
         producer: &str,
     ) -> Result<(), ArchyError> {
+        self.locked.require_owner()?;
         let parts = name_path(path)?;
         if path == "manifest.json"
             || parts[0] == ".archy"
@@ -936,6 +966,7 @@ impl PendingRun<'_> {
         Ok(())
     }
     pub fn record_outcome(&mut self, outcome: VariantOutcome) -> Result<(), ArchyError> {
+        self.locked.require_owner()?;
         if outcome.variant_id.is_empty()
             || outcome.variant_id.len() > 128
             || self.outcomes.len() >= 1000
@@ -973,6 +1004,7 @@ impl PendingRun<'_> {
         metadata: RunMetadata,
         interrupt: Interrupt,
     ) -> Result<RunReceipt, ArchyError> {
+        self.locked.require_owner()?;
         if self.artifacts.is_empty()
             || metadata.project_id.is_empty()
             || metadata.project_id.len() > 128

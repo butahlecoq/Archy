@@ -247,6 +247,45 @@ fn persistent_lock_rejects_competing_process() {
 }
 
 #[test]
+fn dropped_lock_releases_when_forked_child_still_has_descriptor() {
+    use std::{
+        io::{Read, Write},
+        os::unix::{net::UnixStream, process::CommandExt},
+    };
+
+    let root = fixture();
+    let store = ProjectStore::open(&root.join("project.json")).unwrap();
+    let locked = store.lock().unwrap();
+    let (mut ready_parent, mut ready_child) = UnixStream::pair().unwrap();
+    let (mut release_parent, mut release_child) = UnixStream::pair().unwrap();
+    let child = std::thread::spawn(move || {
+        let mut command = Command::new("/bin/true");
+        // Only async-signal-safe syscalls run between fork and exec.
+        unsafe {
+            command.pre_exec(move || {
+                ready_child.write_all(b"1")?;
+                let mut signal = [0];
+                release_child.read_exact(&mut signal)?;
+                Ok(())
+            });
+        }
+        command.status().unwrap()
+    });
+    let mut signal = [0];
+    ready_parent.read_exact(&mut signal).unwrap();
+    let while_held = store.lock().err();
+    drop(locked);
+    let reacquired = store.lock();
+    release_parent.write_all(b"1").unwrap();
+    assert!(child.join().unwrap().success());
+    assert_eq!(
+        while_held.unwrap().code,
+        archy_core::ErrorCode::RevisionConflict
+    );
+    assert!(reacquired.is_ok(), "{:?}", reacquired.err());
+}
+
+#[test]
 fn revision_gap_refuses_mutation() {
     let root = fixture();
     let store = ProjectStore::open(&root.join("project.json")).unwrap();
