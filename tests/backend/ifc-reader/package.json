@@ -1,0 +1,13 @@
+{
+  "name": "archy-independent-ifc-reader",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "web-ifc": "0.0.78"
+  }
+}
