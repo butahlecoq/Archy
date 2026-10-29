@@ -37,3 +37,11 @@ The actual CLI was additionally invoked with `validate --project examples/courty
 ## Limits and next actions
 
 Actual Omarchy installation/runtime/desktop and visual acceptance remain explicitly deferred until a target machine exists. No generation, evaluator, worker, backend, IFC, MCP or external AI call was implemented. No release/compliance certification is implied. Complete transitive dependency notices and backend obligations remain distribution gates. Independent review and CI for the final pushed commit must be assessed before integration; no merge or issue closure is authorized by this report.
+
+## Round 2: valid scalar-looking init IDs
+
+The independent review at 59d3c90 exposed one P2: inserting a valid ID as an unquoted YAML scalar rejected numeric/boolean/null-like names. Fixed init to quote the project_id scalar after the unchanged identifier allowlist (which excludes quotes, escapes and newlines), and restrict substitution to the project_id entry. No input types, schemas or identifier rules changed.
+
+The focused regression first failed on ID123 with the expected strict-YAML quoting error. After the fix, 12 scalar-looking identifiers (123, true, false, null, NULL, yes, 001, 0xFF, 1e3, -123, - and _) each initialized, validated with the exact string ID, and refused a second init without changing manifest bytes. Five unsafe identifiers (slash, space, newline injection, empty and overlength) failed without creating a target.
+
+Fresh Ubuntu WSL Rust1.99.1 checks on this fix: `cargo fmt --all -- --check` passed; `cargo clippy --locked --workspace --all-targets -- -D warnings` passed; `cargo test --locked -p archy-cli` passed all5 CLI integration tests; `python3 scripts/check-schemas.py` passed schema/source equality, actual serializers, real CLI golden output and all26 negative fixtures. Cargo used the same external CARGO_TARGET_DIR recorded above. Core code/schema remained unchanged, so the previous12 core-test result was not rerun for this scoped correction. `git diff --check` passed. Scoped independent rereview and final CI remain required; Omarchy execution remains deferred.

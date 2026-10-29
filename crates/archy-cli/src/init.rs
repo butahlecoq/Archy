@@ -21,7 +21,12 @@ pub fn run(name: &str, dir: &Path) -> Result<(), ArchyError> {
     let text = format!(
         "# yaml-language-server: $schema=./project.schema.json\n{}",
         include_str!("../../../examples/courtyard-housing/project.yaml")
-            .replace("courtyard-demo", name)
+            // The identifier allowlist excludes quotes, escapes and newlines.
+            // Quote even scalar-looking IDs so strict YAML retains their string type.
+            .replace(
+                "project_id: courtyard-demo",
+                &format!("project_id: \"{name}\"")
+            )
     );
     parse_project(&text, InputFormat::Yaml)?;
     // create_dir is atomic and refuses existing directories, files and symlinks.

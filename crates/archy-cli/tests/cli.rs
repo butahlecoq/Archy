@@ -90,3 +90,56 @@ fn file_only_project_and_init_collision_contracts() {
     assert!(!absent.exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn init_preserves_scalar_looking_ids_as_strings() {
+    for name in [
+        "123", "true", "false", "null", "NULL", "yes", "001", "0xFF", "1e3", "-123", "-", "_",
+    ] {
+        let dir = target();
+        let initialized = Command::new(env!("CARGO_BIN_EXE_archy"))
+            .args(["init", &format!("--name={name}"), "--dir"])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(initialized.status.success(), "{name}: {initialized:?}");
+        let manifest = dir.join("project.yaml");
+        let before = fs::read(&manifest).unwrap();
+        let validated = Command::new(env!("CARGO_BIN_EXE_archy"))
+            .args(["validate", "--json", "--project"])
+            .arg(&manifest)
+            .output()
+            .unwrap();
+        assert!(validated.status.success(), "{name}: {validated:?}");
+        let value: serde_json::Value = serde_json::from_slice(&validated.stdout).unwrap();
+        assert_eq!(value["project_id"].as_str(), Some(name));
+        let collision = Command::new(env!("CARGO_BIN_EXE_archy"))
+            .args(["init", &format!("--name={name}"), "--dir"])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(!collision.status.success());
+        assert_eq!(fs::read(manifest).unwrap(), before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
+fn init_rejects_unsafe_ids_without_creating_target() {
+    for name in [
+        "bad/name",
+        "bad name",
+        "a\nproject_id: injected",
+        "",
+        &"a".repeat(129),
+    ] {
+        let dir = target();
+        let out = Command::new(env!("CARGO_BIN_EXE_archy"))
+            .args(["init", &format!("--name={name}"), "--dir"])
+            .arg(&dir)
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "{name:?}");
+        assert!(!dir.exists(), "{name:?}");
+    }
+}
