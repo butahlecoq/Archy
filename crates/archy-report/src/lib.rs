@@ -1,4 +1,10 @@
+mod compare;
 mod templates;
+pub use compare::{
+    COMPARISON_POLICY_VERSION, COMPARISON_SCHEMA_VERSION, ComparisonArtifacts, ComparisonCandidate,
+    ComparisonConstraint, ComparisonDocument, ComparisonSource, comparison_schema,
+    render_comparison,
+};
 
 use archy_core::{ArchyError, ErrorCode, EvaluationReport, NormalizedSpec, Variant, site_bounds};
 use archy_eval::evaluate_variant;

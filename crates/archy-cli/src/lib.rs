@@ -1,5 +1,6 @@
 //! Reusable local workflow service. The binary and later typed tools call the same API.
 mod ascii_json;
+mod compare;
 mod desktop_capabilities;
 mod desktop_status;
 mod evaluate;
@@ -7,6 +8,7 @@ mod generate;
 mod run_integrity;
 
 pub use ascii_json::{ascii_json_compact, ascii_json_pretty};
+pub use compare::compare;
 pub use desktop_capabilities::{
     DesktopCapabilities, desktop_capabilities, desktop_capabilities_schema,
 };

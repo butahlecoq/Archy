@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ComparisonDocument",
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ComparisonCandidate"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ComparisonConstraint"
+      }
+    },
+    "objective_description": {
+      "type": "string"
+    },
+    "observed_head_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "observed_revision": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "policy_version": {
+      "type": "string"
+    },
+    "professional_limits": {
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "source_input_sha256": {
+      "type": "string"
+    },
+    "source_manifest_sha256": {
+      "type": "string"
+    },
+    "source_normalized_sha256": {
+      "type": "string"
+    },
+    "source_run_id": {
+      "type": "string"
+    },
+    "subjective_preferences": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "uncomputed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "policy_version",
+    "project_id",
+    "observed_revision",
+    "source_run_id",
+    "source_manifest_sha256",
+    "source_input_sha256",
+    "source_normalized_sha256",
+    "objective_description",
+    "constraints",
+    "candidates",
+    "subjective_preferences",
+    "uncomputed",
+    "professional_limits"
+  ],
+  "$defs": {
+    "Check": {
+      "type": "object",
+      "properties": {
+        "constraint_id": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "limit": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "measured": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "constraint_id",
+        "result",
+        "explanation",
+        "required"
+      ]
+    },
+    "CheckResult": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "WARN",
+        "UNKNOWN"
+      ]
+    },
+    "ComparisonCandidate": {
+      "type": "object",
+      "properties": {
+        "evaluation": {
+          "$ref": "#/$defs/EvaluationReport"
+        },
+        "evaluation_sha256": {
+          "type": "string"
+        },
+        "objective": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Metric"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "objective_rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "objective_source_metric": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant": {
+          "$ref": "#/$defs/Variant"
+        },
+        "variant_sha256": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variant",
+        "evaluation",
+        "variant_sha256",
+        "evaluation_sha256"
+      ]
+    },
+    "ComparisonConstraint": {
+      "type": "object",
+      "properties": {
+        "authority": {
+          "type": "string"
+        },
+        "authority_status": {
+          "type": "string"
+        },
+        "bound": {
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "bound",
+        "unit",
+        "source",
+        "authority",
+        "authority_status"
+      ]
+    },
+    "ConstraintKind": {
+      "type": "string",
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ]
+    },
+    "DimensionalTolerance": {
+      "type": "object",
+      "properties": {
+        "area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "length_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "method_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "length_m",
+        "area_m2",
+        "method_version"
+      ]
+    },
+    "EvaluationReport": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Check"
+          }
+        },
+        "evaluation_version": {
+          "type": "string"
+        },
+        "geometry_parity_budget": {
+          "$ref": "#/$defs/GeometryParityBudget"
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Metric"
+          }
+        },
+        "professional_limits": {
+          "type": "string"
+        },
+        "required_checks_passed": {
+          "type": "boolean"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/DimensionalTolerance"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variant_id",
+        "evaluation_version",
+        "metrics",
+        "checks",
+        "tolerance",
+        "geometry_parity_budget",
+        "required_checks_passed",
+        "professional_limits"
+      ]
+    },
+    "GeometryParityBudget": {
+      "type": "object",
+      "properties": {
+        "coordinate_length_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "footprint_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "gross_floor_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "rigid_transform_policy_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "policy_version",
+        "coordinate_length_m",
+        "footprint_area_m2",
+        "gross_floor_area_m2",
+        "rigid_transform_policy_version"
+      ]
+    },
+    "Metric": {
+      "type": "object",
+      "properties": {
+        "method_version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "method_version"
+      ]
+    },
+    "Shape": {
+      "type": "string",
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ]
+    },
+    "ShapeParameters": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "depth_m": {
+              "type": "number",
+              "format": "double"
+            },
+            "origin_xy_m": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "shape": {
+              "type": "string",
+              "const": "rectangle"
+            },
+            "width_m": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "depth_m": {
+              "type": "number",
+              "format": "double"
+            },
+            "notch_depth_m": {
+              "type": "number",
+              "format": "double"
+            },
+            "notch_width_m": {
+              "type": "number",
+              "format": "double"
+            },
+            "origin_xy_m": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "shape": {
+              "type": "string",
+              "const": "l_shape"
+            },
+            "width_m": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m",
+            "notch_width_m",
+            "notch_depth_m"
+          ]
+        }
+      ]
+    },
+    "Variant": {
+      "type": "object",
+      "properties": {
+        "floor_to_floor_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "footprint_xy_m": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "generation_algorithm": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/ShapeParameters"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "shape": {
+          "$ref": "#/$defs/Shape"
+        },
+        "storeys": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "project_id",
+        "id",
+        "seed",
+        "generation_algorithm",
+        "shape",
+        "parameters",
+        "footprint_xy_m",
+        "storeys",
+        "floor_to_floor_m"
+      ]
+    }
+  }
+}

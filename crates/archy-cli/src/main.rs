@@ -65,6 +65,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Compare every candidate in an accepted generation or edit batch.
+    Compare {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        run: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Evaluate variants from an accepted immutable run.
     Evaluate {
         #[arg(long)]
@@ -109,6 +118,36 @@ fn main() -> std::process::ExitCode {
     if let Command::Doctor { json } = &cli.command {
         return run_doctor(*json);
     }
+    if let Command::Compare { project, run, json } = &cli.command {
+        return match archy_cli::compare(project, run.as_deref()) {
+            Ok(artifacts) => {
+                let bytes = if *json {
+                    artifacts.json
+                } else {
+                    artifacts.markdown
+                };
+                match std::io::Write::write_all(&mut std::io::stdout(), &bytes) {
+                    Ok(()) => {
+                        if *json {
+                            println!();
+                        }
+                        std::process::ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        emit_error(
+                            ArchyError::new(ErrorCode::InternalError, "stdout", e.to_string()),
+                            *json,
+                        );
+                        std::process::ExitCode::FAILURE
+                    }
+                }
+            }
+            Err(e) => {
+                emit_error(e, *json);
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     let json = matches!(
         &cli.command,
         Command::Desktop { .. }
@@ -140,7 +179,9 @@ fn main() -> std::process::ExitCode {
                     .map_err(|e| ArchyError::new(ErrorCode::InternalError, "$", e.to_string()))
             }),
         },
-        Command::Doctor { .. } => unreachable!("handled before legacy dispatch"),
+        Command::Doctor { .. } | Command::Compare { .. } => {
+            unreachable!("handled before legacy dispatch")
+        }
         Command::Init { name, dir } => {
             init::run(&name, &dir).map(|()| serde_json::json!({"project":dir.join("project.yaml")}))
         }
