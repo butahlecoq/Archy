@@ -94,6 +94,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "archy-authority"
+version = "0.1.0"
+dependencies = [
+ "archy-core",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "archy-cli"
 version = "0.1.0"
 dependencies = [

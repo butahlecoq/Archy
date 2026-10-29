@@ -1,0 +1,2 @@
+d /run/archy 0755 root root -
+d /etc/archy 0755 root root -
