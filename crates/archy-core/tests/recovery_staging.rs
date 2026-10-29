@@ -211,7 +211,8 @@ fn child_stages_until_killed() {
     pending
         .write("data", b"unaccepted", "text/plain", "recovery-test")
         .unwrap();
-    fs::write(root.join("child-ready"), b"staged").unwrap();
+    fs::write(root.join("child-ready.tmp"), b"staged").unwrap();
+    fs::rename(root.join("child-ready.tmp"), root.join("child-ready")).unwrap();
     loop {
         thread::sleep(Duration::from_secs(1));
     }
@@ -357,13 +358,53 @@ fn parent_for_sigkill_probe() {
     let mut writer = Writer::spawn(&fixture.0, Rc::default(), None);
     wait_for_staging(&fixture.0, &mut writer);
     fs::write(
-        root.join("probe-ready"),
+        root.join("probe-ready.tmp"),
         writer.child.as_ref().unwrap().id().to_string(),
     )
     .unwrap();
+    fs::rename(root.join("probe-ready.tmp"), root.join("probe-ready")).unwrap();
     loop {
         thread::sleep(Duration::from_secs(1));
     }
+}
+
+fn process_stopped(stat: std::io::Result<String>) -> std::io::Result<bool> {
+    match stat {
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(rustix::io::Errno::SRCH.raw_os_error()) =>
+        {
+            Ok(true)
+        }
+        Err(error) => Err(error),
+        Ok(stat) => Ok(stat
+            .rsplit_once(") ")
+            .is_some_and(|(_, rest)| rest.starts_with("Z "))),
+    }
+}
+
+#[test]
+fn exited_process_stat_read_is_treated_as_stopped() {
+    let mut process = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+    let mut stat = fs::File::open(format!("/proc/{}/stat", process.id())).unwrap();
+    process.kill().unwrap();
+    process.wait().unwrap();
+    let mut content = String::new();
+    let result = stat.read_to_string(&mut content).map(|_| content);
+    assert_eq!(
+        result.as_ref().unwrap_err().raw_os_error(),
+        Some(rustix::io::Errno::SRCH.raw_os_error())
+    );
+    assert!(process_stopped(result).unwrap());
+    assert!(process_stopped(Err(std::io::Error::from(std::io::ErrorKind::NotFound))).unwrap());
+    assert!(
+        process_stopped(Err(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied
+        )))
+        .is_err()
+    );
+    assert!(!process_stopped(Ok("42 (worker) S ".into())).unwrap());
+    assert!(process_stopped(Ok("42 (worker) Z ".into())).unwrap());
 }
 
 #[test]
@@ -400,17 +441,10 @@ fn sigkill_of_test_parent_stops_writer_and_preserves_owned_evidence() {
 
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        match fs::read_to_string(format!("/proc/{pid}/stat")) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
-            Ok(stat)
-                if stat
-                    .rsplit_once(") ")
-                    .is_some_and(|(_, rest)| rest.starts_with("Z ")) =>
-            {
-                break;
-            }
-            Ok(_) => {}
-            Err(e) => panic!("cannot inspect writer {pid}: {e}"),
+        if process_stopped(fs::read_to_string(format!("/proc/{pid}/stat")))
+            .unwrap_or_else(|e| panic!("cannot inspect writer {pid}: {e}"))
+        {
+            break;
         }
         assert!(Instant::now() < deadline, "writer survived parent SIGKILL");
         thread::sleep(Duration::from_millis(10));
