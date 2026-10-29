@@ -1,6 +1,7 @@
 use crate::tools::*;
-use archy_cli::BoundProjectRead;
+use archy_cli::{BoundProjectRead, render_verified_comparison};
 use archy_core::{ArchyError, ErrorCode, sha256_hex};
+use archy_report::ComparisonDocument;
 use rmcp::{
     RoleServer, ServerHandler,
     model::{
@@ -12,7 +13,7 @@ use rmcp::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use tokio::sync::Semaphore;
 
 #[derive(Clone)]
@@ -71,11 +72,7 @@ impl ArchyServer {
                 name,
                 "Verified render service is unavailable",
             ),
-            "compare_variants" => self.unavailable::<CompareVariantsArgs>(
-                args,
-                name,
-                "Shared comparison service is unavailable",
-            ),
+            "compare_variants" => self.compare_variants(parse(args)?),
             "export_ifc" => self.unavailable::<ExportIfcArgs>(
                 args,
                 name,
@@ -166,6 +163,7 @@ impl ArchyServer {
                     "get_project".into(),
                     "validate_project".into(),
                     "list_variants".into(),
+                    "compare_variants".into(),
                 ],
             })
         })();
@@ -302,6 +300,110 @@ impl ArchyServer {
                 project_id: args.project_id,
                 revision: snapshot.revision().to_string(),
                 variants,
+                next_cursor,
+            })
+        })())
+    }
+    fn compare_variants(&self, args: CompareVariantsArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            if args.objective != "absolute_target_gfa_delta" {
+                return Err(ArchyError::schema(
+                    "objective",
+                    "Only absolute_target_gfa_delta is supported",
+                ));
+            }
+            if args.run_ids.is_empty() || args.run_ids.len() > 100 {
+                return Err(ArchyError::schema("run_ids", "Select 1..=100 runs"));
+            }
+            let mut unique = HashSet::new();
+            if args.run_ids.iter().any(|id| !unique.insert(id)) {
+                return Err(ArchyError::schema("run_ids", "Duplicate run ID"));
+            }
+            let limit = args.limit.unwrap_or(1);
+            if !(1..=100).contains(&limit) {
+                return Err(ArchyError::schema("limit", "Limit must be 1..=100"));
+            }
+            let snapshot = self.project.snapshot()?;
+            snapshot.verify_head()?;
+            let receipts = args
+                .run_ids
+                .iter()
+                .map(|id| {
+                    snapshot
+                        .receipts()
+                        .find(|receipt| &receipt.run_id == id)
+                        .ok_or_else(|| ArchyError::schema("run_ids", "Run is not accepted"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let binding_bytes = serde_json::to_vec(&(
+                "archy-mcp-comparison-page-v1",
+                snapshot.identity(),
+                &args.project_id,
+                snapshot.source_sha256(),
+                snapshot.revision(),
+                snapshot.head_sha256(),
+                &args.objective,
+                &args.run_ids,
+            ))
+            .expect("bounded comparison query");
+            let binding = sha256_hex(&binding_bytes);
+            let offset = match args.cursor.as_deref() {
+                None | Some("0") => 0,
+                Some(cursor) => {
+                    let mut parts = cursor.splitn(3, ':');
+                    let bound = parts.next().unwrap_or("");
+                    let number = parts
+                        .next()
+                        .ok_or_else(|| ArchyError::schema("cursor", "Invalid comparison cursor"))?;
+                    let last = parts
+                        .next()
+                        .ok_or_else(|| ArchyError::schema("cursor", "Invalid comparison cursor"))?;
+                    if bound != binding {
+                        return Err(ArchyError::new(
+                            ErrorCode::RevisionConflict,
+                            "cursor",
+                            "Cursor is stale or belongs to another comparison",
+                        ));
+                    }
+                    let offset = usize::try_from(decimal(number, "cursor")?)
+                        .map_err(|_| ArchyError::schema("cursor", "Invalid comparison cursor"))?;
+                    if offset == 0
+                        || offset >= args.run_ids.len()
+                        || args.run_ids[offset - 1] != last
+                    {
+                        return Err(ArchyError::schema("cursor", "Invalid comparison cursor"));
+                    }
+                    offset
+                }
+            };
+            let end = (offset + limit as usize).min(receipts.len());
+            let mut comparisons = Vec::with_capacity(end - offset);
+            for receipt in &receipts[offset..end] {
+                let trusted = snapshot.verify_run(&receipt.run_id)?;
+                let artifacts = render_verified_comparison(
+                    &trusted,
+                    &receipt.manifest_sha256,
+                    snapshot.revision(),
+                    snapshot.head_sha256().map(str::to_owned),
+                )?;
+                let document: ComparisonDocument = serde_json::from_slice(&artifacts.json)
+                    .map_err(|_| {
+                        ArchyError::new(
+                            ErrorCode::InternalError,
+                            "comparison",
+                            "Typed comparison output could not be decoded",
+                        )
+                    })?;
+                comparisons.push(document);
+            }
+            let next_cursor = (end < receipts.len())
+                .then(|| format!("{binding}:{end}:{}", args.run_ids[end - 1]));
+            Ok(CompareVariantsData {
+                project_id: args.project_id,
+                revision: snapshot.revision().to_string(),
+                objective: args.objective,
+                comparisons,
                 next_cursor,
             })
         })())

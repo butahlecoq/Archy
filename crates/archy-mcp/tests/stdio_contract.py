@@ -87,7 +87,8 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
         {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
         {'source_run':'r','variant_id':'v','reason':'review','idempotency_key':'k','expected_project_revision':'0','destination':'runs'}],strict=True),12):
         r=call(p,name,{**project_args,**extra},i)['result']; assert r['isError'] is True,(name,r)
-        assert r['structuredContent']['error']['code']=='BACKEND_UNAVAILABLE',name
+        expected='INVALID_SCHEMA' if name=='compare_variants' else 'BACKEND_UNAVAILABLE'
+        assert r['structuredContent']['error']['code']==expected,name
         Draft202012Validator(json.loads((ROOT/'schemas/mcp'/f'{name}.schema.json').read_text())['output']).validate(r['structuredContent'])
     assert call(p,'unknown',{},20)['error']['code']==-32601
     assert call(p,'generate_variants',{**project_args,'count':1001,'seed':'1','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},22)['error']['code']==-32602
@@ -108,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
     p.stdin.close(); p.wait(timeout=5)
     assert p.returncode == 1 and b"MCP transport startup failed" in p.stderr.read()
     assert sorted(x.name for x in pathlib.Path(td).iterdir())==['project.yaml']
-print('MCP actual modern/legacy, nine schemas, three reads, six prerequisite errors, bounds and no writes: PASS')
+print('MCP actual modern/legacy, nine schemas, three base reads, five prerequisite errors, bounds and no writes: PASS')
 with tempfile.TemporaryDirectory(prefix='archy-mcp-history-') as td:
     project=pathlib.Path(td)/'project.yaml'; shutil.copyfile(SOURCE,project)
     cli=TARGET/'debug/archy'
@@ -220,9 +221,10 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
             second=json.dumps(request(2,tool,base)).encode()
             replies=run_frames(first,second)
             assert set(replies)==({1,2} if valid else {None,2}),(tool,field,label,replies)
-            assert replies[2]['result']['structuredContent']['error']['code']=='BACKEND_UNAVAILABLE'
+            expected='INVALID_SCHEMA' if tool=='compare_variants' else 'BACKEND_UNAVAILABLE'
+            assert replies[2]['result']['structuredContent']['error']['code']==expected
             if valid:
-                assert replies[1]['result']['structuredContent']['error']['code']=='BACKEND_UNAVAILABLE'
+                assert replies[1]['result']['structuredContent']['error']['code']==expected
                 Draft202012Validator(pair['output']).validate(replies[1]['result']['structuredContent'])
             else:
                 assert replies[None]=={'jsonrpc':'2.0','id':None,'error':{'code':-32700,'message':'Parse error'}}

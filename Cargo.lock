@@ -154,6 +154,7 @@ version = "0.1.0"
 dependencies = [
  "archy-cli",
  "archy-core",
+ "archy-report",
  "rmcp",
  "rustix",
  "schemars",

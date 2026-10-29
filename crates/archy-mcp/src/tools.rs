@@ -1,4 +1,5 @@
 use archy_core::{ArchyError, NormalizedSpec};
+use archy_report::ComparisonDocument;
 use rmcp::model::{Tool, ToolAnnotations};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -124,6 +125,15 @@ pub struct ListVariantsData {
     pub project_id: String,
     pub revision: String,
     pub variants: Vec<VariantSummary>,
+    pub next_cursor: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompareVariantsData {
+    pub project_id: String,
+    pub revision: String,
+    pub objective: String,
+    pub comparisons: Vec<ComparisonDocument>,
     pub next_cursor: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -350,9 +360,9 @@ pub fn definitions() -> Vec<Tool> {
             "Unavailable until render integration",
             false,
         ),
-        typed::<CompareVariantsArgs, PrerequisiteData>(
+        typed::<CompareVariantsArgs, CompareVariantsData>(
             NAMES[6],
-            "Unavailable until comparison integration",
+            "Compare verified generation/edit runs by absolute target GFA delta; ranks are within each run",
             true,
         ),
         typed::<ExportIfcArgs, PrerequisiteData>(

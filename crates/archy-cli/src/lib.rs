@@ -9,7 +9,7 @@ mod project_read;
 mod run_integrity;
 
 pub use ascii_json::{ascii_json_compact, ascii_json_pretty};
-pub use compare::compare;
+pub use compare::{compare, render_verified_comparison};
 pub use desktop_capabilities::{
     DesktopCapabilities, desktop_capabilities, desktop_capabilities_schema,
 };

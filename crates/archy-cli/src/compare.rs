@@ -1,4 +1,4 @@
-use crate::{artifact_invalid, run_integrity::verify_history};
+use crate::{TrustedRun, artifact_invalid, run_integrity::verify_history};
 use archy_core::{ArchyError, ProjectStore, RunManifest};
 use archy_report::{ComparisonArtifacts, ComparisonSource, render_comparison};
 use std::path::Path;
@@ -42,15 +42,34 @@ pub fn compare(project: &Path, run: Option<&str>) -> Result<ComparisonArtifacts,
         }
     };
     let trusted = verify_history(&history, &selected)?;
+    let receipt = history
+        .receipts()
+        .find(|r| r.run_id == selected)
+        .ok_or_else(|| artifact_invalid("missing source receipt"))?;
+    render_verified_comparison(
+        &trusted,
+        &receipt.manifest_sha256,
+        history.revision(),
+        history.head_sha256().map(str::to_owned),
+    )
+}
+
+pub fn render_verified_comparison(
+    trusted: &TrustedRun,
+    manifest_sha256: &str,
+    revision: u64,
+    head_sha256: Option<String>,
+) -> Result<ComparisonArtifacts, ArchyError> {
     let manifest = trusted.manifest();
+    if !matches!(manifest.operation.as_str(), "generate" | "edit") {
+        return Err(ArchyError::schema(
+            "run_ids",
+            "Comparison source must be a generation or edit run",
+        ));
+    }
     let source = ComparisonSource {
-        run_id: selected,
-        manifest_sha256: history
-            .receipts()
-            .find(|r| r.run_id == manifest.run_id)
-            .ok_or_else(|| artifact_invalid("missing source receipt"))?
-            .manifest_sha256
-            .clone(),
+        run_id: manifest.run_id.clone(),
+        manifest_sha256: manifest_sha256.to_owned(),
         input_sha256: manifest.input_sha256.clone(),
         normalized_sha256: manifest
             .normalized_sha256
@@ -72,7 +91,7 @@ pub fn compare(project: &Path, run: Option<&str>) -> Result<ComparisonArtifacts,
         trusted.variants(),
         trusted.evaluations(),
         &source,
-        history.revision(),
-        history.head_sha256().map(str::to_owned),
+        revision,
+        head_sha256,
     )
 }
