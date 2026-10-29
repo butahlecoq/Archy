@@ -1,3 +1,4 @@
+use archy_cli::WorkflowReceipt;
 use archy_core::{ArchyError, NormalizedSpec};
 use archy_report::ComparisonDocument;
 use rmcp::model::{Tool, ToolAnnotations};
@@ -140,6 +141,31 @@ pub struct CompareVariantsData {
 #[serde(deny_unknown_fields)]
 pub struct PrerequisiteData {
     pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MutationData {
+    pub project_id: String,
+    pub run_id: String,
+    pub revision: String,
+    pub path: String,
+    pub variant_ids: Vec<String>,
+    pub all_required_checks_passed: bool,
+    pub exhaustion_explanations: Vec<String>,
+}
+impl MutationData {
+    pub fn from_receipt(project_id: String, receipt: WorkflowReceipt) -> Self {
+        Self {
+            project_id,
+            run_id: receipt.run_id,
+            revision: receipt.revision.to_string(),
+            path: receipt.path,
+            variant_ids: receipt.variant_ids,
+            all_required_checks_passed: receipt.all_required_checks_passed,
+            exhaustion_explanations: receipt.exhaustion_explanations,
+        }
+    }
 }
 
 pub const NAMES: [&str; 9] = [
@@ -345,14 +371,14 @@ pub fn definitions() -> Vec<Tool> {
             "List verified variants from accepted runs",
             true,
         ),
-        typed::<GenerateVariantsArgs, PrerequisiteData>(
+        typed::<GenerateVariantsArgs, MutationData>(
             NAMES[3],
-            "Unavailable until mutation integration",
+            "Generate accepted variants in a scoped transaction",
             false,
         ),
-        typed::<EvaluateVariantArgs, PrerequisiteData>(
+        typed::<EvaluateVariantArgs, MutationData>(
             NAMES[4],
-            "Unavailable until mutation integration",
+            "Evaluate one accepted variant in a scoped transaction",
             false,
         ),
         typed::<RenderVariantArgs, PrerequisiteData>(

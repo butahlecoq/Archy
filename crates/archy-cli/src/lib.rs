@@ -183,6 +183,7 @@ pub(crate) fn publish(
     mut pending: Box<PendingRun<'_>>,
     metadata: RunMetadata,
     payload: RunPayload<'_>,
+    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
 ) -> Result<RunReceipt, ArchyError> {
     let normalized = serde_json::to_vec(payload.spec)
         .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
@@ -292,5 +293,8 @@ pub(crate) fn publish(
         "application/x-ndjson",
         "archy-cli",
     )?;
-    pending.commit(metadata)
+    match check {
+        Some(check) => pending.commit_checked(metadata, check),
+        None => pending.commit(metadata),
+    }
 }

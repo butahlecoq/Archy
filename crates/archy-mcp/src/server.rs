@@ -1,5 +1,5 @@
 use crate::tools::*;
-use archy_cli::{BoundProjectRead, render_verified_comparison};
+use archy_cli::{BoundProjectRead, MutationOptions, render_verified_comparison};
 use archy_core::{ArchyError, ErrorCode, sha256_hex};
 use archy_report::ComparisonDocument;
 use rmcp::{
@@ -13,19 +13,25 @@ use rmcp::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct ArchyServer {
     project: Arc<BoundProjectRead>,
-    reads: Arc<Semaphore>,
+    slots: Arc<Semaphore>,
+    mutations: Arc<Mutex<()>>,
 }
 impl ArchyServer {
     pub fn new(project: BoundProjectRead) -> Self {
         Self {
             project: Arc::new(project),
-            reads: Arc::new(Semaphore::new(4)),
+            slots: Arc::new(Semaphore::new(4)),
+            mutations: Arc::new(Mutex::new(())),
         }
     }
     fn call(&self, request: CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
@@ -41,13 +47,13 @@ impl ArchyServer {
         }
         let args = Value::Object(request.arguments.unwrap_or_default());
         validate_input_bounds(&args)?;
-        let _permit = match self.reads.try_acquire() {
+        let _permit = match self.slots.try_acquire() {
             Ok(permit) => permit,
             Err(_) => {
                 let mut error = ArchyError::new(
                     ErrorCode::BackendUnavailable,
-                    "read",
-                    "Concurrent read limit reached",
+                    "tool",
+                    "Concurrent tool limit reached",
                 );
                 error.retriable = true;
                 return Ok(error_tool::<PrerequisiteData>(error).into());
@@ -57,16 +63,8 @@ impl ArchyServer {
             "get_project" => self.get_project(parse(args)?),
             "validate_project" => self.validate_project(parse(args)?),
             "list_variants" => self.list_variants(parse(args)?),
-            "generate_variants" => self.unavailable::<GenerateVariantsArgs>(
-                args,
-                name,
-                "Shared generation transaction is not wired to MCP",
-            ),
-            "evaluate_variant" => self.unavailable::<EvaluateVariantArgs>(
-                args,
-                name,
-                "Shared evaluation transaction is not wired to MCP",
-            ),
+            "generate_variants" => self.generate_variants(parse(args)?),
+            "evaluate_variant" => self.evaluate_variant(parse(args)?),
             "render_variant" => self.unavailable::<RenderVariantArgs>(
                 args,
                 name,
@@ -97,6 +95,50 @@ impl ArchyServer {
                 "Project ID does not match the configured project",
             ))
         }
+    }
+    fn generate_variants(&self, args: GenerateVariantsArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            let seed = decimal(&args.seed, "seed")?;
+            let options = mutation_options(
+                args.idempotency_key,
+                args.expected_project_revision,
+                args.destination,
+            )?;
+            let _guard = self.mutations.lock().map_err(|_| {
+                ArchyError::new(
+                    ErrorCode::InternalError,
+                    "mutation",
+                    "Transaction gate is unavailable",
+                )
+            })?;
+            let receipt = self.project.generate(args.count, seed, options)?;
+            Ok(MutationData::from_receipt(args.project_id, receipt))
+        })())
+    }
+    fn evaluate_variant(&self, args: EvaluateVariantArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            if !valid_run_uuid(&args.source_run) {
+                return Err(ArchyError::schema("source_run", "Expected a run UUID"));
+            }
+            let options = mutation_options(
+                args.idempotency_key,
+                args.expected_project_revision,
+                args.destination,
+            )?;
+            let _guard = self.mutations.lock().map_err(|_| {
+                ArchyError::new(
+                    ErrorCode::InternalError,
+                    "mutation",
+                    "Transaction gate is unavailable",
+                )
+            })?;
+            let receipt = self
+                .project
+                .evaluate(args.source_run, args.variant_id, options)?;
+            Ok(MutationData::from_receipt(args.project_id, receipt))
+        })())
     }
     fn get_project(&self, args: GetProjectArgs) -> CallToolResult {
         let result = (|| {
@@ -429,6 +471,27 @@ impl ArchyServer {
             .unwrap_or_else(|| ArchyError::new(ErrorCode::BackendUnavailable, field, reason));
         error_tool::<PrerequisiteData>(error)
     }
+}
+fn mutation_options(
+    key: String,
+    revision: String,
+    destination: String,
+) -> Result<MutationOptions, ArchyError> {
+    Ok(MutationOptions {
+        idempotency_key: Some(key),
+        expected_project_revision: Some(decimal(&revision, "expected_project_revision")?),
+        destination,
+    })
+}
+fn valid_run_uuid(text: &str) -> bool {
+    text.len() == 36
+        && text.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 fn validate_input_bounds(args: &Value) -> Result<(), ErrorData> {
     let Some(fields) = args.as_object() else {

@@ -3,15 +3,32 @@ use crate::{
     recorded_manifest_for_key, request_conflict, run_integrity::verify_locked, workflow_receipt,
 };
 use archy_core::{
-    ArchyError, ErrorCode, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest, sha256_hex,
+    ArchyError, ErrorCode, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest,
+    sha256_hex,
 };
 use archy_eval::{EVALUATION_VERSION, evaluate_variant};
 
 pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
     let store = archy_core::ProjectStore::open(&input.project)?;
     let locked = store.lock()?;
-    let context = input.mutation.resolve(&locked)?;
-    let recorded = recorded_manifest_for_key(&locked, input.mutation.idempotency_key.as_deref())?;
+    evaluate_locked(
+        &locked,
+        input.source_run,
+        input.selection,
+        input.mutation,
+        None,
+    )
+}
+
+pub(crate) fn evaluate_locked(
+    locked: &LockedProject<'_>,
+    source_run: Option<String>,
+    selection: VariantSelection,
+    mutation: crate::MutationOptions,
+    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+) -> Result<WorkflowReceipt, ArchyError> {
+    let context = mutation.resolve(locked)?;
+    let recorded = recorded_manifest_for_key(locked, mutation.idempotency_key.as_deref())?;
     if recorded
         .as_ref()
         .is_some_and(|run| run.operation != "evaluate")
@@ -19,12 +36,12 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
         return Err(request_conflict());
     }
     let receipts = locked.receipts()?;
-    let replay_source = if input.source_run.is_none() {
+    let replay_source = if source_run.is_none() {
         recorded.as_ref().and_then(|run| run.parent_run_id.clone())
     } else {
         None
     };
-    let source_id = match input.source_run.or(replay_source) {
+    let source_id = match source_run.or(replay_source) {
         Some(id) => id,
         None => {
             let mut found = None;
@@ -43,7 +60,7 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
     {
         return Err(request_conflict());
     }
-    if let VariantSelection::One(id) = &input.selection
+    if let VariantSelection::One(id) = &selection
         && id.len() > archy_core::validation::MAX_INPUT_BYTES.saturating_sub(64)
     {
         return Err(ArchyError::schema(
@@ -51,7 +68,7 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
             "Selector exceeds request byte limit",
         ));
     }
-    let selection_bytes = match &input.selection {
+    let selection_bytes = match &selection {
         VariantSelection::All => serde_json::json!({"selector":"all"}),
         VariantSelection::One(id) => serde_json::json!({"selector":"one","variant":id}),
     };
@@ -68,20 +85,26 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
         },
         source_run: Some(source_id.clone()),
     };
-    let pending = match locked.begin(request)? {
-        archy_core::BeginResult::Replay(receipt) => {
-            let verified = verify_locked(&locked, &receipt.run_id)?;
-            return Ok(workflow_receipt(receipt, &verified));
-        }
-        archy_core::BeginResult::Pending(pending) => pending,
-    };
-    let source = verify_locked(&locked, &source_id)?;
+    if recorded.is_some() {
+        return match locked.begin(request)? {
+            archy_core::BeginResult::Replay(receipt) => {
+                let verified = verify_locked(locked, &receipt.run_id)?;
+                Ok(workflow_receipt(receipt, &verified))
+            }
+            archy_core::BeginResult::Pending(_) => Err(ArchyError::new(
+                ErrorCode::InternalError,
+                "idempotency_key",
+                "Recorded key unexpectedly began a new run",
+            )),
+        };
+    }
+    let source = verify_locked(locked, &source_id)?;
     if !matches!(source.manifest().operation.as_str(), "generate" | "edit") {
         return Err(artifact_invalid(
             "evaluation source must be a generation or edit run",
         ));
     }
-    let variants = match &input.selection {
+    let variants = match &selection {
         VariantSelection::All => source.variants().to_vec(),
         VariantSelection::One(id) => vec![
             source
@@ -100,6 +123,13 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
             "Source run has no variants to evaluate",
         ));
     }
+    let pending = match locked.begin(request)? {
+        archy_core::BeginResult::Replay(receipt) => {
+            let verified = verify_locked(locked, &receipt.run_id)?;
+            return Ok(workflow_receipt(receipt, &verified));
+        }
+        archy_core::BeginResult::Pending(pending) => pending,
+    };
     let evaluations = variants
         .iter()
         .map(|variant| evaluate_variant(source.spec(), variant))
@@ -134,7 +164,8 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
             variants: &variants,
             evaluations: &evaluations,
         },
+        check,
     )?;
-    let verified = verify_locked(&locked, &receipt.run_id)?;
+    let verified = verify_locked(locked, &receipt.run_id)?;
     Ok(workflow_receipt(receipt, &verified))
 }

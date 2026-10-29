@@ -1,5 +1,12 @@
 //! Pinned, noncreating project reads shared by desktop and the stdio facade.
-use crate::{TrustedRun, artifact_invalid, input_format, run_integrity::verify_history};
+use crate::{
+    GenerationMode, MutationOptions, TrustedRun, VariantSelection, WorkflowReceipt,
+    artifact_invalid,
+    evaluate::evaluate_locked,
+    generate::generate_locked,
+    input_format,
+    run_integrity::{verify_history, verify_locked},
+};
 use archy_core::{
     AcceptedHistory, ArchyError, ErrorCode, InputFormat, NormalizedSpec, PinnedProjectSource,
     ProjectStore, RunReceipt, parse_project, sha256_hex,
@@ -14,7 +21,8 @@ pub struct BoundProjectRead {
     spec: NormalizedSpec,
     root_path: PathBuf,
     identity: String,
-    _format: InputFormat,
+    format: InputFormat,
+    source_format: &'static str,
 }
 impl BoundProjectRead {
     pub fn open(project: &Path) -> Result<Self, ArchyError> {
@@ -22,7 +30,7 @@ impl BoundProjectRead {
             .parent()
             .ok_or_else(|| ArchyError::schema("project", "Project has no parent"))?
             .to_path_buf();
-        let (format, _, _) = input_format(project)?;
+        let (format, source_format, _) = input_format(project)?;
         let store = ProjectStore::open(project)?;
         let source = store.pin_source()?;
         let source_bytes = source.read()?;
@@ -39,10 +47,11 @@ impl BoundProjectRead {
             spec,
             root_path,
             identity,
-            _format: format,
+            format,
+            source_format,
         })
     }
-    pub fn snapshot(&self) -> Result<BoundReadSnapshot<'_>, ArchyError> {
+    fn check_binding(&self) -> Result<(), ArchyError> {
         let root_matches = self
             .store
             .matches_root_path(&self.root_path)
@@ -55,6 +64,10 @@ impl BoundProjectRead {
                 "Configured project path or source changed; restart the reader",
             ));
         }
+        Ok(())
+    }
+    pub fn snapshot(&self) -> Result<BoundReadSnapshot<'_>, ArchyError> {
+        self.check_binding()?;
         Ok(BoundReadSnapshot {
             owner: self,
             history: self.store.read_history()?,
@@ -65,6 +78,84 @@ impl BoundProjectRead {
     }
     pub fn identity(&self) -> &str {
         &self.identity
+    }
+    fn transact(
+        &self,
+        action: impl FnOnce(
+            &archy_core::LockedProject<'_>,
+            &dyn Fn() -> Result<(), ArchyError>,
+        ) -> Result<WorkflowReceipt, ArchyError>,
+    ) -> Result<WorkflowReceipt, ArchyError> {
+        self.check_binding()?;
+        self.store.read_history()?;
+        let locked = self.store.lock()?;
+        self.check_binding()?;
+        if let Some(head) = locked.receipts()?.last() {
+            let run = verify_locked(&locked, &head.run_id)?;
+            if run.spec().project_id != self.spec.project_id {
+                return Err(artifact_invalid(
+                    "Accepted head belongs to another project ID",
+                ));
+            }
+        }
+        self.check_binding()?;
+        let receipt = action(&locked, &|| self.check_binding())?;
+        let run = verify_locked(&locked, &receipt.run_id)?;
+        if run.spec().project_id != self.spec.project_id {
+            return Err(artifact_invalid(
+                "Accepted run belongs to another project ID",
+            ));
+        }
+        self.check_binding().map_err(|_| {
+            let mut error = ArchyError::new(
+                ErrorCode::RevisionConflict,
+                "project",
+                "Configured project changed during mutation; commit may have occurred on the pinned root; retry the same idempotency key after restoring the project binding",
+            );
+            error.retriable = true;
+            error
+        })?;
+        Ok(receipt)
+    }
+    pub fn generate(
+        &self,
+        count: u32,
+        seed: u64,
+        mutation: MutationOptions,
+    ) -> Result<WorkflowReceipt, ArchyError> {
+        self.transact(|locked, check| {
+            generate_locked(
+                locked,
+                GenerationMode::Sample { count, seed },
+                mutation,
+                self.format,
+                self.source_format,
+                Some(&self.source_bytes),
+                Some(check),
+            )
+        })
+    }
+    pub fn evaluate(
+        &self,
+        source_run: String,
+        variant_id: String,
+        mutation: MutationOptions,
+    ) -> Result<WorkflowReceipt, ArchyError> {
+        self.transact(|locked, check| {
+            let source = verify_locked(locked, &source_run)?;
+            if source.spec().project_id != self.spec.project_id {
+                return Err(artifact_invalid(
+                    "Evaluation source belongs to another project ID",
+                ));
+            }
+            evaluate_locked(
+                locked,
+                Some(source_run),
+                VariantSelection::One(variant_id),
+                mutation,
+                Some(check),
+            )
+        })
     }
 }
 pub struct BoundReadSnapshot<'a> {

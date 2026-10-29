@@ -1,11 +1,11 @@
 use crate::{
-    GenerateInput, GenerationMode, RunPayload, WorkflowReceipt, artifact_invalid, input_format,
-    publish, recorded_manifest_for_key, request_conflict, run_integrity::verify_locked,
-    workflow_receipt,
+    GenerateInput, GenerationMode, MutationOptions, RunPayload, WorkflowReceipt, artifact_invalid,
+    input_format, publish, recorded_manifest_for_key, request_conflict,
+    run_integrity::verify_locked, workflow_receipt,
 };
 use archy_core::{
-    ArchyError, ErrorCode, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest, ShapeParameters,
-    Variant, parse_project, sha256_hex,
+    ArchyError, ErrorCode, InputFormat, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata,
+    RunRequest, ShapeParameters, Variant, parse_project, sha256_hex,
 };
 use archy_eval::evaluate_variant;
 use archy_generate::{ALGORITHM_VERSION, generate_variants};
@@ -23,18 +23,47 @@ pub(crate) struct EditParameters {
 pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
     let store = archy_core::ProjectStore::open(&input.project)?;
     let locked = store.lock()?;
-    let context = input.mutation.resolve(&locked)?;
-    let recorded = recorded_manifest_for_key(&locked, input.mutation.idempotency_key.as_deref())?;
-    match input.mode {
+    let (format, source_format, _) = input_format(&input.project)?;
+    generate_locked(
+        &locked,
+        input.mode,
+        input.mutation,
+        format,
+        source_format,
+        None,
+        None,
+    )
+}
+
+pub(crate) fn generate_locked(
+    locked: &LockedProject<'_>,
+    mode: GenerationMode,
+    mutation: MutationOptions,
+    format: InputFormat,
+    source_format: &str,
+    pinned_source: Option<&[u8]>,
+    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+) -> Result<WorkflowReceipt, ArchyError> {
+    let context = mutation.resolve(locked)?;
+    let recorded = recorded_manifest_for_key(locked, mutation.idempotency_key.as_deref())?;
+    match mode {
         GenerationMode::Sample { count, seed } => {
+            if recorded.is_none() && !(1..=1000).contains(&count) {
+                return Err(ArchyError::schema(
+                    "count",
+                    "Requested count must be 1..1000",
+                ));
+            }
             if recorded
                 .as_ref()
                 .is_some_and(|run| run.operation != "generate")
             {
                 return Err(request_conflict());
             }
-            let (format, source_format, _) = input_format(&input.project)?;
-            let raw = locked.read_source()?;
+            let raw = match pinned_source {
+                Some(bytes) => bytes.to_vec(),
+                None => locked.read_source()?,
+            };
             let request_bytes =
                 serde_json::to_vec(&serde_json::json!({"mode":"sample","count":count,"seed":seed}))
                     .map_err(|e| {
@@ -50,7 +79,7 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
             };
             let pending = match locked.begin(request)? {
                 archy_core::BeginResult::Replay(receipt) => {
-                    let verified = verify_locked(&locked, &receipt.run_id)?;
+                    let verified = verify_locked(locked, &receipt.run_id)?;
                     return Ok(workflow_receipt(receipt, &verified));
                 }
                 archy_core::BeginResult::Pending(pending) => pending,
@@ -90,8 +119,9 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
                     variants: &generation.variants,
                     evaluations: &evaluations,
                 },
+                check,
             )?;
-            let verified = verify_locked(&locked, &receipt.run_id)?;
+            let verified = verify_locked(locked, &receipt.run_id)?;
             Ok(workflow_receipt(receipt, &verified))
         }
         GenerationMode::Edit {
@@ -123,12 +153,12 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
             };
             let pending = match locked.begin(request)? {
                 archy_core::BeginResult::Replay(receipt) => {
-                    let verified = verify_locked(&locked, &receipt.run_id)?;
+                    let verified = verify_locked(locked, &receipt.run_id)?;
                     return Ok(workflow_receipt(receipt, &verified));
                 }
                 archy_core::BeginResult::Pending(pending) => pending,
             };
-            let parent = verify_locked(&locked, &from_run)?;
+            let parent = verify_locked(locked, &from_run)?;
             if !matches!(parent.manifest().operation.as_str(), "generate" | "edit") {
                 return Err(artifact_invalid(
                     "edit source must be a generation or edit run",
@@ -190,8 +220,9 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
                     variants: &variants,
                     evaluations: &evaluations,
                 },
+                check,
             )?;
-            let verified = verify_locked(&locked, &receipt.run_id)?;
+            let verified = verify_locked(locked, &receipt.run_id)?;
             Ok(workflow_receipt(receipt, &verified))
         }
     }

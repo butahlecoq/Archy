@@ -1048,12 +1048,22 @@ impl PendingRun<'_> {
         Ok(())
     }
     pub fn commit(self, metadata: RunMetadata) -> Result<RunReceipt, ArchyError> {
-        self.commit_inner(metadata, Interrupt::None)
+        self.commit_inner(metadata, Interrupt::None, None)
+    }
+    /// The callback checks an external binding at publication boundaries. It cannot
+    /// exclude a concurrent rename between a check and a filesystem operation.
+    pub fn commit_checked(
+        self,
+        metadata: RunMetadata,
+        check: &dyn Fn() -> Result<(), ArchyError>,
+    ) -> Result<RunReceipt, ArchyError> {
+        self.commit_inner(metadata, Interrupt::None, Some(check))
     }
     fn commit_inner(
         self,
         metadata: RunMetadata,
         interrupt: Interrupt,
+        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
     ) -> Result<RunReceipt, ArchyError> {
         self.locked.require_owner()?;
         if self.artifacts.is_empty()
@@ -1139,6 +1149,9 @@ impl PendingRun<'_> {
                 .map_err(|e| ioerr("sync destination directory", e))?;
         }
         maybe_fault(FaultPoint::BeforeRunRename)?;
+        if let Some(check) = check {
+            check()?;
+        }
         fs::renameat_with(
             &self.staging_parent,
             self.run_id.as_str(),
@@ -1177,6 +1190,9 @@ impl PendingRun<'_> {
             request_schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
             receipt: receipt.clone(),
         };
+        if let Some(check) = check {
+            check().map_err(|error| uncertain("binding changed after run publication", error))?;
+        }
         publish_revision(&self.locked.store.root, &record, interrupt)?;
         Ok(receipt)
     }
@@ -1186,7 +1202,9 @@ impl PendingRun<'_> {
 mod interruption_tests {
     use super::*;
     use crate::MutationContext;
+    use std::cell::Cell;
     use std::process::Command;
+    use std::sync::mpsc;
 
     fn fixture() -> (std::path::PathBuf, ProjectStore) {
         let root = std::env::temp_dir().join(format!("archy-interrupt-{}", uuid::Uuid::new_v4()));
@@ -1218,6 +1236,80 @@ mod interruption_tests {
             count: None,
             parent_variant_id: None,
             algorithm_version: "v1".into(),
+        }
+    }
+    #[test]
+    fn binding_swap_at_publication_boundaries_never_returns_success() {
+        for replace_root in [false, true] {
+            for swap_at in [1, 2] {
+                let (root, store) = fixture();
+                let source = store.pin_source().unwrap();
+                let locked = store.lock().unwrap();
+                let mut pending = locked.begin(request("swap", 0)).unwrap().pending().unwrap();
+                pending
+                    .write("input.json", b"source", "application/json", "test")
+                    .unwrap();
+                let moved = root.with_extension("moved");
+                let replaced = root.with_extension("replacement");
+                let calls = Cell::new(0);
+                let (start_swap, swap_requested) = mpsc::channel();
+                let (swap_done, done) = mpsc::channel();
+                let worker_root = root.clone();
+                let worker_moved = moved.clone();
+                let worker_replaced = replaced.clone();
+                let worker = std::thread::spawn(move || {
+                    swap_requested.recv().unwrap();
+                    if replace_root {
+                        std::fs::rename(&worker_root, &worker_moved).unwrap();
+                        std::fs::create_dir(&worker_root).unwrap();
+                        std::fs::write(worker_root.join("project.json"), b"source").unwrap();
+                    } else {
+                        std::fs::write(&worker_replaced, b"changed").unwrap();
+                        std::fs::rename(&worker_replaced, worker_root.join("project.json"))
+                            .unwrap();
+                    }
+                    swap_done.send(()).unwrap();
+                });
+                let check = || {
+                    calls.set(calls.get() + 1);
+                    if calls.get() == swap_at {
+                        start_swap.send(()).unwrap();
+                        done.recv().unwrap();
+                    }
+                    if !store.matches_root_path(&root).unwrap_or(false)
+                        || !store.source_matches(&source).unwrap_or(false)
+                    {
+                        return Err(conflict("binding changed"));
+                    }
+                    Ok(())
+                };
+                let failure = pending.commit_checked(metadata(), &check).unwrap_err();
+                worker.join().unwrap();
+                assert_eq!(calls.get(), swap_at);
+                assert_eq!(failure.retriable, swap_at == 2);
+                assert_eq!(locked.revision().unwrap(), 0);
+                if replace_root {
+                    assert!(!root.join(".archy").exists());
+                    std::fs::remove_dir_all(&root).unwrap();
+                    std::fs::rename(&moved, &root).unwrap();
+                } else {
+                    std::fs::remove_file(root.join("project.json")).unwrap();
+                    std::fs::write(root.join("project.json"), b"source").unwrap();
+                }
+                let retry = locked.begin(request("swap", 0)).unwrap();
+                if swap_at == 1 {
+                    let mut retry = retry.pending().unwrap();
+                    retry
+                        .write("input.json", b"source", "application/json", "test")
+                        .unwrap();
+                    retry.commit(metadata()).unwrap();
+                } else {
+                    assert!(retry.receipt().is_some());
+                }
+                assert_eq!(locked.revision().unwrap(), 1);
+                assert_eq!(locked.receipts().unwrap().len(), 1);
+                std::fs::remove_dir_all(root).unwrap();
+            }
         }
     }
     #[test]
@@ -1457,7 +1549,7 @@ mod interruption_tests {
             .unwrap();
         assert!(
             pending
-                .commit_inner(metadata(), Interrupt::AfterRunPublication)
+                .commit_inner(metadata(), Interrupt::AfterRunPublication, None)
                 .is_err()
         );
         assert!(root.join("runs").join(&run_id).exists());
@@ -1496,7 +1588,7 @@ mod interruption_tests {
             .unwrap();
         assert!(
             pending
-                .commit_inner(metadata(), Interrupt::AfterRevisionPublication)
+                .commit_inner(metadata(), Interrupt::AfterRevisionPublication, None)
                 .is_err()
         );
         let receipt = locked
@@ -1525,7 +1617,7 @@ mod interruption_tests {
         pending
             .write("input.json", b"source", "application/json", "test")
             .unwrap();
-        let result = pending.commit_inner(metadata(), Interrupt::AfterRunPublication);
+        let result = pending.commit_inner(metadata(), Interrupt::AfterRunPublication, None);
         assert!(result.is_err());
         std::process::abort();
     }

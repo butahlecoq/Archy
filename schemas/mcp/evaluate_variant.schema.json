@@ -106,15 +106,45 @@
         ],
         "type": "string"
       },
-      "PrerequisiteData": {
+      "MutationData": {
         "additionalProperties": false,
         "properties": {
-          "status": {
+          "all_required_checks_passed": {
+            "type": "boolean"
+          },
+          "exhaustion_explanations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "path": {
             "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "variant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "status"
+          "project_id",
+          "run_id",
+          "revision",
+          "path",
+          "variant_ids",
+          "all_required_checks_passed",
+          "exhaustion_explanations"
         ],
         "type": "object"
       }
@@ -125,7 +155,7 @@
         "additionalProperties": false,
         "properties": {
           "data": {
-            "$ref": "#/$defs/PrerequisiteData"
+            "$ref": "#/$defs/MutationData"
           },
           "error": {
             "type": "null"

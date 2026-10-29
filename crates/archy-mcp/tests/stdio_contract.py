@@ -79,9 +79,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
     assert call(p,'get_project',{'project_id':'other'},9)['result']['structuredContent']['error']['code']=='PERMISSION_DENIED'
     assert call(p,'list_variants',{'project_id':'courtyard-demo','limit':101},10)['error']['code']==-32602
     assert call(p,'list_variants',{'project_id':'courtyard-demo','cursor':'wrong:1:id'},11)['result']['structuredContent']['error']['code']=='REVISION_CONFLICT'
-    for i,(name,extra) in enumerate(zip(NAMES[3:],[
-        {'count':1,'seed':'1','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
-        {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
+    for i,(name,extra) in enumerate(zip(NAMES[5:],[
         {'source_run':'r','variant_id':'v','preset':'draft','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
         {'run_ids':['r'],'objective':'area'},
         {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
@@ -109,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
     p.stdin.close(); p.wait(timeout=5)
     assert p.returncode == 1 and b"MCP transport startup failed" in p.stderr.read()
     assert sorted(x.name for x in pathlib.Path(td).iterdir())==['project.yaml']
-print('MCP actual modern/legacy, nine schemas, three base reads, five prerequisite errors, bounds and no writes: PASS')
+print('MCP actual modern/legacy, nine schemas, three base reads, four typed errors, bounds and no writes: PASS')
 with tempfile.TemporaryDirectory(prefix='archy-mcp-history-') as td:
     project=pathlib.Path(td)/'project.yaml'; shutil.copyfile(SOURCE,project)
     cli=TARGET/'debug/archy'
@@ -191,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
     mutation={'project_id':'courtyard-demo','source_run':'r','variant_id':'v',
               'idempotency_key':'k','expected_project_revision':'0','destination':'runs'}
     fields=[('compare_variants','objective',{'project_id':'courtyard-demo','run_ids':['r'],'objective':'area'}),
-            ('generate_variants','destination',{'project_id':'courtyard-demo','count':1,'seed':'1',
+            ('generate_variants','destination',{'project_id':'wrong-project','count':1,'seed':'1',
                                                'idempotency_key':'k','expected_project_revision':'0','destination':'runs'}),
             ('evaluate_variant','destination',mutation),
             ('render_variant','preset',{**mutation,'preset':'draft'}),
@@ -221,7 +219,8 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
             second=json.dumps(request(2,tool,base)).encode()
             replies=run_frames(first,second)
             assert set(replies)==({1,2} if valid else {None,2}),(tool,field,label,replies)
-            expected='INVALID_SCHEMA' if tool=='compare_variants' else 'BACKEND_UNAVAILABLE'
+            expected=('INVALID_SCHEMA' if tool in ('compare_variants','evaluate_variant') else
+                      'PERMISSION_DENIED' if tool=='generate_variants' else 'BACKEND_UNAVAILABLE')
             assert replies[2]['result']['structuredContent']['error']['code']==expected
             if valid:
                 assert replies[1]['result']['structuredContent']['error']['code']==expected
