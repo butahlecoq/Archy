@@ -287,6 +287,93 @@ fn killed_staging_writer_preserves_accepted_inventory_and_retry_applies_once() {
 }
 
 #[test]
+fn child_aborts_after_commit_without_delivering_receipt() {
+    let root = PathBuf::from("/proc/self/fd/0");
+    if !fs::metadata(&root).is_ok_and(|metadata| metadata.is_dir())
+        || !watch_parent(Duration::from_secs(30))
+    {
+        return;
+    }
+    let store = ProjectStore::open(&root.join("project.json")).unwrap();
+    let locked = store.lock().unwrap();
+    let mut pending = locked
+        .begin(request("receipt-lost", 1))
+        .unwrap()
+        .pending()
+        .unwrap();
+    pending
+        .write("data", b"committed", "text/plain", "recovery-test")
+        .unwrap();
+    pending.commit(metadata()).unwrap();
+    std::process::abort();
+}
+
+#[test]
+fn lost_receipt_after_commit_is_replayed() {
+    let fixture = Fixture::new();
+    let first = accept_first(&fixture.0);
+    let before = accepted_inventory(&fixture.0, &first);
+    let mut writer = Writer::spawn_test(
+        &fixture.0,
+        Rc::default(),
+        None,
+        "child_aborts_after_commit_without_delivering_receipt",
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = writer.child.as_mut().unwrap().try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "commit child did not exit");
+        thread::sleep(Duration::from_millis(10));
+    };
+    writer.child = None;
+    assert_eq!(status.signal(), Some(6));
+    let store = ProjectStore::open(&fixture.0.join("project.json")).unwrap();
+    assert_eq!(store.read_history().unwrap().revision(), 2);
+    let locked = store.lock().unwrap();
+    let receipts = locked.receipts().unwrap();
+    assert_eq!(receipts.len(), 2);
+    assert_eq!(receipts[0], first);
+    let second = &receipts[1];
+    assert_eq!(second.revision, 2);
+    assert_eq!(
+        locked.read_run(&second.run_id).unwrap().artifact("data"),
+        Some(b"committed".as_slice())
+    );
+    assert_eq!(accepted_inventory(&fixture.0, &first), before);
+    let revision_two = fixture.0.join(".archy/revisions/00000000000000000002.json");
+    let revision_two_bytes = fs::read(&revision_two).unwrap();
+    let second_before = accepted_inventory(&fixture.0, second);
+
+    assert_eq!(
+        locked.begin(request("receipt-lost", 1)).unwrap().receipt(),
+        Some(second.clone())
+    );
+    assert_eq!(locked.revision().unwrap(), 2);
+    assert_eq!(locked.receipts().unwrap(), receipts);
+    assert_eq!(accepted_inventory(&fixture.0, &first), before);
+    assert_eq!(accepted_inventory(&fixture.0, second), second_before);
+    assert_eq!(fs::read(revision_two).unwrap(), revision_two_bytes);
+    assert_eq!(
+        fs::read_dir(fixture.0.join(".archy/staging"))
+            .unwrap()
+            .count(),
+        0
+    );
+    let mut changed = request("receipt-lost", 1);
+    changed.request_bytes = b"count=2,seed=42".to_vec();
+    assert_eq!(
+        locked.begin(changed).err().unwrap().code,
+        ErrorCode::RevisionConflict
+    );
+    assert_eq!(
+        locked.begin(request("new-key", 1)).err().unwrap().code,
+        ErrorCode::RevisionConflict
+    );
+}
+
+#[test]
 fn inherited_path_cannot_select_the_writer_project() {
     let unrelated = Fixture::new();
     fs::write(unrelated.0.join("project.json"), b"unrelated").unwrap();
