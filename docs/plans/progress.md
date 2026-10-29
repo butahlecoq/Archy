@@ -36,3 +36,11 @@ License ruling: coordinator selects MIT for original Rust/core under authorized 
 ## Current-state correction (29 October 2026)
 
 See current-handoff.md: GitHub ADMIN authentication and WSL Rust 1.99.1 now work. Cargo.lock resolved; build/clippy passed, tests and formatting require fixes. The older blockers above are historical. Comprehensive Omarchy/reuse research is recorded in ../research/omarchy-and-reuse.md. Original agents are no longer active. Task-01 reviewed findings remain open. SI suffix ruling is superseded by explicit-SI-always-SI; generic units still normalize and duplicate representations fail. No target Omarchy actions are authorized for execution on this Windows host; prepare them and defer target acceptance.
+
+## Verified progress after task01
+
+- Tracker publication complete:26 remote issues, independent review PASS (b9e436f), stable body-marker reconciliation corrected. Main protection and draft PR27 established.
+- Task01 fix round1: original six findings addressed in59d3c90; independent review found P2 scalar-looking init IDs (573efce).
+- Task01 fix round2/5: P2 corrected in c11157b with red-green and scoped regression checks. Final independent review PASS13f8f4d; no open task01 review findings. Code CI40877097234 and40877108347 passed.
+- Task01 slice complete (5b8622a..c11157b product changes, review clean). Broader A01/A02 integration criteria stay tracked; this is not a full release claim.
+- Task02 dispatched to massing_evaluation (Sol medium) at base13f8f4d; task-02.md includes canonical shape/derived footprint consistency. All other release requirements retained.

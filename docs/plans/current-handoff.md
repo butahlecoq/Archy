@@ -1,26 +1,24 @@
 # Current handoff — 29 October 2026
 
-## Verified state
+## Current verified state
 
-- Branch: feat/release-0.1; original upstream base 155df35.
-- Full supplied Word specification and extracted text are under docs/specs.
-- Research for Omarchy and reusable projects is in docs/research/omarchy-and-reuse.md; backend API/version research in docs/plans/backend-research.md.
-- A01-A20 ticket descriptions exist in docs/plans/backlog.md. Remote issues were still absent at the last check; publication is the next orchestration task.
-- GitHub authentication works with ADMIN repository permission. Earlier sandbox authentication failure is historical, not a current blocker.
-- Rust 1.99.1 runs in Ubuntu WSL; Cargo.lock was resolved. Build and clippy passed on the current initial implementation; tests had 8 passes and 1 failure, and formatting failed. Exact commands/results: docs/plans/toolchain-revalidation.md.
-- The failing translated-site test depends on LF-only replacement against CRLF input. Independent review also found unexercised negative fixtures, incomplete error paths/schema checks and missing baseline documentation. See docs/plans/task-01-review.md.
-- No implementation slice is claimed complete. No Omarchy desktop, Blender or IFC runtime acceptance has been performed. Actual Omarchy execution is deferred by the founder until a target machine exists.
+- Branch feat/release-0.1, draft PR https://github.com/butahlecoq/Archy/pull/27. All authored deliverables are committed/pushed in bounded commits; work in flight is committed by its owner before handoff.
+- Full supplied Word specification and extracted text are in docs/specs. Omarchy/reuse research is in docs/research/omarchy-and-reuse.md; backend detail in docs/plans/backend-research.md.
+- All26 issues are published and independently verified: A01-A23 (#1-23) release scope; R01-R03 (#24-26) later roadmap. See issue-map.md and tracker-review.md. main requires rust CI plus one approval, stale dismissal and admin enforcement; no merge performed.
+- Task01 init/validate baseline is implemented and independently reviewed PASS after two fix rounds. Code commits59d3c90 and c11157b; final review13f8f4d. Reports: task-01-report.md, task-01-handoff.md and task-01-review-final.md.
+- Pinned Rust1.99.1 runs in Ubuntu WSL. Final scope covers12 core tests and5 CLI tests plus26 negative fixture cases through core/real CLI schema checks. fmt/clippy/build/schema checks passed. Both GitHub CI runs on c11157b succeeded (40877097234,40877108347). Later documentation-only CI can be inspected separately.
+- Task02 A03/A04 generation/evaluation implementation is starting with Sol medium from base13f8f4d. Requirements and analytic fixtures: task-02.md. No generation, worker, IFC, MCP or Omarchy desktop completion is claimed yet.
 
-## Next work
+## Current next actions
 
-1. Publish/reconcile the specification issues and add Omarchy integration tasks from the research.
-2. Complete D1-D2 with Sol medium; resolve reviewed findings, run WSL checks, obtain independent Sol medium review.
-3. Implement deterministic generator/evaluator and immutable run/report pipeline, then typed Blender/IFC/MCP and native Omarchy integration in dependency order.
+Finish and independently review A03/A04, then A05 persistence/reports and remaining typed Blender/IFC/MCP/native Omarchy slices. Keep original release requirements intact. Original issue acceptance spans integration requirements (run snapshots, complete entity schemas, downstream CI), so do not equate a completed first slice with closure of all A01/A02 or release gates.
 
-## Decisions
+## Decisions and environment
 
-Omarchy 4.0.6 stable is the researched baseline; 4.5.0-rc2 is not assumed deployed. Reuse Quickshell plugin/theming, mise, agent skills/session tools, Linux isolation and existing modeling/BIM systems. Do not build a custom viewport, scheduler or cloud service. Original core license selection: MIT; worker/dependency obligations remain separate.
+Omarchy4.0.6 stable is the researched target;4.5.0-rc2 is not assumed deployed. Reuse Quickshell, mise, agent skills/sessions, Linux isolation and existing modeling/BIM systems. No new viewport, scheduler or cloud service. Original core is MIT; workers/dependencies retain separate obligations.
 
-SI input ruling: explicit _m/_m2 values always mean SI, generic dimensions obey declared input units, and simultaneous generic/SI representations are rejected. This replaces the earlier overly restrictive meters-only alias rule and resolves the review/plan conflict. Update schemas/fixtures accordingly.
+Explicit _m/_m2 always means SI, generic dimensions obey declared input units, duplicate representations fail. Scalar-looking valid IDs are safely quoted by init. Shape parameters will be authoritative; stored footprint/identifier consistency is required before evaluation/rendering.
 
-The founder asked that all authored work/findings be committed and pushed. WIP commits document failures; a commit is not a release or test-pass claim. External dependency downloads, raw upstream reading caches, build outputs and helper scratch files are not repository deliverables. Windows security settings must not be modified.
+GitHub authentication and WSL work. Older sandbox/auth/toolchain failures in historical reports are not current blockers. Actual Omarchy execution, desktop/visual/GPU and clean-target acceptance are deferred by the founder until a machine is available; Ubuntu/CI evidence is not target acceptance. Never modify Windows security settings.
+
+Downloaded tooling, raw upstream reading caches, build outputs and temporary command payloads are not repository deliverables. All authored source/research/plans/reviews are committed and pushed. Task implementation and review remain Sol medium; root coordinates/researches.
