@@ -13,6 +13,7 @@ use std::{
     collections::{BTreeMap, HashSet},
     fs::File,
     io::{Read, Write},
+    os::unix::fs::FileExt,
     os::unix::fs::MetadataExt,
     path::{Component, Path},
 };
@@ -265,6 +266,32 @@ pub struct ProjectStore {
     root: File,
     project_file: String,
 }
+pub struct PinnedProjectSource {
+    file: File,
+    device: u64,
+    inode: u64,
+}
+impl PinnedProjectSource {
+    pub fn read(&self) -> Result<Vec<u8>, ArchyError> {
+        let limit = crate::validation::MAX_INPUT_BYTES;
+        let mut bytes = Vec::new();
+        let mut chunk = [0_u8; 8192];
+        while bytes.len() <= limit {
+            let count = self
+                .file
+                .read_at(&mut chunk, bytes.len() as u64)
+                .map_err(|e| ioerr("read pinned project source", e))?;
+            if count == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..count]);
+        }
+        if bytes.len() > limit {
+            return Err(err(ErrorCode::InvalidSchema, "project input exceeds 1 MiB"));
+        }
+        Ok(bytes)
+    }
+}
 pub struct LockedProject<'a> {
     store: &'a ProjectStore,
     _lock: File,
@@ -491,6 +518,22 @@ impl ProjectStore {
         let mut file = existing_file(&self.root, &self.project_file)?;
         read_bounded(&mut file, crate::validation::MAX_INPUT_BYTES)
     }
+    pub fn pin_source(&self) -> Result<PinnedProjectSource, ArchyError> {
+        let file = existing_file(&self.root, &self.project_file)?;
+        let meta = file.metadata().map_err(|e| ioerr("project metadata", e))?;
+        Ok(PinnedProjectSource {
+            file,
+            device: meta.dev(),
+            inode: meta.ino(),
+        })
+    }
+    pub fn source_matches(&self, pinned: &PinnedProjectSource) -> Result<bool, ArchyError> {
+        let current = existing_file(&self.root, &self.project_file)?;
+        let meta = current
+            .metadata()
+            .map_err(|e| ioerr("project metadata", e))?;
+        Ok(meta.dev() == pinned.device && meta.ino() == pinned.inode)
+    }
     pub fn identity_digest(&self) -> Result<String, ArchyError> {
         let meta = self
             .root
@@ -505,6 +548,14 @@ impl ProjectStore {
             )
             .as_bytes(),
         ))
+    }
+    pub fn matches_root_path(&self, path: &Path) -> Result<bool, ArchyError> {
+        let pinned = self
+            .root
+            .metadata()
+            .map_err(|e| ioerr("root metadata", e))?;
+        let current = std::fs::metadata(path).map_err(|e| ioerr("configured root metadata", e))?;
+        Ok(pinned.dev() == current.dev() && pinned.ino() == current.ino())
     }
 }
 

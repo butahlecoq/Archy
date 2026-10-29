@@ -1,5 +1,5 @@
-use crate::{artifact_invalid, input_format, run_integrity::verify_history};
-use archy_core::{ArchyError, ErrorCode, ProjectStore, RunManifest, parse_project, sha256_hex};
+use crate::{BoundProjectRead, artifact_invalid};
+use archy_core::{ArchyError, ErrorCode, RunManifest, sha256_hex};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -168,31 +168,27 @@ pub fn desktop_status(input: DesktopStatusInput) -> Result<DesktopStatus, ArchyE
     if input.run.as_ref().is_some_and(|id| id.len() > 128) {
         return Err(ArchyError::schema("run", "Run ID too long"));
     }
-    let (format, _, _) = input_format(&input.project)?;
-    let store = ProjectStore::open(&input.project)?;
-    let source = store.read_source()?;
-    let source_text = std::str::from_utf8(&source)
-        .map_err(|_| ArchyError::schema("project", "Project is not UTF-8"))?;
-    let spec = parse_project(source_text, format)?;
-    let source_sha256 = sha256_hex(&source);
-    let history = store.read_history()?;
-    let revision = history.revision();
+    let bound = BoundProjectRead::open(&input.project)?;
+    let snapshot = bound.snapshot()?;
+    let spec = snapshot.spec();
+    let source_sha256 = snapshot.source_sha256();
+    let revision = snapshot.revision();
     let binding = sha256_hex(
         format!(
             "archy-desktop-page-v1\0{}:{}:{}",
-            store.identity_digest()?,
+            snapshot.identity(),
             spec.project_id,
             source_sha256
         )
         .as_bytes(),
     );
-    let receipts: Vec<_> = history.receipts().rev().collect();
+    let receipts: Vec<_> = snapshot.receipts().rev().collect();
     let start = match input.cursor.as_deref() {
         Some(value) => parse_cursor(
             value,
             &binding,
             revision,
-            history.head_sha256(),
+            snapshot.head_sha256(),
             receipts.len(),
         )?,
         None => 0,
@@ -202,7 +198,7 @@ pub fn desktop_status(input: DesktopStatusInput) -> Result<DesktopStatus, ArchyE
         .min(receipts.len());
     let mut runs = Vec::with_capacity(end - start);
     for receipt in &receipts[start..end] {
-        let trusted = verify_history(&history, &receipt.run_id)?;
+        let trusted = snapshot.verify_run(&receipt.run_id)?;
         if trusted.manifest().project_id != spec.project_id {
             return Err(artifact_invalid(
                 "accepted run belongs to another project ID",
@@ -224,7 +220,7 @@ pub fn desktop_status(input: DesktopStatusInput) -> Result<DesktopStatus, ArchyE
         None => receipts.get(start).copied(),
     };
     let selected_run = if let Some(receipt) = selected_receipt {
-        let trusted = verify_history(&history, &receipt.run_id)?;
+        let trusted = snapshot.verify_run(&receipt.run_id)?;
         if trusted.manifest().project_id != spec.project_id {
             return Err(artifact_invalid(
                 "accepted run belongs to another project ID",
@@ -250,13 +246,13 @@ pub fn desktop_status(input: DesktopStatusInput) -> Result<DesktopStatus, ArchyE
         None
     };
     let next_cursor = (end < receipts.len())
-        .then(|| cursor_token(&binding, revision, history.head_sha256(), end));
+        .then(|| cursor_token(&binding, revision, snapshot.head_sha256(), end));
     let response = DesktopStatus {
         schema_version: DESKTOP_STATUS_VERSION.into(),
         project: DesktopProject {
-            id: spec.project_id,
+            id: spec.project_id.clone(),
             revision,
-            source_sha256,
+            source_sha256: source_sha256.to_owned(),
         },
         runs,
         selected_run,

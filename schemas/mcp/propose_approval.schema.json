@@ -1,0 +1,190 @@
+{
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "destination": {
+        "anyOf": [
+          {
+            "maxLength": 512,
+            "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 256,
+            "pattern": "^[\\u0000-\\u07ff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 170,
+            "pattern": "^[\\u0000-\\ud7ff\\ue000-\\uffff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 128,
+            "pattern": "^(?:[^\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*(?![\\s\\S])"
+          }
+        ],
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+      },
+      "expected_project_revision": {
+        "pattern": "^(0|[1-9][0-9]{0,19})$",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "project_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "reason": {
+        "anyOf": [
+          {
+            "maxLength": 4096,
+            "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 2048,
+            "pattern": "^[\\u0000-\\u07ff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 1365,
+            "pattern": "^[\\u0000-\\ud7ff\\ue000-\\uffff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 1024,
+            "pattern": "^(?:[^\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*(?![\\s\\S])"
+          }
+        ],
+        "maxLength": 4096,
+        "minLength": 1,
+        "type": "string"
+      },
+      "source_run": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "variant_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project_id",
+      "source_run",
+      "variant_id",
+      "reason",
+      "idempotency_key",
+      "expected_project_revision",
+      "destination"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArchyError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "field": {
+            "description": "JSON-style dotted field path; `$` denotes the document itself.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field",
+          "retriable"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_GEOMETRY",
+          "CONSTRAINT_FAIL",
+          "BACKEND_UNAVAILABLE",
+          "BACKEND_TIMEOUT",
+          "ARTIFACT_INVALID",
+          "REVISION_CONFLICT",
+          "PERMISSION_DENIED",
+          "INTERNAL_ERROR"
+        ],
+        "type": "string"
+      },
+      "PrerequisiteData": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/PrerequisiteData"
+          },
+          "error": {
+            "type": "null"
+          },
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "$ref": "#/$defs/ArchyError"
+          },
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

@@ -10,8 +10,10 @@ from pathlib import Path, PurePosixPath
 import re
 import shlex
 import stat
+import subprocess
 import sys
 import tarfile
+import tomllib
 
 
 PREFIXES = ("usr/bin/", "usr/share/archy/", "usr/share/licenses/archy/")
@@ -20,6 +22,47 @@ NOTICE_LIMIT = 16 * 1024 * 1024
 NOTICE_INVENTORY_LIMIT = 2 * 1024 * 1024
 NOTICE_PATH = "usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt"
 NOTICE_INVENTORY_PATH = "usr/share/archy/third-party-notices.json"
+REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
+
+
+def normal_registry_graph(metadata):
+    packages = {p["id"]: p for p in metadata["packages"]}
+    nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
+    roots = [p["id"] for p in packages.values() if p["name"] == "archy-cli" and p.get("source") is None]
+    if len(roots) != 1:
+        raise ValueError("expected exactly one local archy-cli package")
+    visited = set()
+    pending = roots
+    while pending:
+        pid = pending.pop()
+        if pid in visited:
+            continue
+        visited.add(pid)
+        if pid not in nodes or pid not in packages:
+            raise ValueError(f"metadata graph lacks package or node: {pid}")
+        for edge in nodes[pid].get("deps", []):
+            if any(kind.get("kind") in (None, "normal") for kind in edge.get("dep_kinds", [])):
+                pending.append(edge["pkg"])
+    result = []
+    for pid in visited:
+        package = packages[pid]
+        if package.get("source") is not None:
+            if package["source"] != REGISTRY:
+                raise ValueError(f"unsupported registry source: {pid}")
+            result.append(package)
+    return sorted(result, key=lambda p: (p["name"], p["version"]))
+
+
+def locked_graph(source):
+    env = dict(os.environ, CARGO_NET_OFFLINE="true", RUSTUP_AUTO_INSTALL="0")
+    metadata = json.loads(subprocess.check_output(
+        ["cargo", "metadata", "--offline", "--locked", "--format-version", "1",
+         "--filter-platform", "x86_64-unknown-linux-gnu"], cwd=source, env=env))
+    lock = tomllib.loads(read_regular_nofollow(source / "Cargo.lock").decode("utf-8"))
+    checksums = {(p["name"], p["version"]): p["checksum"] for p in lock["package"]
+                 if p.get("source") == REGISTRY}
+    graph = normal_registry_graph(metadata)
+    return {(p["name"], p["version"], checksums[p["name"], p["version"]]) for p in graph}
 
 
 def open_directory(path):
@@ -188,6 +231,15 @@ def stage(args):
     metadata = json.loads(inventory_bytes)
     if not isinstance(metadata, dict) or metadata.get("bundle_sha256") != hashlib.sha256(notices).hexdigest():
         raise ValueError("notice bundle/inventory checksum mismatch")
+    crates = metadata.get("crates")
+    if not isinstance(crates, list) or metadata.get("crate_count") != len(crates):
+        raise ValueError("invalid notice crate inventory")
+    try:
+        covered = {(p["name"], p["version"], p["source_sha256"]) for p in crates}
+    except (KeyError, TypeError) as error:
+        raise ValueError("invalid notice crate inventory") from error
+    if len(covered) != len(crates) or covered != locked_graph(source):
+        raise ValueError("notice dependency coverage mismatch")
     validated_notices = {NOTICE_PATH: notices, NOTICE_INVENTORY_PATH: inventory_bytes}
     inventory = []
     with ExitStack() as stack:
@@ -331,7 +383,7 @@ def main():
     args = parser.parse_args()
     try:
         (stage if args.command == "stage" else recipe)(args)
-    except (OSError, ValueError, tarfile.TarError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tarfile.TarError) as error:
         print(f"package: {error}", file=sys.stderr)
         return 1
     return 0

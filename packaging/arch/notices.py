@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tomllib
 
-from package import open_directory, read_regular_nofollow, relative
+from package import normal_registry_graph, open_directory, read_regular_nofollow, relative
 
 
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
@@ -36,34 +36,6 @@ def source_bytes(source, path):
         raise ValueError("notice path must be a string")
     relative(path)
     return read_regular_nofollow(source / path)
-
-
-def normal_registry_graph(metadata):
-    packages = {p["id"]: p for p in metadata["packages"]}
-    nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
-    roots = [p["id"] for p in packages.values() if p["name"] == "archy-cli" and p.get("source") is None]
-    if len(roots) != 1:
-        raise ValueError("expected exactly one local archy-cli package")
-    visited = set()
-    pending = roots
-    while pending:
-        pid = pending.pop()
-        if pid in visited:
-            continue
-        visited.add(pid)
-        if pid not in nodes or pid not in packages:
-            raise ValueError(f"metadata graph lacks package or node: {pid}")
-        for edge in nodes[pid].get("deps", []):
-            if any(kind.get("kind") in (None, "normal") for kind in edge.get("dep_kinds", [])):
-                pending.append(edge["pkg"])
-    result = []
-    for pid in visited:
-        package = packages[pid]
-        if package.get("source") is not None:
-            if package["source"] != REGISTRY:
-                raise ValueError(f"unsupported registry source: {pid}")
-            result.append(package)
-    return sorted(result, key=lambda p: (p["name"], p["version"]))
 
 
 def load_json(data, label):

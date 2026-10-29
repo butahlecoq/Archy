@@ -287,5 +287,38 @@ fn rehashed_false_evaluation_summary_never_becomes_desktop_truth() {
     ]);
     assert_ne!(exit, 0);
     assert_eq!(error["code"], "ARTIFACT_INVALID");
+    let bound = archy_cli::BoundProjectRead::open(&project).unwrap();
+    assert_eq!(
+        bound.snapshot().unwrap().verify_head().err().unwrap().code,
+        archy_core::ErrorCode::ArtifactInvalid
+    );
     assert_eq!(inventory(root), before);
+}
+
+#[test]
+fn bound_reader_rejects_source_and_root_replacement_without_creating_history() {
+    let project = temp_project();
+    let parent = project.parent().unwrap().to_path_buf();
+    let bound = archy_cli::BoundProjectRead::open(&project).unwrap();
+    assert_eq!(bound.snapshot().unwrap().revision(), 0);
+    let first = inventory(&parent);
+    assert_eq!(first.len(), 1);
+    let replacement = parent.join("replacement.yaml");
+    fs::copy(&project, &replacement).unwrap();
+    fs::rename(&replacement, &project).unwrap();
+    assert_eq!(
+        bound.snapshot().err().unwrap().code,
+        archy_core::ErrorCode::RevisionConflict
+    );
+    assert!(!parent.join(".archy").exists());
+    let second = archy_cli::BoundProjectRead::open(&project).unwrap();
+    let moved = parent.with_extension("moved");
+    fs::rename(&parent, &moved).unwrap();
+    fs::create_dir(&parent).unwrap();
+    fs::copy(moved.join("project.yaml"), &project).unwrap();
+    assert_eq!(
+        second.snapshot().err().unwrap().code,
+        archy_core::ErrorCode::RevisionConflict
+    );
+    assert!(!parent.join(".archy").exists());
 }

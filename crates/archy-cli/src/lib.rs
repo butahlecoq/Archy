@@ -5,6 +5,7 @@ mod desktop_capabilities;
 mod desktop_status;
 mod evaluate;
 mod generate;
+mod project_read;
 mod run_integrity;
 
 pub use ascii_json::{ascii_json_compact, ascii_json_pretty};
@@ -17,6 +18,7 @@ pub use desktop_status::{
 };
 pub use evaluate::evaluate;
 pub use generate::generate;
+pub use project_read::{BoundProjectRead, BoundReadSnapshot};
 pub use run_integrity::{TrustedRun, verify_run};
 
 use archy_core::{

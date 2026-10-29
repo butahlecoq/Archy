@@ -32,6 +32,33 @@ desktop = json.loads(subprocess.check_output(
 all_schemas = {**contracts['schemas'], **task02['schemas'], **storage['schemas'],
                **backend['schemas'], **report['schemas'], **desktop['schemas']}
 
+mcp_schemas = json.loads(subprocess.check_output(
+    ['cargo', 'run', '--locked', '--quiet', '-p', 'archy-mcp', '--example', 'contracts'],
+    cwd=ROOT, text=True))
+assert len(mcp_schemas) == 9
+for name, pair in mcp_schemas.items():
+    assert set(pair) == {'input', 'output'}
+    for schema in pair.values():
+        Draft202012Validator.check_schema(schema)
+    assert pair['input']['additionalProperties'] is False
+    assert len(pair['output']['oneOf']) == 2
+    assert all(branch['additionalProperties'] is False for branch in pair['output']['oneOf'])
+    read_path = ROOT / 'schemas' / 'mcp' / f'{name}.schema.json'
+    assert json.loads(read_path.read_text()) == pair, name
+    output = Draft202012Validator(pair['output'])
+    for ok in (True, False):
+        assert not output.is_valid({'ok': ok, 'data': None, 'error': None}), (name, ok)
+    error = {'code': 'BACKEND_UNAVAILABLE', 'field': 'tool', 'message': 'Unavailable', 'retriable': False}
+    assert output.is_valid({'ok': False, 'data': None, 'error': error}), name
+    assert not output.is_valid({'ok': True, 'data': None, 'error': error}), name
+assert {p.stem.removesuffix('.schema') for p in (ROOT / 'schemas' / 'mcp').glob('*.schema.json')} == set(mcp_schemas)
+compare_input = Draft202012Validator(mcp_schemas['compare_variants']['input'])
+compare_args = {'project_id': 'courtyard-demo', 'run_ids': ['x' * 128], 'objective': 'area'}
+assert compare_input.is_valid(compare_args)
+compare_args['run_ids'] = ['x' * 129]
+assert not compare_input.is_valid(compare_args), 'run ID item length must match wire validation'
+print('nine MCP input/output schema pairs match SDK descriptors')
+
 def read(path):
     return json.loads(path.read_text(encoding='utf-8-sig'))
 
@@ -203,6 +230,10 @@ for name, args, schema in [
 print('actual CLI desktop capabilities and genesis status conform')
 
 subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check=True)
+subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-mcp'], cwd=ROOT, check=True)
+for test in ('stdio_contract.py', 'parse_errors.py'):
+    subprocess.run([sys.executable, str(ROOT / 'crates' / 'archy-mcp' / 'tests' / test)],
+                   cwd=ROOT, timeout=120, check=True)
 
 demo_env = dict(os.environ, ARCHY_BIN=str(binary))
 subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/demo', '-v'],

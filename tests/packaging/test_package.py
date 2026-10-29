@@ -41,7 +41,12 @@ class StageTests(unittest.TestCase):
         self.notices = self.base / "THIRD-PARTY-NOTICES.txt"
         self.notices.write_bytes(b"notice fixture\n")
         self.notice_inventory = self.base / "third-party-notices.json"
-        self.notice_inventory.write_text(json.dumps({"bundle_sha256": hashlib.sha256(self.notices.read_bytes()).hexdigest()}))
+        (self.source / "Cargo.toml").write_text('[package]\nname = "archy-cli"\nversion = "0.1.0"\nedition = "2024"\n')
+        (self.source / "src").mkdir()
+        (self.source / "src/main.rs").write_text('fn main() {}\n')
+        (self.source / "Cargo.lock").write_text('version = 4\n[[package]]\nname = "archy-cli"\nversion = "0.1.0"\n')
+        self.notice_inventory.write_text(json.dumps({"bundle_sha256": hashlib.sha256(self.notices.read_bytes()).hexdigest(),
+                                                     "crate_count": 0, "crates": []}))
         self.manifest = self.base / "files.txt"
         self.manifest.write_text("@binary\tusr/bin/archy\t0755\nLICENSE\tusr/share/licenses/archy/LICENSE\t0644\ndata/schema.json\tusr/share/archy/schema.json\t0644\n@notices\tusr/share/licenses/archy/THIRD-PARTY-NOTICES.txt\t0644\n@notice-inventory\tusr/share/archy/third-party-notices.json\t0644\n")
         self.inventory = self.base / "inventory.json"
@@ -76,6 +81,17 @@ class StageTests(unittest.TestCase):
             path.unlink()  # package-owned path removal simulation, not pacman behavior
         for name in sentinels:
             self.assertEqual((self.dest / name).read_text(), name)
+
+    def test_stage_rejects_stale_dependency_coverage_before_writing(self):
+        self.notice_inventory.write_text(json.dumps({
+            "bundle_sha256": hashlib.sha256(self.notices.read_bytes()).hexdigest(),
+            "crate_count": 1,
+            "crates": [{"name": "old-crate", "version": "1.0.0", "source_sha256": "a" * 64}],
+        }))
+        result = self.stage()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("notice dependency coverage mismatch", result.stderr)
+        self.assertEqual(list(self.dest.iterdir()), [])
 
     def test_rejects_collision_without_mutation(self):
         target = self.dest / "usr/bin/archy"

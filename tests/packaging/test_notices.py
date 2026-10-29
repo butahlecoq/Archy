@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 
@@ -216,9 +217,11 @@ checksum = "''' + "b" * 64 + '''"
         sentinel.parent.mkdir(parents=True)
         sentinel.write_text("keep")
         stage_inventory = self.base / "stage-inventory.json"
-        package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), dest=str(dest),
-                                      manifest=str(manifest), inventory=str(stage_inventory),
-                                      notices_file=str(notice_text), notice_inventory_file=str(notice_inventory)))
+        expected = {("alpha", "1.0.0", "a" * 64), ("beta", "2.0.0", "b" * 64)}
+        with patch.object(package, "locked_graph", return_value=expected):
+            package.stage(SimpleNamespace(source=str(self.source), binary=str(binary), dest=str(dest),
+                                          manifest=str(manifest), inventory=str(stage_inventory),
+                                          notices_file=str(notice_text), notice_inventory_file=str(notice_inventory)))
         staged = json.loads(stage_inventory.read_text())
         self.assertEqual(len(staged), 4)
         for entry in staged:
