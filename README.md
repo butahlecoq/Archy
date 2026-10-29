@@ -4,6 +4,8 @@ Archy is an architectural workspace for Omarchy. This partial release 0.1 expose
 
 The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 
+Contributors can follow the [source quickstart](docs/contributor-quickstart.md) for a repeatable offline development check and a handoff template. It distinguishes this source demo from an Omarchy installation.
+
 ## Development and use
 
 The current source CLI help is the command authority. Build locally with a unique target, then run the disposable demo (Python 3 standard library only):
