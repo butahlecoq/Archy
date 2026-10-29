@@ -1,0 +1,104 @@
+[
+  {
+    "file": "missing-floor-height.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "brief.floor_to_floor"
+  },
+  {
+    "file": "negative-site.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "site.width"
+  },
+  {
+    "file": "zero-storeys.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "brief.storeys"
+  },
+  {
+    "file": "unsupported-units.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "units"
+  },
+  {
+    "file": "unsupported-version.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "schema_version"
+  },
+  {
+    "file": "duplicate-constraint-id.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "constraints[1].id"
+  },
+  {
+    "file": "contradictory-setbacks.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "constraints"
+  },
+  {
+    "file": "hard-gfa-impossible.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "brief.target_gfa"
+  },
+  {
+    "file": "unknown-field.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "guess"
+  },
+  {
+    "file": "ambiguous-unit-suffix.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": "site.width"
+  },
+  {
+    "file": "self-intersecting-site.json",
+    "format": "json",
+    "code": "INVALID_GEOMETRY",
+    "field": "site.polygon_xy"
+  },
+  {
+    "file": "nonrectangular-site.json",
+    "format": "json",
+    "code": "INVALID_GEOMETRY",
+    "field": "site.polygon_xy"
+  },
+  {
+    "file": "open-site.json",
+    "format": "json",
+    "code": "INVALID_GEOMETRY",
+    "field": "site.polygon_xy"
+  },
+  {
+    "file": "duplicate-key.yaml",
+    "format": "yaml",
+    "code": "INVALID_SCHEMA",
+    "field": null
+  },
+  {
+    "file": "yaml-alias.yaml",
+    "format": "yaml",
+    "code": "INVALID_SCHEMA",
+    "field": null
+  },
+  {
+    "file": "json-overflow.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": null
+  },
+  {
+    "file": "json-nan.json",
+    "format": "json",
+    "code": "INVALID_SCHEMA",
+    "field": null
+  }
+]

@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.1.0",
+  "project_id": "courtyard-demo",
+  "units": "m",
+  "site": {
+    "width_m": 20,
+    "depth_m": 35,
+    "north_deg": 0
+  },
+  "brief": {
+    "storeys": 0,
+    "floor_to_floor_m": 3.2,
+    "target_gfa_m2": 900
+  },
+  "constraints": [
+    {
+      "id": "height",
+      "kind": "max_height",
+      "value_m": 12,
+      "source": "user_brief"
+    },
+    {
+      "id": "setback",
+      "kind": "min_edge_setback",
+      "value_m": 3,
+      "source": "user_brief"
+    }
+  ],
+  "generation": {
+    "count": 3,
+    "seed": 42,
+    "shapes": [
+      "rectangle",
+      "l_shape"
+    ]
+  }
+}

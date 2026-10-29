@@ -1,0 +1,75 @@
+use archy_core::{parse_project, ErrorCode, InputFormat};
+
+const GOLDEN: &str = include_str!("../../../examples/courtyard-housing/project.yaml");
+fn parse(s: &str) -> archy_core::NormalizedSpec { parse_project(s, InputFormat::Yaml).unwrap() }
+
+#[test]
+fn golden_json_and_yaml_are_identical_si() {
+    let a = parse(GOLDEN);
+    let b = parse_project(include_str!("../../../tests/fixtures/briefs/courtyard.json"), InputFormat::Json).unwrap();
+    assert_eq!(a, b);
+    assert_eq!(a.site.polygon_xy_m, [[0.,0.],[20.,0.],[20.,35.],[0.,35.],[0.,0.]]);
+    assert_eq!(a.brief.floor_to_floor_m, 3.2);
+    assert_eq!(a.constraints[0].source, "user_brief");
+    assert_eq!(a.constraints[0].authority, "assumption");
+    assert!(!a.brief.target_gfa_hard);
+}
+
+#[test]
+fn generic_feet_and_millimeters_normalize_to_si() {
+    for (unit, scale) in [("ft", 0.3048), ("mm", 0.001), ("cm", 0.01)] {
+        let mut p: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/briefs/courtyard.json")).unwrap();
+        p["units"] = unit.into();
+        for (section, si, generic) in [("site","width_m","width"),("site","depth_m","depth"),("brief","floor_to_floor_m","floor_to_floor"),("brief","target_gfa_m2","target_gfa")] {
+            let value = p[section].as_object_mut().unwrap().remove(si).unwrap().as_f64().unwrap();
+            p[section][generic] = (value / if si.ends_with("m2") {scale*scale} else {scale}).into();
+        }
+        for c in p["constraints"].as_array_mut().unwrap() {
+            let v = c.as_object_mut().unwrap().remove("value_m").unwrap().as_f64().unwrap();
+            c["value"] = (v / scale).into(); c["unit"] = unit.into();
+        }
+        let n = parse_project(&p.to_string(), InputFormat::Json).unwrap();
+        assert!((n.site.polygon_xy_m[2][1] - 35.).abs() < 1e-6);
+        assert!((n.brief.target_gfa_m2 - 900.).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn translated_rectangle_coordinates_are_preserved() {
+    let s = GOLDEN.replace("width_m: 20\n  depth_m: 35", "polygon_xy_m: [[10, -5], [30, -5], [30, 30], [10, 30], [10, -5]]");
+    assert_eq!(parse(&s).site.polygon_xy_m[0], [10.,-5.]);
+}
+
+#[test]
+fn negative_fixtures_have_stable_errors_and_paths() {
+    for (text, code, field) in [
+        (GOLDEN.replace("width_m: 20", "width_m: 0"), ErrorCode::InvalidSchema, "site.width"),
+        (GOLDEN.replace("storeys: 3", "storeys: 0"), ErrorCode::InvalidSchema, "brief.storeys"),
+        (GOLDEN.replace("0.1.0", "9.0.0"), ErrorCode::InvalidSchema, "schema_version"),
+        (GOLDEN.replace("value_m: 3", "value_m: 10"), ErrorCode::InvalidSchema, "constraints"),
+        (GOLDEN.replace("floor_to_floor_m: 3.2", "floor_to_floor_m: .inf"), ErrorCode::InvalidSchema, "brief.floor_to_floor"),
+    ] {
+        let e = parse_project(&text, InputFormat::Yaml).unwrap_err();
+        assert_eq!(e.code, code); assert_eq!(e.field, field); assert!(!e.retriable);
+    }
+}
+
+#[test]
+fn duplicates_unknown_fields_and_aliases_fail() {
+    for s in [format!("{GOLDEN}\nproject_id: duplicate"), format!("{GOLDEN}\nunknown: true"), GOLDEN.replace("width_m: 20", "width_m: &a 20"), GOLDEN.replace("width_m: 20", "width_m: 20\n  width: 20")] {
+        assert_eq!(parse_project(&s, InputFormat::Yaml).unwrap_err().code, ErrorCode::InvalidSchema);
+    }
+    assert!(parse_project(r#"{"project_id":"a","project_id":"b"}"#, InputFormat::Json).is_err());
+}
+
+#[test]
+fn infeasible_height_is_a_later_candidate_check() {
+    assert!(parse_project(&GOLDEN.replace("value_m: 12", "value_m: 8"), InputFormat::Yaml).is_ok());
+}
+
+#[test]
+fn all_error_codes_are_stable() {
+    for (code, name) in [(ErrorCode::InvalidSchema,"INVALID_SCHEMA"),(ErrorCode::InvalidGeometry,"INVALID_GEOMETRY"),(ErrorCode::ConstraintFail,"CONSTRAINT_FAIL"),(ErrorCode::BackendUnavailable,"BACKEND_UNAVAILABLE"),(ErrorCode::BackendTimeout,"BACKEND_TIMEOUT"),(ErrorCode::ArtifactInvalid,"ARTIFACT_INVALID"),(ErrorCode::RevisionConflict,"REVISION_CONFLICT"),(ErrorCode::PermissionDenied,"PERMISSION_DENIED"),(ErrorCode::InternalError,"INTERNAL_ERROR")] {
+        assert_eq!(serde_json::to_value(code).unwrap(), name);
+    }
+}

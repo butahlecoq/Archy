@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "normalized-project",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "units": {
+      "const": "m"
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "polygon_xy_m": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "minItems": 5,
+          "maxItems": 5
+        },
+        "north_angle_deg": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ]
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeys": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "floor_to_floor_m": {
+          "type": "number"
+        },
+        "target_gfa_m2": {
+          "type": "number"
+        },
+        "target_gfa_hard": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "storeys",
+        "floor_to_floor_m",
+        "target_gfa_m2",
+        "target_gfa_hard"
+      ]
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "max_height",
+              "min_edge_setback"
+            ]
+          },
+          "value_m": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "value_m",
+          "source",
+          "authority"
+        ]
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "shapes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "rectangle",
+              "l_shape"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ]
+    },
+    "normalization_version": {
+      "const": "si-rectangle-v1"
+    },
+    "tolerance_m": {
+      "const": 1e-06
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "units",
+    "site",
+    "brief",
+    "constraints",
+    "generation",
+    "normalization_version",
+    "tolerance_m"
+  ]
+}

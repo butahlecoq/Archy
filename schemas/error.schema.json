@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "error",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "enum": [
+        "INVALID_SCHEMA",
+        "INVALID_GEOMETRY",
+        "CONSTRAINT_FAIL",
+        "BACKEND_UNAVAILABLE",
+        "BACKEND_TIMEOUT",
+        "ARTIFACT_INVALID",
+        "REVISION_CONFLICT",
+        "PERMISSION_DENIED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
+    "field": {
+      "type": "string"
+    },
+    "retriable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "message",
+    "field",
+    "retriable"
+  ]
+}

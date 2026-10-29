@@ -1,0 +1,27 @@
+name: Rust
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      # Cargo.lock is not fabricated: first runnable toolchain resolves and commits it.
+      - name: Resolve dependency graph (lockfile gate)
+        run: |
+          cargo generate-lockfile
+          git diff --exit-code -- Cargo.lock
+          git ls-files --error-unmatch Cargo.lock
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+      - name: Validate checked-in schemas
+        run: |
+          python -m pip install jsonschema==4.26.0
+          python scripts/check-schemas.py
+
