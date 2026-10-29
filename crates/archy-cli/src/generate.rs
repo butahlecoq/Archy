@@ -74,7 +74,7 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
                 seed: Some(seed),
                 count: Some(count),
                 parent_variant_id: None,
-                algorithm_version: ALGORITHM_VERSION.into(),
+                algorithm_version: generation.algorithm_version.clone(),
             };
             let receipt = publish(
                 pending,

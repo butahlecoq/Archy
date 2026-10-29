@@ -1,5 +1,77 @@
 {
   "$defs": {
+    "AttemptDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "duplicates": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rejections": {
+          "items": {
+            "$ref": "#/$defs/RejectionSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rejections",
+        "duplicates"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "INVALID_SCHEMA",
+        "INVALID_GEOMETRY",
+        "CONSTRAINT_FAIL",
+        "BACKEND_UNAVAILABLE",
+        "BACKEND_TIMEOUT",
+        "ARTIFACT_INVALID",
+        "REVISION_CONFLICT",
+        "PERMISSION_DENIED",
+        "INTERNAL_ERROR"
+      ],
+      "type": "string"
+    },
+    "RejectionPhase": {
+      "enum": [
+        "footprint",
+        "variant"
+      ],
+      "type": "string"
+    },
+    "RejectionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "field": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "phase": {
+          "$ref": "#/$defs/RejectionPhase"
+        }
+      },
+      "required": [
+        "phase",
+        "code",
+        "field",
+        "message",
+        "count"
+      ],
+      "type": "object"
+    },
     "Shape": {
       "enum": [
         "rectangle",
@@ -155,6 +227,16 @@
   "properties": {
     "algorithm_version": {
       "type": "string"
+    },
+    "attempt_diagnostics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AttemptDiagnostics"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "attempts": {
       "format": "uint32",

@@ -108,6 +108,29 @@ pub(crate) fn markdown(doc: &ReportDocument) -> String {
     if context.exhaustion_explanations.is_empty() {
         out.push_str("None recorded.\n");
     }
+    if let Some(diagnostics) = &context.attempt_diagnostics {
+        out.push_str("\n## Sampling attempt diagnostics\n\n");
+        for rejection in &diagnostics.rejections {
+            writeln!(
+                out,
+                "- {} {:?} rejections: {:?}, {}: {}",
+                rejection.count,
+                rejection.phase,
+                rejection.code,
+                escaped(&rejection.field),
+                escaped(&rejection.message)
+            )
+            .unwrap();
+        }
+        if diagnostics.duplicates != 0 {
+            writeln!(
+                out,
+                "- {} duplicate footprints suppressed",
+                diagnostics.duplicates
+            )
+            .unwrap();
+        }
+    }
     out.push_str("\n## Preferences\n\n");
     for preference in &doc.spec.preferences {
         writeln!(out, "- {}", escaped(preference)).unwrap();

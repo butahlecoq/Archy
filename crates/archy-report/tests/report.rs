@@ -59,6 +59,7 @@ fn data() -> (
         requested_count: Some(3),
         attempts: Some(300),
         exhaustion_explanations: vec!["Only 2 distinct designs".into()],
+        attempt_diagnostics: None,
     };
     (spec, vec![rectangle, l_shape], evaluations, context)
 }

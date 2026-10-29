@@ -8,7 +8,7 @@ pub use compare::{
 
 use archy_core::{ArchyError, ErrorCode, EvaluationReport, NormalizedSpec, Variant, site_bounds};
 use archy_eval::evaluate_variant;
-use archy_generate::ALGORITHM_VERSION;
+use archy_generate::{ALGORITHM_VERSION, AttemptDiagnostics, DIAGNOSTIC_ALGORITHM_VERSION};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -31,6 +31,8 @@ pub struct ReportContext {
     pub requested_count: Option<u32>,
     pub attempts: Option<u32>,
     pub exhaustion_explanations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_diagnostics: Option<AttemptDiagnostics>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,11 +171,37 @@ fn validate_context(context: &ReportContext, variants: &[Variant]) -> Result<(),
                     "Partial or empty generation needs a reason; complete generation has none",
                 ));
             }
-            if context.algorithm_version != ALGORITHM_VERSION {
-                return Err(invalid(
-                    "algorithm_version",
-                    "Unsupported generation algorithm",
-                ));
+            match (
+                context.algorithm_version.as_str(),
+                &context.attempt_diagnostics,
+            ) {
+                (ALGORITHM_VERSION, None) => {}
+                (DIAGNOSTIC_ALGORITHM_VERSION, Some(diagnostics)) => {
+                    let rejected: u64 = diagnostics
+                        .rejections
+                        .iter()
+                        .map(|entry| u64::from(entry.count))
+                        .sum();
+                    if diagnostics.rejections.iter().any(|entry| {
+                        entry.count == 0
+                            || entry.field.trim().is_empty()
+                            || entry.message.trim().is_empty()
+                    }) || rejected + u64::from(diagnostics.duplicates) == 0
+                        || rejected + u64::from(diagnostics.duplicates) + variants.len() as u64
+                            != u64::from(attempts)
+                    {
+                        return Err(invalid(
+                            "attempt_diagnostics",
+                            "Attempt counts or rejection reasons are invalid",
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(invalid(
+                        "algorithm_version",
+                        "Unsupported generation algorithm or diagnostics",
+                    ));
+                }
             }
         }
         "edit" => {
@@ -182,6 +210,7 @@ fn validate_context(context: &ReportContext, variants: &[Variant]) -> Result<(),
                 || context.requested_count != Some(1)
                 || context.attempts.is_some()
                 || !context.exhaustion_explanations.is_empty()
+                || context.attempt_diagnostics.is_some()
                 || variants.len() != 1
             {
                 return Err(invalid(
@@ -202,6 +231,7 @@ fn validate_context(context: &ReportContext, variants: &[Variant]) -> Result<(),
                 || context.requested_count.is_some()
                 || context.attempts.is_some()
                 || !context.exhaustion_explanations.is_empty()
+                || context.attempt_diagnostics.is_some()
                 || variants.is_empty()
             {
                 return Err(invalid(

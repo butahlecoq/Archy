@@ -201,6 +201,9 @@ pub(crate) fn publish(
         exhaustion_explanations: payload
             .generation
             .map_or_else(Vec::new, |g| g.exhaustion_explanations.clone()),
+        attempt_diagnostics: payload
+            .generation
+            .and_then(|g| g.attempt_diagnostics.clone()),
     };
     let report = render_report(
         payload.spec,

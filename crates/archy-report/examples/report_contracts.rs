@@ -28,6 +28,7 @@ fn main() {
         requested_count: Some(generation.requested_count),
         attempts: Some(generation.attempts),
         exhaustion_explanations: generation.exhaustion_explanations.clone(),
+        attempt_diagnostics: generation.attempt_diagnostics.clone(),
     };
     let artifacts = render_report(&spec, &generation.variants, &evaluations, &context).unwrap();
     let report: serde_json::Value = serde_json::from_slice(&artifacts.json).unwrap();

@@ -8,6 +8,7 @@ use archy_core::{
 };
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -65,6 +66,154 @@ fn with_locked<T>(project: &Path, read: impl FnOnce(&LockedProject<'_>) -> T) ->
     let store = ProjectStore::open(project).unwrap();
     let locked = lock_project(&store).unwrap();
     read(&locked)
+}
+
+#[test]
+fn old_exhausted_run_remains_readable_without_changing_its_bytes() {
+    let (root, project) = fixture();
+    let snapshot: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/legacy-exhausted-run.json")).unwrap();
+    let files = snapshot["files"].as_object().unwrap();
+    for (path, bytes) in files {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for directory in path
+            .parent()
+            .unwrap()
+            .ancestors()
+            .take_while(|p| *p != root)
+        {
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        fs::write(path, bytes.as_str().unwrap()).unwrap();
+    }
+    let run_id = snapshot["run_id"].as_str().unwrap();
+    let run = verify_run(&project, run_id).unwrap();
+    assert!(run.variants().is_empty());
+    assert_eq!(run.exhaustion().len(), 1);
+    for (path, bytes) in files {
+        assert_eq!(
+            fs::read(root.join(path)).unwrap(),
+            bytes.as_str().unwrap().as_bytes()
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn completed_generation_retains_rejected_attempt_reasons() {
+    let (root, project) = fixture();
+    let mut input: serde_json::Value =
+        serde_json::from_slice(&fs::read(&project).unwrap()).unwrap();
+    input["site"]["width_m"] = serde_json::json!(0.000003);
+    input["constraints"] = serde_json::json!([]);
+    input["generation"]["shapes"] = serde_json::json!(["l_shape"]);
+    fs::write(&project, serde_json::to_vec(&input).unwrap()).unwrap();
+    let receipt = generate(GenerateInput {
+        project: project.clone(),
+        mode: GenerationMode::Sample { count: 1, seed: 42 },
+        mutation: MutationOptions::default(),
+    })
+    .unwrap();
+    assert_eq!(receipt.variant_ids.len(), 1);
+    assert!(receipt.exhaustion_explanations.is_empty());
+    let generation: serde_json::Value = serde_json::from_slice(
+        &fs::read(root.join(&receipt.path).join("generation.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        generation["algorithm_version"],
+        "chacha8-u53-massing-diagnostics-v2"
+    );
+    assert!(
+        generation["attempt_diagnostics"]["rejections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["count"].as_u64().unwrap() > 0
+                && !entry["message"].as_str().unwrap().is_empty())
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join(&receipt.path).join("report.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        report["context"]["attempt_diagnostics"],
+        generation["attempt_diagnostics"]
+    );
+    verify_run(&project, &receipt.run_id).unwrap();
+    assert!(
+        fs::read_to_string(root.join(&receipt.path).join("report.md"))
+            .unwrap()
+            .contains("Sampling attempt diagnostics")
+    );
+    let generation_path = root.join(&receipt.path).join("generation.json");
+    let manifest_path = root.join(&receipt.path).join("manifest.json");
+    let revision_path = root.join(".archy/revisions/00000000000000000001.json");
+    let original_generation = fs::read(&generation_path).unwrap();
+    let original_manifest = fs::read(&manifest_path).unwrap();
+    let original_revision = fs::read(&revision_path).unwrap();
+    rehash_forgery(&root, &receipt.path, "generation.json", |value| {
+        value["attempt_diagnostics"]["rejections"][0]["count"] = serde_json::json!(999);
+    });
+    let error = verify_run(&project, &receipt.run_id).unwrap_err();
+    assert_eq!(error.code, ErrorCode::ArtifactInvalid);
+    assert!(error.message.contains("generation result differs"));
+    fs::write(generation_path, original_generation).unwrap();
+    fs::write(manifest_path, original_manifest).unwrap();
+    fs::write(revision_path, original_revision).unwrap();
+    let evaluated = evaluate(EvaluateInput {
+        project: project.clone(),
+        source_run: Some(receipt.run_id.clone()),
+        selection: VariantSelection::All,
+        mutation: MutationOptions::default(),
+    })
+    .unwrap();
+    verify_run(&project, &evaluated.run_id).unwrap();
+    archy_cli::compare(&project, Some(&receipt.run_id)).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn exhausted_generation_retains_rejection_reasons_in_run_and_report() {
+    let (root, project) = fixture();
+    let mut input: serde_json::Value =
+        serde_json::from_slice(&fs::read(&project).unwrap()).unwrap();
+    input["site"]["width_m"] = serde_json::json!(0.0000021);
+    input["constraints"] = serde_json::json!([]);
+    input["generation"]["shapes"] = serde_json::json!(["l_shape"]);
+    fs::write(&project, serde_json::to_vec(&input).unwrap()).unwrap();
+    let receipt = generate(GenerateInput {
+        project: project.clone(),
+        mode: GenerationMode::Sample { count: 1, seed: 42 },
+        mutation: MutationOptions::default(),
+    })
+    .unwrap();
+    assert!(receipt.variant_ids.is_empty());
+    let run_dir = root.join(&receipt.path);
+    let generation: serde_json::Value =
+        serde_json::from_slice(&fs::read(run_dir.join("generation.json")).unwrap()).unwrap();
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(run_dir.join("report.json")).unwrap()).unwrap();
+    assert_eq!(
+        generation["algorithm_version"],
+        "chacha8-u53-massing-diagnostics-v2"
+    );
+    assert_eq!(generation["attempts"], 100);
+    assert_eq!(
+        generation["attempt_diagnostics"]["rejections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        100
+    );
+    assert_eq!(
+        report["context"]["attempt_diagnostics"],
+        generation["attempt_diagnostics"]
+    );
+    verify_run(&project, &receipt.run_id).unwrap();
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

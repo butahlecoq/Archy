@@ -195,6 +195,21 @@ fn serialized_report_rejects_false_required_pass() {
 }
 
 #[test]
+fn analytic_checks_have_measurements_and_invalid_geometry_is_an_error() {
+    let project = spec();
+    let variant = rectangle(&project, [3., 3.]);
+    let report = evaluate_variant(&project, &variant).unwrap();
+    assert!(report.checks.iter().all(|check| {
+        check.measured.is_some() && check.limit.is_some() && check.result != CheckResult::Unknown
+    }));
+
+    let mut malformed = variant;
+    malformed.footprint_xy_m.pop();
+    let error = evaluate_variant(&project, &malformed).unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidGeometry);
+}
+
+#[test]
 fn public_normalized_spec_rejects_ambiguous_provenance() {
     let original = spec();
     for mutation in 0..4 {

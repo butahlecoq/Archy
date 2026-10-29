@@ -4,7 +4,10 @@ use archy_core::{
     ProjectStore, RunManifest, Variant, parse_project_v1, sha256_hex,
 };
 use archy_eval::{EVALUATION_VERSION, evaluate_variant};
-use archy_generate::{ALGORITHM_VERSION, GenerationResult, generate_variants};
+use archy_generate::{
+    ALGORITHM_VERSION, DIAGNOSTIC_ALGORITHM_VERSION, GenerationResult, generate_variants,
+    generate_variants_v1,
+};
 use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report};
 use std::{collections::BTreeSet, path::Path};
 
@@ -65,6 +68,7 @@ pub(crate) fn report_context(
         requested_count: manifest.count,
         attempts: generation.map(|g| g.attempts),
         exhaustion_explanations: exhaustion.to_vec(),
+        attempt_diagnostics: generation.and_then(|g| g.attempt_diagnostics.clone()),
     })
 }
 
@@ -161,12 +165,16 @@ fn verify_one(
     {
         return Err(artifact_invalid("source and normalized snapshot differ"));
     }
-    let expected_algorithm = match manifest.operation.as_str() {
-        "generate" | "edit" => ALGORITHM_VERSION,
-        "evaluate" => EVALUATION_VERSION,
+    let supported = match manifest.operation.as_str() {
+        "generate" => matches!(
+            manifest.algorithm_version.as_str(),
+            ALGORITHM_VERSION | DIAGNOSTIC_ALGORITHM_VERSION
+        ),
+        "edit" => manifest.algorithm_version == ALGORITHM_VERSION,
+        "evaluate" => manifest.algorithm_version == EVALUATION_VERSION,
         _ => return Err(artifact_invalid("unsupported run operation")),
     };
-    if manifest.algorithm_version != expected_algorithm {
+    if !supported {
         return Err(artifact_invalid("unsupported recorded algorithm version"));
     }
     let parent = match manifest.operation.as_str() {
@@ -202,8 +210,12 @@ fn verify_one(
         let seed = manifest
             .seed
             .ok_or_else(|| artifact_invalid("missing seed"))?;
-        let expected = generate_variants(&spec, count, seed)
-            .map_err(|e| artifact_invalid(format!("generation recomputation failed: {e}")))?;
+        let expected = if manifest.algorithm_version == ALGORITHM_VERSION {
+            generate_variants_v1(&spec, count, seed)
+        } else {
+            generate_variants(&spec, count, seed)
+        }
+        .map_err(|e| artifact_invalid(format!("generation recomputation failed: {e}")))?;
         let bytes = stored
             .artifact("generation.json")
             .ok_or_else(|| artifact_invalid("missing generation result"))?;

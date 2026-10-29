@@ -134,3 +134,53 @@ fn translated_generation_stays_within_translated_bounds() {
         }
     }
 }
+
+#[test]
+fn legal_narrow_l_site_explains_unrepresentable_samples() {
+    let mut input: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/briefs/courtyard.json"
+    ))
+    .unwrap();
+    input["site"]["width_m"] = serde_json::json!(0.0000021);
+    input["constraints"] = serde_json::json!([]);
+    input["generation"]["shapes"] = serde_json::json!(["l_shape"]);
+    let project = parse_project(&input.to_string(), InputFormat::Json).unwrap();
+    let result = generate_variants(&project, 1, 42).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&result).unwrap(),
+        serde_json::to_vec(&generate_variants(&project, 1, 42).unwrap()).unwrap()
+    );
+    assert_eq!(result.attempts, 100);
+    assert!(result.variants.is_empty());
+    let rejected: u32 = result
+        .attempt_diagnostics
+        .unwrap()
+        .rejections
+        .iter()
+        .map(|entry| entry.count)
+        .sum();
+    assert_eq!(rejected, result.attempts);
+}
+
+#[test]
+fn public_spec_overflow_explains_variant_construction_failures() {
+    let mut project = spec();
+    project.site.polygon_xy_m = [[0., 0.], [1e153, 0.], [1e153, 1e153], [0., 1e153], [0., 0.]];
+    project.constraints.clear();
+    project.generation.shapes = vec![Shape::Rectangle];
+    project.brief.storeys = 10_000;
+    let result = generate_variants(&project, 1, 42).unwrap();
+    assert_eq!(result.attempts, 100);
+    assert!(result.variants.is_empty());
+    assert!(
+        result
+            .attempt_diagnostics
+            .unwrap()
+            .rejections
+            .iter()
+            .any(|entry| {
+                entry.phase == archy_generate::RejectionPhase::Variant
+                    && entry.message.contains("overflow")
+            })
+    );
+}
