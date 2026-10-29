@@ -12,7 +12,9 @@
 
 ## Tracker and execution rules
 
-The stable local IDs `A01`–`A20` map to D1–D20. Publish each ticket below as a GitHub issue when authentication works, preserving its local ID in the title and recording the issue URL here. GitHub authentication is currently blocked; no remote issue is claimed to exist. Labels: `release:0.1`, plus `spec`, `core`, `adapter`, `testing`, `security`, or `documentation` as indicated. Dependencies are local IDs until issue numbers exist.
+The stable local IDs `A01`–`A20` map to D1–D20; `A21`–`A23` implement the founder's Omarchy platform clarification. All 23 release tickets and three explicitly excluded future-roadmap tickets are published in GitHub; see [issue-map.md](issue-map.md) for verified URLs and current tracker evidence. GitHub authentication works with ADMIN permission; the earlier authentication failure is historical. Labels: `release:0.1` or `roadmap`, plus the component labels indicated below. Issue publication is not implementation acceptance or release completion. Dependencies use stable IDs and linked GitHub issues.
+
+On 29 October 2026, the main branch protection API initially returned HTTP 404, “Branch not protected.” After the coordinator configured protection, a fresh API read verified strict required `rust` checks, one approving review, stale-review dismissal, administrator enforcement, and disabled force pushes/deletions. A01/A20 must reverify required checks and review rules against the final CI before release. The founder selected MIT for original core code; A01 must add the license file and A20 must still verify distributed worker/dependency notices and compatibility.
 
 Every ticket follows this checklist:
 
@@ -35,6 +37,8 @@ Paths below are intended new file boundaries in the initially empty repository. 
 - Keep generated runs out of Git except deliberately curated small fixtures; large previews belong in CI/release artifacts. Pin dependencies and commit lockfiles.
 - Target acceptance is Linux/Omarchy with real pinned workers. Windows development and mocked CI evidence cannot substitute for clean target-machine evidence.
 
+Field-level fixtures in A01/A02/A04/A09/A14 must assert the complete §4 contract: Project id/schema_version/site/brief/constraints; Site polygon_xy_m/north_angle_deg; Constraint id/kind/bound/unit/source/authority; Variant id/seed/footprint/storeys/floor_to_floor_m; Metric name/value/unit/method_version; Check constraint_id/result/measured/limit/explanation; Artifact path/sha256/media_type/producer; Approval variant_id/actor/timestamp/decision. Illustrative aliases are input conveniences, never substitute canonical output fields; missing legal authority is explicitly unknown/unverified.
+
 Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant`, `Metric`, `Check`, `Artifact`, `Approval`, `RunManifest`, and `ArchyError`. Errors expose stable code, actionable details and explicit retriable flag: `INVALID_SCHEMA`, `INVALID_GEOMETRY`, `CONSTRAINT_FAIL`, `BACKEND_UNAVAILABLE`, `BACKEND_TIMEOUT`, `ARTIFACT_INVALID`, `REVISION_CONFLICT`, `PERMISSION_DENIED`, `INTERNAL_ERROR`. Preserve variant failures separately from process failures; failed rendering never masquerades as successful artifact production.
 
 ## Review focus
@@ -51,13 +55,13 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** There is no executable repository baseline or documented source-of-truth decision.
 
-**Intended behavior/scope:** Establish the Rust workspace and component ownership, initial versioned JSON schemas, stable error envelope, CI format/clippy/test and Python lint/test jobs. Record ADRs for structured source of truth and typed subprocess workers. Review dependency licenses; record a founder license decision or an explicit unresolved distribution blocker without inventing legal authorization. Define project/run/revision identifiers and relative artifact semantics before downstream work.
+**Intended behavior/scope:** Establish the Rust workspace and component ownership, initial versioned JSON schemas, stable error envelope, CI format/clippy/test and Python lint/test jobs. Record ADRs for structured source of truth and typed subprocess workers. Add the founder-selected MIT license for original core code and record separate worker/dependency distribution obligations. Inspect protected-main/ruleset settings, required CI checks and review rules; capture actual settings evidence and record missing protection as an unresolved gate. Configure repository settings only with authorization. Define project/run/revision identifiers and relative artifact semantics before downstream work.
 
 **Files:** `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `crates/*/Cargo.toml`, minimal `crates/*/src/lib.rs` / CLI `main.rs`, `schemas/project.schema.json`, `schemas/variant.schema.json`, `schemas/backend.schema.json`, `schemas/error.schema.json`, `.github/workflows/ci.yml`, `.gitignore`, `docs/adr/0001-source-of-truth.md`, `docs/adr/0002-typed-workers.md`, `docs/dependencies.md`, license decision record. No generator/worker implementation.
 
 **Tests:** workspace builds; schema examples validate; error code serialization snapshot; CI executes Rust checks and configured Python checks when workers arrive.
 
-**Acceptance evidence:** passing baseline CI, committed lockfile, schema fixture output, ADRs, dependency/license decision status. Public distribution stays blocked if license remains unresolved.
+**Acceptance evidence:** passing baseline CI, committed lockfile, schema fixture output, ADRs, dependency/license decision status. MIT core license file and third-party distribution review are separate acceptance evidence; do not claim protected main without verified settings.
 
 ## A02 / D2 — Initialize, parse and normalize projects
 
@@ -65,7 +69,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** Agents need actionable validation before using design data.
 
-**Intended behavior/scope:** `archy init --name --dir` creates a non-destructive skeleton and schema. `archy validate --project --json` accepts YAML/JSON, returns canonical SI `NormalizedSpec` or structured field errors/nonzero exit. Define schema migration rejection, units conversion, dimensions/storeys/floor height, rectangle coordinates and north angle; constraints retain source/authority. Distinguish target GFA objective from a hard bound. Snapshot original and normalized inputs per run. Unknown regulatory values remain explicit assumptions/UNKNOWN instead of invented law.
+**Intended behavior/scope:** `archy init --name --dir` creates a non-destructive skeleton and schema. `archy validate --project --json` accepts YAML/JSON, returns canonical SI `NormalizedSpec` or structured field errors/nonzero exit. Preserve a bounded, declarative preference field through normalization and snapshots; reject executable preferences and unsupported numeric performance claims. Explicit `_m`/`_m2` input fields are SI; generic dimensions obey declared units; reject simultaneous generic/SI representations. Define schema migration rejection, units conversion, dimensions/storeys/floor height, rectangle coordinates and north angle; constraints retain source/authority. Distinguish target GFA objective from a hard bound. Snapshot original and normalized inputs per run. Unknown regulatory values remain explicit assumptions/UNKNOWN instead of invented law.
 
 **Files:** `crates/archy-core/src/{project,units,error,validation}.rs`, `crates/archy-cli/src/{main,init,validate}.rs`, `schemas/project.schema.json`, `tests/fixtures/briefs/`, `examples/courtyard-housing/project.yaml`.
 
@@ -93,7 +97,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** Plausible geometry is insufficient evidence for dimensions or constraints.
 
-**Intended behavior/scope:** `evaluate_variant(spec, variant)` computes footprint area, GFA = area × storeys, explicit building height = storeys × floor-to-floor, bounding box and minimum clearances to all rectangular site edges. Use polygon predicates and a recorded 1e-6 m analytic tolerance/version; reject invalid polygons. Emit measured/limit/explanation and required-check status without equating geometric success to code compliance. Missing evidence yields UNKNOWN; user constraints without legal source are never labeled law.
+**Intended behavior/scope:** `evaluate_variant(spec, variant)` computes footprint area, GFA = area × storeys, explicit building height = storeys × floor-to-floor, bounding box and minimum clearances to all rectangular site edges. Use polygon predicates and a recorded length tolerance (initial analytic baseline 1e-6 m), separately dimensioned area/GFA tolerances in m² and transform comparison policy/version; document how length error propagates into polygon area and storey-sum GFA; reject invalid polygons. Emit measured/limit/explanation and required-check status without equating geometric success to code compliance. Missing evidence yields UNKNOWN; user constraints without legal source are never labeled law.
 
 **Files:** `crates/archy-eval/src/{lib,geometry,metrics,checks}.rs`, `crates/archy-core/src/{metric,check}.rs`, `tests/fixtures/analytic/`.
 
@@ -107,7 +111,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** Independent algorithms do not yet form an inspectable repeat/compare workflow.
 
-**Intended behavior/scope:** Wire `generate --project --count --seed`, `evaluate --variant|--all` and basic JSON/Markdown reports. Persist variants, metrics, validation, seed/version provenance and structured run logs under run IDs. Introduce revisioned atomic state updates and immutable run input snapshots; repeated runs remain accessible. Rendering is downstream of evaluation and invalid alternatives stay inspectable.
+**Intended behavior/scope:** Wire `generate --project --count --seed`, `evaluate --variant|--all` and basic JSON/Markdown reports. Persist variants, metrics, validation, seed/version provenance and structured run logs under run IDs. Introduce revisioned atomic state updates and immutable run input snapshots; repeated runs remain accessible. Rendering is downstream of evaluation and invalid alternatives stay inspectable. Demonstrate a supported parameter-file edit producing a new immutable run/variant with parent/provenance and unchanged hashes for the original; preferences survive in snapshots and reports.
 
 **Files:** `crates/archy-core/src/{state,run,storage}.rs`, `crates/archy-cli/src/{generate,evaluate}.rs`, `crates/archy-report/{Cargo.toml,src/lib.rs,src/templates.rs}`, workspace member update, `tests/golden/core_workflow.rs`, `examples/courtyard-housing/expected/`.
 
@@ -163,11 +167,11 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** A worker exit alone cannot prove valid PNG/GLB artifacts or safe completion.
 
-**Intended behavior/scope:** Wire `render --variant|--all`, GLB/PNG exports and render manifests. Run workers with argument arrays, scoped cwd/output, timeout/cancellation, process-tree termination and captured bounded stderr. Verify file existence, nonzero size, safe relative path, hash and format parse before atomically accepting artifacts. Failures use explicit retriable/error status and cannot damage earlier artifacts.
+**Intended behavior/scope:** Wire `render --variant|--all`, GLB/PNG exports and render manifests. A generated but unevaluated variant must first be evaluated through core APIs or refused with an actionable status; absence of evaluation never implies passed constraints. Preserve failed design checks independently of render state. Run workers with argument arrays, scoped cwd/output, timeout/cancellation, process-tree termination and captured bounded stderr. Verify file existence, nonzero size, safe relative path, hash and format parse before atomically accepting artifacts. Failures use explicit retriable/error status and cannot damage earlier artifacts.
 
 **Files:** `crates/archy-adapters/src/{process,artifacts}.rs`, `crates/archy-cli/src/render.rs`, `workers/blender/{worker.py,exports.py}`, `tests/backend/process_contract.rs`, `tests/fixtures/backend/`.
 
-**Tests:** valid PNG/GLB parses; missing/empty/truncated/wrong-hash file fails ARTIFACT_INVALID; malformed worker JSON; timeout/cancel kills descendants; stderr bounded; traversal/symlink response refused; interrupted output is not committed.
+**Tests:** render-before-evaluate enforces ordering; Artifact fixtures require path, sha256, media_type and producer; valid PNG/GLB parses; missing/empty/truncated/wrong-hash file fails ARTIFACT_INVALID; malformed worker JSON; timeout/cancel kills descendants; stderr bounded; traversal/symlink response refused; interrupted output is not committed.
 
 **Acceptance evidence:** real PNG+GLB and checked manifest hashes, injected-failure results, cancellation log and accepted-run preservation check.
 
@@ -181,7 +185,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Files:** `tests/golden/render_workflow.*`, `tests/backend/geometry_parity.*`, `scripts/demo-render.*`, curated small `tests/fixtures/glb/`; production fixes stay in A07–A09 ownership.
 
-**Tests:** rectangle/L exported world bounds equal evaluator within recorded tolerance including translations/storeys; three alternatives each have GLB and three PNG views; one backend failure leaves other variants/results readable.
+**Tests:** unevaluated render is evaluated or clearly refused; rectangle/L exported world bounds equal evaluator within recorded length/transform tolerances, with dimensioned area comparisons where applicable, including translations/storeys; three alternatives each have GLB and three PNG views; one backend failure leaves other variants/results readable.
 
 **Acceptance evidence:** real target run manifest, nine view artifacts, parsed GLB parity table and readable partial-failure report.
 
@@ -223,7 +227,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Files:** `workers/ifc/{validate.py,worker.py}`, `workers/ifc/tests/test_validation.py`, `tests/golden/ifc_workflow.*`, `docs/ifc-mapping.md`.
 
-**Tests:** corrupted/truncated files, wrong schema/counts/units/transforms/quantities fail; valid L/rectangle bounds and GFA/storeys match analytic expected values; validation result references artifact hash.
+**Tests:** corrupted/truncated files, wrong schema/counts/units/transforms/quantities fail; valid L/rectangle bounds and GFA/storeys match analytic expected values with versioned length (m), area/GFA (m²), and transform tolerances; validation result references artifact hash.
 
 **Acceptance evidence:** reopened hierarchy and geometry/quantity comparison report, deliberately corrupted export failure log.
 
@@ -237,7 +241,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Files:** `crates/archy-report/src/{compare,templates}.rs`, `crates/archy-core/src/approval.rs`, `crates/archy-cli/src/{compare,approve}.rs`, `tests/golden/review_workflow.rs`, `docs/adr/0005-approval-policy.md`.
 
-**Tests:** metric sources and ties stable; required UNKNOWN prevents compliant/automatic approved status; absent human event remains unapproved; forged input approval rejected; append-only approval event, reason validation, non-existent variant and stale revision; draft artifact metadata remains an immutable historical fact after later approval.
+**Tests:** canonical Metric method_version, Constraint unit/source/authority and Approval fields survive reports; preferences remain subjective; metric sources and ties stable; required UNKNOWN prevents compliant/automatic approved status; absent human event remains unapproved; forged input approval rejected; append-only approval event, reason validation, non-existent variant and stale revision; draft artifact metadata remains an immutable historical fact after later approval.
 
 **Acceptance evidence:** comparison report with measured tradeoffs and disclaimers, explicit human decision event, unauthorized approval negative test and historical decision log.
 
@@ -279,7 +283,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Files:** `tests/reliability/`, `tests/golden/reproducibility.*`, narrowly scoped fixes in `crates/archy-core/src/{state,run,storage}.rs`, adapter process and MCP transaction owners, `docs/recovery.md`.
 
-**Tests:** restart at each transaction boundary; accepted file/hash inventory unchanged after all fault classes; retry flags accurate; duplicate/concurrent requests single-apply; deterministic two-run and restart rerun equality; cancellation recovery.
+**Tests:** restart at each transaction boundary; accepted file/hash inventory unchanged after all fault classes; retry flags accurate; duplicate/concurrent requests single-apply; parameter edit creates a reproducible child iteration with retained parent/provenance and unchanged prior hashes; deterministic two-run and restart rerun equality; cancellation recovery.
 
 **Acceptance evidence:** fault matrix, before/after artifact hash inventories, exact manifest/metric diffs and usable recovery instructions.
 
@@ -289,7 +293,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 **Problem:** A working developer machine does not make the release reproducible for others.
 
-**Intended behavior/scope:** Provide Omarchy install/version checks, worker environment setup, CLI/MCP reference, complete golden example and a single-command demo through generation/evaluation/render/compare. It records proposal/selection and pauses at explicit human approval as necessary; it cannot silently approve. Explain draft local IFC export policy, hard objectives, approximate GFA, unsupported daylight/cost/legal claims, artifacts/history/recovery and contributor workflow. Reconcile ADRs and daily/session run-log template.
+**Intended behavior/scope:** Provide Omarchy install/version checks, worker environment setup, CLI/MCP reference, complete golden example and a single-command demo through generation/evaluation/render/compare. It records proposal/selection and pauses at explicit human approval as necessary; it cannot silently approve. Explain draft local IFC export policy, hard objectives, approximate GFA, unsupported daylight/cost/legal claims, artifacts/history/recovery and contributor workflow. Reconcile ADRs and daily/session run-log template. Update or mark older architecture/integrations/project-structure/roadmap proposals superseded where they conflict with structured manifests, Rust core and typed workers. Use golden and analytic examples as a small benchmark set; record commands, hardware, elapsed time and artifact sizes without inventing a throughput target.
 
 **Files:** `README.md`, `CONTRIBUTING.md`, `docs/{install,cli,mcp,limitations}.md`, `docs/agent-playbooks/`, `docs/adr/`, `examples/courtyard-housing/`, `scripts/demo.*`, `docs/templates/session-handoff.md`.
 
@@ -313,17 +317,59 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 
 ## A20 / D20 — Traceable release candidate and acceptance gate
 
-**Labels:** spec, testing, documentation. **Dependencies:** A01–A19.
+**Labels:** spec, testing, documentation. **Dependencies:** A01–A19, A21–A23.
 
 **Problem:** Release claims need a complete audit trail and explicit failure disposition.
 
-**Intended behavior/scope:** Assemble release candidate with locked dependencies, acceptance matrix, known limitations, GitHub issue dispositions, reproducibility evidence and demo walkthrough. Verify license decision/distribution compatibility, current README, all required CI and clean-machine evidence. No required failing acceptance can be relabeled an optional exclusion; scope changes require ADR and updated tests/spec acceptance. Prepare release assets without publishing absent explicit external-release authority.
+**Intended behavior/scope:** Assemble release candidate with locked dependencies, acceptance matrix, known limitations, GitHub issue dispositions, reproducibility evidence and demo walkthrough. Verify MIT core license file and distribution compatibility, protected-main/ruleset settings with required checks/reviews, current README, all required CI, native integration and clean-machine evidence. Keep actual Omarchy gates explicitly deferred until a target exists; preparation is not a waiver. No required failing acceptance can be relabeled an optional exclusion; scope changes require ADR and updated tests/spec acceptance. Prepare release assets without publishing absent explicit external-release authority.
 
 **Files:** `CHANGELOG.md`, `docs/releases/0.1.0.md`, `docs/validation/acceptance-matrix.md`, `docs/plans/backlog.md` issue links/status only, release packaging/workflow configuration as needed.
 
 **Tests:** final Rust format/clippy/test, Python lint/test, schemas, security/reliability, golden demo and artifact validation; acceptance document links exact commit, commands and evidence; installation instructions match candidate.
 
 **Acceptance evidence:** candidate commit/tag proposal, all matrix rows passing on named platforms, demo walkthrough, known limitations and blockers/exclusions individually triaged in GitHub. No release completion claim while clean-target or required acceptance evidence is absent.
+
+## A21 — Omarchy doctor, mise environments and Arch packaging
+
+**Labels:** omarchy, core, documentation, testing. **Dependencies:** A01, A06, A11, A16.
+
+**Problem:** An Omarchy workspace needs reproducible installation and honest capability diagnostics without replacing global runtimes.
+
+**Intended behavior/scope:** Add non-mutating `archy doctor --json` reporting Omarchy/package versions, executables, pinned worker compatibility, user-systemd/cgroup and bubblewrap capabilities, explicit unavailable/deferred results and actionable remedies. Use project-local mise Rust/Python tasks and separate locked IFC environment; Blender retains bundled Python. Provide reviewed PKGBUILD/install manifest with license notices and uninstall preserving projects, decisions and user configuration. Detect supported Omarchy 4.0.6 features; keep 4.5 migration explicit. Never modify Arch system Python, install Omarchy on the Windows host, silently relax isolation, auto-migrate projects or upgrade accepted runtime baselines.
+
+**Files:** `crates/archy-cli/src/doctor.rs`, `.mise.toml`, `packaging/arch/{PKGBUILD,archy.install}`, `docs/omarchy/install.md`, `tests/doctor/`, packaging fixtures. Reuse A06/A11 pins and A16 containment policy; shared dependency edits require rationale.
+
+**Tests:** fixture-driven complete/missing/unsupported version and capability reports; doctor makes no filesystem/config mutations; package manifest/lint and staged install/uninstall preserve user/project sentinel files; task environment separation; unsupported rolling Blender rejected. Real clean-Omarchy install and capability checks remain deferred target gates, not mocked successes.
+
+**Acceptance evidence:** JSON/text diagnostic snapshots, package inspection/lint output, installation/uninstall file inventory, exact dependency/license pins and explicit pending target-machine commands/results.
+
+## A22 — Native Quickshell plugin and reversible desktop integration
+
+**Labels:** omarchy, adapter, security, testing, documentation. **Dependencies:** A14, A16, A21.
+
+**Problem:** Omarchy users need a native project/run launcher and status surface without a new viewport or unsafe shell authority.
+
+**Intended behavior/scope:** Supply an `archy`-namespaced schemaVersion-1 Quickshell plugin using theme components/colors and bounded structured CLI status. Open report/previews/Blender using fixed argv. Provide a valid separately packaged/local plugin root with manifest; do not claim `omarchy plugin add` works against the monorepo root. Optional user-owned menu/keybinding and lightweight theme/post-update refresh hooks need preview, collision detection, backups and reversible uninstall; package-owned `/usr/share/omarchy` is read-only. Feature-detect tagged 4.0.6 APIs and Hyprland Lua binding files. Third-party plugins are unsandboxed: never execute project text/worker commands or grant approval; no viewport, theme engine or schema upgrades.
+
+**Files:** `integrations/omarchy/plugin/{manifest.json,Main.qml}`, `integrations/omarchy/{install,uninstall}.*`, `integrations/omarchy/templates/`, `docs/omarchy/desktop.md`, `tests/omarchy/integration/`. CLI remains usable without plugin.
+
+**Tests:** plugin manifest/API fixtures, malformed/missing CLI status, injection/path refusal and fixed-argv checks; install preview/collision/refusal, idempotent install, backup restore and uninstall sentinel preservation; package defaults never changed. Actual plugin discovery/validation/enable-disable/hot reload, theme changes and Hyprland launch behavior await real Omarchy.
+
+**Acceptance evidence:** reviewed manifest/local installation layout, fixture/test outputs, config before/after hashes and rollback transcript; target logs/screenshots explicitly pending until actual execution.
+
+## A23 — Provider-neutral agent/session playbooks and deferred Omarchy harness
+
+**Labels:** omarchy, documentation, testing, security. **Dependencies:** A15, A17, A18, A21, A22.
+
+**Problem:** Existing Omarchy agents and sessions need a bounded Archy workflow and an executable target acceptance checklist with truthful deferred status.
+
+**Intended behavior/scope:** Supply a provider-neutral project skill/playbook for the nine stdio MCP tools, evidence citations, reversible edits and human approval. Document optional Herdr/tmux layout for brief, agent, logs and artifact review, using supported launch commands instead of depending on Herdr internal sockets. No API-key requirement, scheduler, hosted service, agent-client replacement or token meter. Prepare a target harness for doctor, pinned workers, isolated resources/cancellation, clean golden workflow, plugin/theme/keybinding behavior, CPU baseline/optional GPU, independent IFC inspection and visual review. Separate source/CI/WSL evidence from named actual Omarchy gates; record deferred results until target access, never auto-waive or call them passing.
+
+**Files:** `docs/agent-playbooks/{omarchy,herdr-tmux}.md`, `integrations/agents/archy/SKILL.md`, `scripts/validate-omarchy.*`, `tests/acceptance/omarchy/`, `docs/validation/omarchy-gates.md`. Coordinate A19 clean-machine evidence and A20 acceptance matrix without duplicating core/MCP implementation.
+
+**Tests:** playbook/tool-name/schema checks; dry-run harness enumerates every required gate and returns explicit deferred/unavailable status with machine/version requirements; simulated failures remain failures; agent-provided actor/proposal never counts as consent; session layout optional and CLI/MCP sufficient without Herdr. Execute source checks now; actual target/GPU/visual acceptance deferred.
+
+**Acceptance evidence:** complete runnable command list, sample dry-run report marked deferred, protocol/client transcript when available, gate-to-A19/A20 mapping; later real machine logs/contact sheets/IFC reader output required for target gate closure.
 
 ## Release requirement traceability
 
@@ -332,6 +378,7 @@ Shared interfaces to establish in A01/A02: `Project`, `NormalizedSpec`, `Variant
 | D1–D5 / week 1 | A01–A05 | CI, schemas, validated demo, exact repeat manifest/metric diff |
 | D6–D10 / week 2 | A06–A10 | pinned real Blender, three rendered alternatives, geometry parity |
 | D11–D15 / week 3 | A11–A15 | validated IFC, comparison, human decision, scoped MCP transcript |
+| Omarchy platform clarification | A21–A23, A19, A20 | doctor/package/environment fixtures, reversible native plugin and provider-neutral workflow; actual target gates deferred |
 | D16–D20 / week 4 | A16–A20 | threat/recovery tests, clean installation, complete release gate |
 | Versioned YAML/JSON project, SI normalization and actionable invalid-input errors (§1.3, §4) | A01, A02 | positive/negative fixtures and canonical normalized spec |
 | ≥3 distinct seeded rectangles/L variants, immutable editable parameter snapshots (§1.3, §2) | A03, A05 | seed-42 fixtures, feasible golden alternatives or evidenced infeasibility |
@@ -369,8 +416,9 @@ The following are gates, not inferred successes. Copy this table to the candidat
 
 | Decision/blocker | Owner | Disposition required |
 |---|---|---|
-| GitHub authentication | Coordinator | Restore approved account access; publish/reconcile A01–A20 and capture issue URLs; never claim tracker updates before confirmation |
-| Core license and distributed dependency compatibility | A01/A20 | Founder decision after reviewed Blender/IfcOpenShell/MCP obligations; no speculative license grant |
+| GitHub tracker | Coordinator | Authentication restored; A01–A23 and three roadmap tickets published; verified URLs in [issue-map.md](issue-map.md) |
+| Core license and distributed dependency compatibility | A01/A20 | Founder selected MIT for original core; add LICENSE and verify separate Blender/IfcOpenShell/MCP distribution notices and obligations |
+| Protected main | A01/A20 | Fresh API read verified strict required rust check, one review, stale dismissal, admin enforcement and no force push/deletion after coordinator setup; reverify final required CI checks before closure |
 | Initial agent client | A15 | Choose one for demo while keeping provider-neutral tool schemas |
 | Blender version, Linux/GPU target | A06 | Real tested pin and reproducibility tolerance |
 | IFC representation/labels | A11/A12 | ADR for audited conceptual proxy/storey subset, never detailed walls/slabs |
@@ -380,7 +428,7 @@ The following are gates, not inferred successes. Copy this table to the candidat
 
 ## Later roadmap — excluded from release 0.1
 
-Create separate `roadmap` issues after release-ticket publication; none may silently replace a 0.1 requirement.
+Three separate `roadmap` issues are linked in [issue-map.md](issue-map.md); none may silently replace a 0.1 requirement.
 
 - Month 2: richer/courtyard footprints beyond rectangle/L, facade modules, additional explicit objectives and Pareto selection.
 - Month 3: room/circulation graphs, preliminary space planning, expanded IFC semantics and interoperability/round-trip fixtures.
