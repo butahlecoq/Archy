@@ -30,3 +30,7 @@ Analytic rectangle fixture: [(3,3),(13,3),(13,23),(3,23),(3,3)] gives area200m²
 Test exact setback/height limits, ±0.5e-6m and ±2e-6m; area thresholds use area tolerance. Assert no arbitrary source/authority text grants legal compliance. Construct required UNKNOWN checks and prove aggregation cannot pass. Verify all serialized metric/check fields and generated schemas using actual output, not just handwritten fixtures.
 
 Run WSL Ubuntu pinned Rust fmt/clippy/test with existing target directory. Commit and push the bounded source/tests/evidence; report only tests actually run. No Omarchy machine testing is performed here. Independent Sol reviewer verifies both requirements and code quality. Do not mark A03/A04 closed until evidence and review pass.
+
+## Canonical geometry consistency requirement
+
+Shape parameters are the editable source; footprint is derived and stored for inspection. Provide one shared deterministic derivation/validation path so generator, evaluator and future workers cannot disagree. When reading a serialized Variant, reject a footprint that differs from its declared shape parameters or an ID that differs from its canonical parameter hash; never quietly evaluate one geometry while rendering another. Test tampered params, footprint, project ID and identifier, alongside valid round-trip serialization. Exact derived coordinate ordering/tolerance and identity serialization must be documented.
