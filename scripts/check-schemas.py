@@ -4,6 +4,7 @@ import hashlib
 import copy
 import os
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from jsonschema import Draft202012Validator
@@ -202,3 +203,7 @@ for name, args, schema in [
 print('actual CLI desktop capabilities and genesis status conform')
 
 subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check=True)
+
+demo_env = dict(os.environ, ARCHY_BIN=str(binary))
+subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests/demo', '-v'],
+               cwd=ROOT, env=demo_env, check=True)

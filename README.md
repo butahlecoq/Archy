@@ -1,10 +1,20 @@
 # Archy
 
-Archy is an architectural workspace for Omarchy. This partial release 0.1 implements a Rust workspace and `init`/`validate`. Generation, evaluation, workers, reports, IFC and MCP belong to later slices.
+Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate` and `compare` commands. Blender and IFC workers exist as separate components, but no production supervised `render` or `export-ifc` CLI command is available yet. The one-command demo stops at that boundary and A18 remains open.
 
 The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 
 ## Development and use
+
+The current source CLI help is the command authority. Build locally with a unique target, then run the disposable demo (Python 3 standard library only):
+
+```sh
+export CARGO_TARGET_DIR=/path/on/ssd/archy-a18-target
+cargo build --locked -p archy-cli
+python3 scripts/demo.py --archy "$CARGO_TARGET_DIR/debug/archy"
+```
+
+The script prints and retains its fresh project path. To choose the location, add `--project-dir /path/to/absent-directory`; existing paths are refused. It runs real `init`, `validate`, seeded `generate`, `evaluate --all`, and `compare` JSON/Markdown. Accepted runs stay under `runs/`; comparison copies are `comparison.json` and `comparison.md`. It exits **2** after comparison, with the project intact: this CLI lacks `render`, and the driver has no reviewed backend receipt or artifact contract. `--export-variant ID` records selection intent but does not export. This script never records human approval. See [CLI and demo limits](docs/cli.md) and [A18 integration evidence](docs/plans/a18-demo-integration-handoff.md).
 
 Install pinned Rust 1.99.1 with rustfmt/clippy, then:
 
