@@ -1,0 +1,18 @@
+# source relative to snapshot root, destination relative to pkgdir, mode
+@binary	usr/bin/archy	0755
+LICENSE	usr/share/licenses/archy/LICENSE	0644
+packaging/arch/compatibility.json	usr/share/archy/compatibility.json	0644
+schemas/backend.schema.json	usr/share/archy/schemas/backend.schema.json	0644
+schemas/desktop-capabilities.schema.json	usr/share/archy/schemas/desktop-capabilities.schema.json	0644
+schemas/desktop-status.schema.json	usr/share/archy/schemas/desktop-status.schema.json	0644
+schemas/doctor.schema.json	usr/share/archy/schemas/doctor.schema.json	0644
+schemas/error.schema.json	usr/share/archy/schemas/error.schema.json	0644
+schemas/evaluation.schema.json	usr/share/archy/schemas/evaluation.schema.json	0644
+schemas/generation.schema.json	usr/share/archy/schemas/generation.schema.json	0644
+schemas/normalized-project.schema.json	usr/share/archy/schemas/normalized-project.schema.json	0644
+schemas/project.schema.json	usr/share/archy/schemas/project.schema.json	0644
+schemas/report.schema.json	usr/share/archy/schemas/report.schema.json	0644
+schemas/revision.schema.json	usr/share/archy/schemas/revision.schema.json	0644
+schemas/run-manifest.schema.json	usr/share/archy/schemas/run-manifest.schema.json	0644
+schemas/run-request.schema.json	usr/share/archy/schemas/run-request.schema.json	0644
+schemas/variant.schema.json	usr/share/archy/schemas/variant.schema.json	0644

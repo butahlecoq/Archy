@@ -1,0 +1,52 @@
+{
+  "$defs": {
+    "DesktopOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/DesktopOperationId"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "available"
+      ],
+      "type": "object"
+    },
+    "DesktopOperationId": {
+      "enum": [
+        "project_status",
+        "run_status"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "operations": {
+      "items": {
+        "$ref": "#/$defs/DesktopOperation"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "operations"
+  ],
+  "title": "DesktopCapabilities",
+  "type": "object"
+}

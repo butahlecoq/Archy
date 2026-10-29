@@ -12,5 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 archy-core = { path = "../archy-core" }
+archy-generate = { path = "../archy-generate" }
+archy-eval = { path = "../archy-eval" }
+archy-report = { path = "../archy-report" }
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+schemars.workspace = true
+rustix.workspace = true
+uuid.workspace = true

@@ -1,0 +1,10 @@
+[
+  {"name":"stable_suffix","omarchy":"omarchy 4.0.6-2\n","dev":null,"want":"available","version":"4.0.6"},
+  {"name":"development","omarchy":null,"dev":"omarchy-dev 4.0.6.r11-1\n","want":"unsupported","version":null},
+  {"name":"prerelease","omarchy":"omarchy 4.5.0-rc2-1\n","dev":null,"want":"unsupported","version":"4.5.0-rc2"},
+  {"name":"unsupported_stable","omarchy":"omarchy 4.5.0-1\n","dev":null,"want":"unsupported","version":"4.5.0"},
+  {"name":"unknown","omarchy":"omarchy strange-1\n","dev":null,"want":"unsupported","version":null},
+  {"name":"missing","omarchy":null,"dev":null,"want":"missing","version":null},
+  {"name":"conflict","omarchy":"omarchy 4.0.6-1\n","dev":"omarchy-dev 4.0.6-1\n","want":"unsupported","version":"4.0.6"},
+  {"name":"malformed","omarchy":"broken text\n","dev":null,"want":"unavailable","version":null}
+]

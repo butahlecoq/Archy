@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "MutationContext": {
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "type": "string"
+        },
+        "expected_project_revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotency_key",
+        "expected_project_revision",
+        "destination"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "$ref": "#/$defs/MutationContext"
+    },
+    "input_sha256": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "request_bytes": {
+      "items": {
+        "format": "uint8",
+        "maximum": 255,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "source_run": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "context",
+    "operation",
+    "request_bytes",
+    "input_sha256"
+  ],
+  "title": "RunRequest",
+  "type": "object"
+}

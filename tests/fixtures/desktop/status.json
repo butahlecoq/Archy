@@ -1,0 +1,15 @@
+{
+  "backend_jobs": {
+    "reason": "No supervisor job observations are available through this reader",
+    "status": "unknown"
+  },
+  "next_cursor": null,
+  "project": {
+    "id": "courtyard-demo",
+    "revision": 0,
+    "source_sha256": "dbd0c3debe37cd7c725903d3492c991ae3451bf0ae8832be41c97b23f1a2b358"
+  },
+  "runs": [],
+  "schema_version": "archy-desktop-status-v1",
+  "selected_run": null
+}

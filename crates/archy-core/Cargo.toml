@@ -14,3 +14,5 @@ schemars.workspace = true
 serde-saphyr.workspace = true
 geo.workspace = true
 sha2.workspace = true
+rustix.workspace = true
+uuid.workspace = true

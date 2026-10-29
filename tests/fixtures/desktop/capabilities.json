@@ -1,0 +1,15 @@
+{
+  "operations": [
+    {
+      "available": true,
+      "id": "project_status",
+      "reason": null
+    },
+    {
+      "available": true,
+      "id": "run_status",
+      "reason": null
+    }
+  ],
+  "schema_version": "archy-desktop-capabilities-v1"
+}

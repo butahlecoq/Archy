@@ -1,0 +1,258 @@
+{
+  "schema_version": "archy-report-v1",
+  "context": {
+    "schema_version": "archy-report-context-v1",
+    "run_id": "860e2341-e139-44b1-a49d-2a5e2ceedd23",
+    "parent_run_id": "62040078-5b31-46af-95f6-07205fdac442",
+    "parent_variant_id": "variant-82d8c3944ac04207169ab11c979643cefb53c150893f3414af32ff68918725ee",
+    "operation": "edit",
+    "input_sha256": "dbd0c3debe37cd7c725903d3492c991ae3451bf0ae8832be41c97b23f1a2b358",
+    "normalized_sha256": "6dbeac52c34cace2db3b90e8a6450955a8dc4326ead608696385fead2bcc7ef9",
+    "algorithm_version": "chacha8-u53-massing-v1",
+    "build_version": "0.1.0",
+    "requested_count": 1,
+    "attempts": null,
+    "exhaustion_explanations": []
+  },
+  "spec": {
+    "schema_version": "0.1.0",
+    "project_id": "courtyard-demo",
+    "units": "m",
+    "site": {
+      "polygon_xy_m": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          20.0,
+          0.0
+        ],
+        [
+          20.0,
+          35.0
+        ],
+        [
+          0.0,
+          35.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ],
+      "north_angle_deg": 0.0
+    },
+    "brief": {
+      "storeys": 3,
+      "floor_to_floor_m": 3.2,
+      "target_gfa_m2": 900.0,
+      "target_gfa_hard": false
+    },
+    "constraints": [
+      {
+        "id": "height",
+        "kind": "max_height",
+        "value_m": 12.0,
+        "source": "user_brief",
+        "authority": "assumption"
+      },
+      {
+        "id": "setback",
+        "kind": "min_edge_setback",
+        "value_m": 3.0,
+        "source": "user_brief",
+        "authority": "assumption"
+      }
+    ],
+    "preferences": [],
+    "generation": {
+      "count": 3,
+      "seed": 42,
+      "shapes": [
+        "rectangle",
+        "l_shape"
+      ]
+    },
+    "normalization_version": "si-rectangle-v1",
+    "tolerance_m": 1e-6
+  },
+  "variants": [
+    {
+      "variant": {
+        "schema_version": "0.1.0",
+        "project_id": "courtyard-demo",
+        "id": "variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b",
+        "seed": 42,
+        "generation_algorithm": "chacha8-u53-massing-v1",
+        "shape": "l_shape",
+        "parameters": {
+          "shape": "l_shape",
+          "origin_xy_m": [
+            5.052881875657741,
+            6.26847896731718
+          ],
+          "width_m": 8.419883398771178,
+          "depth_m": 25.041461336491903,
+          "notch_width_m": 1.9105379503345907,
+          "notch_depth_m": 9.916384614233756
+        },
+        "footprint_xy_m": [
+          [
+            5.052881875657741,
+            6.26847896731718
+          ],
+          [
+            13.47276527442892,
+            6.26847896731718
+          ],
+          [
+            13.47276527442892,
+            21.393555689575326
+          ],
+          [
+            11.562227324094328,
+            21.393555689575326
+          ],
+          [
+            11.562227324094328,
+            31.309940303809082
+          ],
+          [
+            5.052881875657741,
+            31.309940303809082
+          ],
+          [
+            5.052881875657741,
+            6.26847896731718
+          ]
+        ],
+        "storeys": 3,
+        "floor_to_floor_m": 3.2
+      },
+      "evaluation": {
+        "variant_id": "variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b",
+        "evaluation_version": "planar-massing-v1",
+        "metrics": [
+          {
+            "name": "footprint_area",
+            "value": 191.90055545249083,
+            "unit": "m2",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "gross_floor_area",
+            "value": 575.7016663574725,
+            "unit": "m2",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "height",
+            "value": 9.600000000000001,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "xmin",
+            "value": 5.052881875657741,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "ymin",
+            "value": 6.26847896731718,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "xmax",
+            "value": 13.47276527442892,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "ymax",
+            "value": 31.309940303809082,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "clearance_west",
+            "value": 5.052881875657741,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "clearance_east",
+            "value": 6.5272347255710805,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "clearance_south",
+            "value": 6.26847896731718,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "clearance_north",
+            "value": 3.690059696190918,
+            "unit": "m",
+            "method_version": "planar-massing-v1"
+          },
+          {
+            "name": "target_gfa_delta",
+            "value": -324.2983336425275,
+            "unit": "m2",
+            "method_version": "planar-massing-v1"
+          }
+        ],
+        "checks": [
+          {
+            "constraint_id": "site_containment",
+            "result": "PASS",
+            "measured": 3.690059696190918,
+            "limit": 0.0,
+            "explanation": "Minimum signed clearance to declared site; length tolerance applies",
+            "required": true
+          },
+          {
+            "constraint_id": "height",
+            "result": "PASS",
+            "measured": 9.600000000000001,
+            "limit": 12.0,
+            "explanation": "Declared MaxHeight; source=user_brief; authority=assumption (unverified); geometric measurement only",
+            "required": true
+          },
+          {
+            "constraint_id": "setback",
+            "result": "PASS",
+            "measured": 3.690059696190918,
+            "limit": 3.0,
+            "explanation": "Declared MinEdgeSetback; source=user_brief; authority=assumption (unverified); geometric measurement only",
+            "required": true
+          }
+        ],
+        "tolerance": {
+          "length_m": 1e-6,
+          "area_m2": 1e-6,
+          "method_version": "absolute-si-v1"
+        },
+        "geometry_parity_budget": {
+          "policy_version": "polygon-coordinate-parity-v1",
+          "coordinate_length_m": 1e-6,
+          "footprint_area_m2": 0.00006692269547052616,
+          "gross_floor_area_m2": 0.00020076808641157848,
+          "rigid_transform_policy_version": "rigid-xy-ordered-v1"
+        },
+        "required_checks_passed": true,
+        "professional_limits": "Measures declared geometric bounds only; not legal compliance or professional certification. Sources and authority are unverified declarations. GFA approximates repeated footprint area; daylight, structure, access, cost and local regulations are uncomputed."
+      }
+    }
+  ],
+  "uncomputed": [
+    "daylight",
+    "cost"
+  ],
+  "professional_limits": "Measures declared geometric bounds only; not legal compliance or professional certification. Sources and authority are unverified declarations. GFA approximates repeated footprint area; daylight, structure, access, cost and local regulations are uncomputed."
+}

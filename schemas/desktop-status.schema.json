@@ -1,0 +1,202 @@
+{
+  "$defs": {
+    "DesktopArtifactIntegrity": {
+      "enum": [
+        "verified"
+      ],
+      "type": "string"
+    },
+    "DesktopArtifactKind": {
+      "enum": [
+        "report",
+        "variant",
+        "evaluation",
+        "source",
+        "run_data"
+      ],
+      "type": "string"
+    },
+    "DesktopArtifactSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_len": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "integrity": {
+          "$ref": "#/$defs/DesktopArtifactIntegrity"
+        },
+        "kind": {
+          "$ref": "#/$defs/DesktopArtifactKind"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "byte_len",
+        "sha256",
+        "integrity"
+      ],
+      "type": "object"
+    },
+    "DesktopJobObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DesktopJobStatus"
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "DesktopJobStatus": {
+      "enum": [
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "DesktopProject": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "source_sha256"
+      ],
+      "type": "object"
+    },
+    "DesktopRunOperation": {
+      "enum": [
+        "generate",
+        "edit",
+        "evaluate"
+      ],
+      "type": "string"
+    },
+    "DesktopRunSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "all_required_checks_passed": {
+          "type": "boolean"
+        },
+        "artifact_count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operation": {
+          "$ref": "#/$defs/DesktopRunOperation"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "variant_count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "revision",
+        "operation",
+        "variant_count",
+        "all_required_checks_passed",
+        "artifact_count"
+      ],
+      "type": "object"
+    },
+    "DesktopSelectedRun": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/DesktopArtifactSummary"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "$ref": "#/$defs/DesktopRunSummary"
+        }
+      },
+      "required": [
+        "summary",
+        "artifacts"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "backend_jobs": {
+      "$ref": "#/$defs/DesktopJobObservation"
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project": {
+      "$ref": "#/$defs/DesktopProject"
+    },
+    "runs": {
+      "items": {
+        "$ref": "#/$defs/DesktopRunSummary"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "selected_run": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesktopSelectedRun"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "project",
+    "runs",
+    "backend_jobs"
+  ],
+  "title": "DesktopStatus",
+  "type": "object"
+}

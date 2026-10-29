@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "Artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_len": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "producer": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "media_type",
+        "producer",
+        "byte_len"
+      ],
+      "type": "object"
+    },
+    "VariantOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "error_artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evaluation_artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant_artifact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant_id"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "algorithm_version": {
+      "type": "string"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/Artifact"
+      },
+      "type": "array"
+    },
+    "build_version": {
+      "type": "string"
+    },
+    "count": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "expected_project_revision": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "input_sha256": {
+      "type": "string"
+    },
+    "normalized_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "operation": {
+      "type": "string"
+    },
+    "outcomes": {
+      "items": {
+        "$ref": "#/$defs/VariantOutcome"
+      },
+      "type": "array"
+    },
+    "parent_run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parent_variant_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "request_schema_version": {
+      "type": "string"
+    },
+    "request_sha256": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "seed": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "source_format": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "run_id",
+    "idempotency_key",
+    "request_sha256",
+    "request_schema_version",
+    "expected_project_revision",
+    "operation",
+    "input_sha256",
+    "algorithm_version",
+    "build_version",
+    "artifacts",
+    "outcomes"
+  ],
+  "title": "RunManifest",
+  "type": "object"
+}
