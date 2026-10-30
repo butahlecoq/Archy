@@ -82,12 +82,30 @@ class PlaybookContracts(unittest.TestCase):
             self.assertFalse(schema["additionalProperties"])
             if name in mutations:
                 self.assertTrue({"destination", "idempotency_key", "expected_project_revision"} <= set(schema["required"]))
-        for name in ("export_ifc", "propose_approval"):
-            self.assertIn(f"\"{name}\" => self.unavailable", (ROOT / "crates/archy-mcp/src/server.rs").read_text())
+        server = (ROOT / "crates/archy-mcp/src/server.rs").read_text()
+        self.assertIn('"propose_approval" => self.unavailable', server)
+        self.assertIn('"export_ifc" => self.export_ifc', server)
+        export = json.loads((ROOT / "schemas/mcp/export_ifc.schema.json").read_text())
+        self.assertTrue({"project_id", "source_run", "variant_id", "idempotency_key",
+                         "expected_project_revision", "destination"} <= set(export["input"]["required"]))
+        receipt = export["output"]["$defs"]["ExportIfcData"]
+        self.assertFalse(receipt["additionalProperties"])
+        self.assertTrue({"project_id", "run_id", "revision", "path", "manifest_sha256",
+                         "source_run_id", "variant_id", "scope", "approval_state"} <= set(receipt["required"]))
+        self.assertTrue(any(branch["properties"]["ok"].get("const") is True
+                            and branch["properties"]["data"].get("$ref") == "#/$defs/ExportIfcData"
+                            for branch in export["output"]["oneOf"]))
         playbook = (ROOT / "docs/agent-playbooks/omarchy.md").read_text()
         for text in (skill, playbook):
-            for term in ("`draft`", "`all_verified`", "`BACKEND_UNAVAILABLE`"):
+            for term in ("`draft`", "`all_verified`", "`BACKEND_UNAVAILABLE`", "`project_id`", "`source_run`",
+                         "`variant_id`", "`idempotency_key`", "`expected_project_revision`",
+                         "`destination`", "`DRAFT`", "`SCHEMATIC_MASSING_ONLY`"):
                 self.assertIn(term, text)
+            self.assertIn("fixed service gate and independent verifier", text.lower())
+            self.assertIn("does not grant human approval", text)
+            self.assertIn("`propose_approval` remains unavailable", text)
+            self.assertIn("same key and request", text)
+            self.assertNotIn("`export_ifc` and `propose_approval` remain unavailable", text)
 
     def test_authority_and_optional_session(self):
         skill = (ROOT / "integrations/agents/archy/SKILL.md").read_text()
