@@ -159,10 +159,34 @@ pub(crate) fn event_bytes(
     Ok(bytes)
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_FAIL_LOCKED_VERIFICATION: std::cell::RefCell<Option<(String, archy_core::ErrorCode)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 pub(crate) fn verify_locked(
     locked: &LockedProject<'_>,
     run_id: &str,
 ) -> Result<TrustedRun, ArchyError> {
+    #[cfg(test)]
+    if let Some(code) = TEST_FAIL_LOCKED_VERIFICATION.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot
+            .as_ref()
+            .is_some_and(|(target, _)| target.is_empty() || target == run_id)
+        {
+            slot.take().map(|(_, code)| code)
+        } else {
+            None
+        }
+    }) {
+        return Err(ArchyError::new(
+            code,
+            "ifc_verifier",
+            "injected post-publication verification failure",
+        ));
+    }
     let history = locked.accepted_history()?;
     verify_history(&history, run_id)
 }
@@ -171,6 +195,32 @@ pub fn verify_history(
     history: &AcceptedHistory<'_>,
     run_id: &str,
 ) -> Result<TrustedRun, ArchyError> {
+    #[cfg(test)]
+    if let Some(code) = TEST_FAIL_HISTORY_VERIFICATION.with(|slot| slot.take()) {
+        return Err(ArchyError::new(
+            code,
+            "ifc_verifier",
+            "injected history runtime failure",
+        ));
+    }
+    #[cfg(test)]
+    if let Some(code) = TEST_FAIL_HISTORY_AFTER.with(|slot| match slot.get() {
+        Some((0, code)) => {
+            slot.set(None);
+            Some(code)
+        }
+        Some((remaining, code)) => {
+            slot.set(Some((remaining - 1, code)));
+            None
+        }
+        None => None,
+    }) {
+        return Err(ArchyError::new(
+            code,
+            "ifc_verifier",
+            "injected history runtime failure",
+        ));
+    }
     let revision_count = history.len();
     let mut seen = BTreeSet::new();
     let mut ancestry = Vec::new();
@@ -1037,4 +1087,12 @@ fn verify_export_run(
         exhaustion: Vec::new(),
         render_record: None,
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_FAIL_HISTORY_VERIFICATION: std::cell::Cell<Option<archy_core::ErrorCode>> =
+        const { std::cell::Cell::new(None) };
+    pub(crate) static TEST_FAIL_HISTORY_AFTER: std::cell::Cell<Option<(usize, archy_core::ErrorCode)>> =
+        const { std::cell::Cell::new(None) };
 }

@@ -20,6 +20,7 @@ const LIMIT: u64 = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(2);
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(15);
 const MANIFEST: &str = include_str!("../../../packaging/arch/compatibility.json");
+const RUNTIME_BWRAP: &str = "/usr/lib/archy/runtime/bin/bwrap";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Probe<T> {
@@ -411,8 +412,8 @@ pub fn evaluate(o: &HostObservation, p: &CompatibilityPolicy) -> DoctorReport {
             "tools.bwrap",
             &o.bubblewrap,
             vec!["containment"],
-            "/usr/bin/pacman -Q bubblewrap",
-            "Install the reviewed bubblewrap package; enforcement requires target testing",
+            "/usr/bin/pacman -Q archy-runtime; -Qqo /usr/lib/archy/runtime/bin/bwrap",
+            "Install the reviewed archy-runtime package and validate its inventory and containment on target",
         ),
         (
             "desktop.shell",
@@ -436,14 +437,24 @@ pub fn evaluate(o: &HostObservation, p: &CompatibilityPolicy) -> DoctorReport {
             "Check an existing user manager during target acceptance",
         ),
     ] {
+        let state = if id == "tools.bwrap" && matches!(probe, Probe::Found(_)) {
+            CheckStatus::Deferred
+        } else {
+            status(probe)
+        };
+        let why = if id == "tools.bwrap" && matches!(probe, Probe::Found(_)) {
+            "runtime metadata alone cannot prove private bwrap or containment".into()
+        } else {
+            reason(probe)
+        };
         checks.push(check(
             id,
             &required,
-            status(probe),
+            state,
             value(probe),
             None,
             &[evidence],
-            (reason(probe), remedy),
+            (why, remedy),
         ));
     }
     for (id, capability, probe, proposed) in [
@@ -774,6 +785,45 @@ fn query_package(name: &'static str, deadline: Instant) -> Probe<String> {
         RunResult::Unavailable(e) => Probe::Unavailable(e),
     }
 }
+
+fn runtime_bwrap(deadline: Instant) -> Probe<String> {
+    let package = match query_package("archy-runtime", deadline) {
+        Probe::Found(value) => value,
+        other => return other,
+    };
+    let path = Path::new(RUNTIME_BWRAP);
+    for part in path.ancestors() {
+        let meta = match fs::symlink_metadata(part) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Probe::Missing,
+            Err(_) => return Probe::Unavailable("private bwrap path cannot be inspected".into()),
+        };
+        if meta.file_type().is_symlink() || meta.uid() != 0 || meta.mode() & 0o022 != 0 {
+            return Probe::Unavailable("private bwrap path is not root-owned and immutable".into());
+        }
+        if part == path && (!meta.is_file() || meta.mode() & 0o111 == 0) {
+            return Probe::Unavailable("private bwrap is not an executable file".into());
+        }
+    }
+    let wait = TIMEOUT.min(deadline.saturating_duration_since(Instant::now()));
+    if wait.is_zero() {
+        return Probe::Unavailable("collection deadline exhausted".into());
+    }
+    match run_bounded_with_timeout(Path::new("/usr/bin/pacman"), &["-Qqo", RUNTIME_BWRAP], wait) {
+        RunResult::Output {
+            code: Some(0),
+            stdout,
+            stderr,
+        } if stdout == "archy-runtime\n" && stderr.is_empty() => Probe::Deferred(format!(
+            "{package}; private bwrap ownership observed; inventory and containment require validation"
+        )),
+        RunResult::Unavailable(error) => Probe::Unavailable(error),
+        RunResult::Output { .. } => {
+            Probe::Unavailable("private bwrap is not owned by archy-runtime".into())
+        }
+    }
+}
+
 pub fn collect() -> HostObservation {
     let deadline = Instant::now() + COLLECTION_TIMEOUT;
     let kernel = bounded_file("/proc/sys/kernel/osrelease", deadline);
@@ -786,7 +836,7 @@ pub fn collect() -> HostObservation {
         omarchy: query_package("omarchy", deadline),
         omarchy_dev: query_package("omarchy-dev", deadline),
         custom_omarchy_path: std::env::var_os("OMARCHY_PATH").is_some(),
-        bubblewrap: query_package("bubblewrap", deadline),
+        bubblewrap: runtime_bwrap(deadline),
         shell: query_package("omarchy-shell", deadline),
         cgroup_controllers: bounded_file("/sys/fs/cgroup/cgroup.controllers", deadline).map_trim(),
         user_manager: Probe::Deferred("user manager bus not queried by passive doctor".into()),
@@ -902,6 +952,21 @@ mod tests {
             .unwrap();
         assert_eq!(check["status"], "deferred");
         assert_eq!(report["capabilities"]["blender"]["ready"], false);
+    }
+    #[test]
+    fn runtime_package_metadata_cannot_prove_private_bwrap_readiness() {
+        let mut o = base();
+        o.bubblewrap = Probe::Found("archy-runtime 0.1.0-1".into());
+        let report = evaluate(&o, &CompatibilityPolicy::checked_in().unwrap()).json();
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "tools.bwrap")
+            .unwrap();
+        assert_eq!(check["status"], "deferred");
+        assert!(check["evidence"].to_string().contains("archy-runtime"));
+        assert!(!check["evidence"].to_string().contains("-Q bubblewrap"));
     }
     #[test]
     fn runner_bounds_output_and_timeout() {
