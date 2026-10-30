@@ -1,6 +1,9 @@
 // Read-only desktop v1 contracts shared by QML and Node. No command data is executable.
-var STATUS_MAX_BYTES = 1048576;
+var STATUS_MAX_BYTES = 33554432;
+var MAX_VARIANTS = 1000;
+var MAX_ARTIFACTS = 4096;
 var CAPABILITIES_MAX_BYTES = 65536;
+var PREVIEW_SYMBOL_NOTICE = 'Screen-width massing edges are nonphysical preview symbols; GLB dimensions remain exact.';
 function obj(v, keys) { return v !== null && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && keys.every(function(k) { return Object.prototype.hasOwnProperty.call(v,k); }); }
 function str(v) { return typeof v === 'string' && v.length <= 4096; }
 function small(v) { return str(v) && v.length > 0; }
@@ -28,29 +31,58 @@ function validCapabilities(c) {
     && ids.every(function(id) { return c.operations.filter(function(o) { return o.id === id }).length === 1 });
 }
 function validSummary(r) {
-  return obj(r,['run_id','revision','operation','variant_count','all_required_checks_passed','artifact_count'])
-    && validRunId(r.run_id) && uint(r.revision) && ['generate','edit','evaluate'].indexOf(r.operation) >= 0
-    && uint(r.variant_count) && uint(r.artifact_count) && typeof r.all_required_checks_passed === 'boolean';
+  var render = r && r.operation === 'render';
+  var keys = ['run_id','revision','operation','variant_count','all_required_checks_passed','artifact_count'];
+  if (render) keys.push('render_outcome');
+  if (render && r.preview_symbols !== undefined) keys.push('preview_symbols');
+  return obj(r,keys)
+    && validRunId(r.run_id) && uint(r.revision) && ['generate','edit','evaluate','render'].indexOf(r.operation) >= 0
+    && (!render || ['verified','partial','failed'].indexOf(r.render_outcome) >= 0)
+    && uint(r.variant_count) && r.variant_count <= MAX_VARIANTS
+    && uint(r.artifact_count) && r.artifact_count <= MAX_ARTIFACTS
+    && (!render || r.preview_symbols === undefined || validPreviewSymbols(r.preview_symbols, r.variant_count))
+    && typeof r.all_required_checks_passed === 'boolean';
+}
+function validPreviewSymbols(symbols, variantCount) {
+  if (!Array.isArray(symbols) || symbols.length > variantCount) return false;
+  var seen = {};
+  return symbols.every(function(symbol) {
+    if (!obj(symbol,['variant_id','views','notice'])
+        || !/^variant-[0-9a-f]{64}$/.test(symbol.variant_id)
+        || Object.prototype.hasOwnProperty.call(seen,symbol.variant_id)
+        || symbol.notice !== PREVIEW_SYMBOL_NOTICE
+        || !Array.isArray(symbol.views) || symbol.views.length < 1 || symbol.views.length > 3
+        || !symbol.views.every(function(view) { return ['top','front','iso'].indexOf(view) >= 0; })
+        || symbol.views.some(function(view, i) { return symbol.views.indexOf(view) !== i; })) return false;
+    seen[symbol.variant_id] = true;
+    return true;
+  });
 }
 function validArtifact(a) {
   return obj(a,['id','kind','byte_len','sha256','integrity']) && small(a.id)
-    && ['report','variant','evaluation','source','run_data'].indexOf(a.kind) >= 0
+    && ['report','preview','blender','variant','evaluation','source','run_data'].indexOf(a.kind) >= 0
+    && (a.kind !== 'report' || a.id === 'report.md' || a.id === 'report.json')
+    && (a.kind !== 'preview' || (/^previews\/[A-Za-z0-9_/-]+\.png$/.test(a.id) && a.id.indexOf('..') < 0)
+      || /^renders\/variant-[0-9a-f]{64}\/view-(top|front|iso)\.png$/.test(a.id))
+    && (a.kind !== 'blender' || (/^scenes\/[A-Za-z0-9_/-]+\.blend$/.test(a.id) && a.id.indexOf('..') < 0)
+      || /^renders\/variant-[0-9a-f]{64}\/scene\.blend$/.test(a.id))
     && uint(a.byte_len) && hash(a.sha256) && a.integrity === 'verified';
 }
 function sameSummary(a, b) {
-  return ['run_id','revision','operation','variant_count','all_required_checks_passed','artifact_count']
-    .every(function(k) { return a[k] === b[k]; });
+  return ['run_id','revision','operation','variant_count','all_required_checks_passed','artifact_count','render_outcome']
+    .every(function(k) { return a[k] === b[k]; })
+    && JSON.stringify(a.preview_symbols || []) === JSON.stringify(b.preview_symbols || []);
 }
 function validStatus(s, requestedRunId) {
   if (!obj(s,['schema_version','project','runs','selected_run','next_cursor','backend_jobs']) || s.schema_version !== 'archy-desktop-status-v1') return false;
   if (!obj(s.project,['id','revision','source_sha256']) || !small(s.project.id) || !uint(s.project.revision) || !hash(s.project.source_sha256)) return false;
-  if (!Array.isArray(s.runs) || s.runs.length > 20 || !s.runs.every(validSummary)) return false;
+  if (!Array.isArray(s.runs) || s.runs.length > 100 || !s.runs.every(validSummary)) return false;
   for (var i=0;i<s.runs.length;i++) {
     if (s.runs[i].revision > s.project.revision || (i>0 && s.runs[i-1].revision <= s.runs[i].revision)) return false;
   }
   if (s.selected_run !== null && (!obj(s.selected_run,['summary','artifacts']) || !validSummary(s.selected_run.summary)
       || s.selected_run.summary.revision > s.project.revision
-      || !Array.isArray(s.selected_run.artifacts) || s.selected_run.artifacts.length > 256
+      || !Array.isArray(s.selected_run.artifacts) || s.selected_run.artifacts.length > MAX_ARTIFACTS
       || s.selected_run.artifacts.length !== s.selected_run.summary.artifact_count
       || !s.selected_run.artifacts.every(validArtifact))) return false;
   var selected = s.selected_run === null ? null : s.selected_run.summary;

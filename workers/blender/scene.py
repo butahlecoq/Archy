@@ -20,8 +20,16 @@ def build(request):
     local = [Vector((point[0] - origin.x, point[1] - origin.y, 0.0)) for point in ring]
     triangles = tessellate_polygon([local])
     if len(triangles) != len(local) - 2:
-        raise ValueError("cap tessellation did not cover footprint")
+        raise ProtocolError(
+            "Blender cap tessellation cannot resolve this positive footprint at its coordinate scale; use a larger feature or a higher-precision geometry backend",
+            "params.footprint_xy_m", "BACKEND_UNAVAILABLE")
     cap = [tuple(triangle) for triangle in triangles]
+    if any((local[b].x - local[a].x) * (local[c].y - local[a].y)
+           - (local[c].x - local[a].x) * (local[b].y - local[a].y) <= 0
+           for a, b, c in cap):
+        raise ProtocolError(
+            "Blender cap tessellation reversed or collapsed triangle winding at this positive footprint's coordinate scale; use a larger feature or a higher-precision geometry backend",
+            "params.footprint_xy_m", "BACKEND_UNAVAILABLE")
     area = sum((ring[i][0] * ring[(i + 1) % len(ring)][1] - ring[(i + 1) % len(ring)][0] * ring[i][1]) for i in range(len(ring))) / 2
     if area <= 0:
         raise ValueError("nonpositive footprint area")

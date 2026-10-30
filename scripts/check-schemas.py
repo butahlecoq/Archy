@@ -312,7 +312,7 @@ print('actual CLI desktop capabilities and genesis status conform')
 
 subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check=True)
 subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-mcp'], cwd=ROOT, check=True)
-for test in ('stdio_contract.py', 'parse_errors.py', 'compare_stdio.py', 'mutations.py'):
+for test in ('stdio_contract.py', 'parse_errors.py', 'compare_stdio.py', 'mutations.py', 'render_variant.py'):
     subprocess.run([sys.executable, str(ROOT / 'crates' / 'archy-mcp' / 'tests' / test)],
                    cwd=ROOT, timeout=360 if test == 'mutations.py' else 120, check=True)
 

@@ -41,6 +41,15 @@ enum FaultPoint {
 #[cfg(test)]
 thread_local! {
     static TEST_FAULT: std::cell::Cell<Option<FaultPoint>> = const { std::cell::Cell::new(None) };
+    static RECOVERY_BOUNDARY: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(test)]
+fn recovery_boundary() {
+    RECOVERY_BOUNDARY.with(|hook| {
+        if let Some(hook) = hook.borrow_mut().take() {
+            hook();
+        }
+    });
 }
 #[cfg(test)]
 fn install_fault(point: FaultPoint) {
@@ -245,7 +254,7 @@ fn open_path(root: &File, path: &str) -> Result<File, ArchyError> {
     }
     existing_file(&dir, parts[parts.len() - 1])
 }
-fn digest_request(request: &RunRequest) -> Result<String, ArchyError> {
+pub fn digest_request(request: &RunRequest) -> Result<String, ArchyError> {
     let mut bytes = b"archy-run-request-fingerprint-v1\0".to_vec();
     serde_json::to_writer(&mut bytes, request).map_err(|e| ioerr("serialize request", e))?;
     Ok(sha256_hex(&bytes))
@@ -752,6 +761,7 @@ impl LockedProject<'_> {
         records: &[RevisionRecord],
         previous_sha256: Option<String>,
         next: u64,
+        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
     ) -> Result<Option<RunReceipt>, ArchyError> {
         let mut dest = self
             .store
@@ -832,6 +842,13 @@ impl LockedProject<'_> {
                 .map_err(|e| uncertain("sync orphan destination", e))?;
             dest.sync_all()
                 .map_err(|e| uncertain("sync orphan destination", e))?;
+            #[cfg(test)]
+            recovery_boundary();
+            if let Some(check) = check {
+                check().map_err(|error| {
+                    uncertain("binding changed before orphan revision publication", error)
+                })?;
+            }
             publish_revision(&self.store.root, &record, Interrupt::None)?;
             return Ok(Some(receipt));
         }
@@ -887,6 +904,22 @@ impl LockedProject<'_> {
         read_bounded(&mut file, limit)
     }
     pub fn begin<'a>(&'a self, request: RunRequest) -> Result<BeginResult<'a>, ArchyError> {
+        self.begin_inner(request, None)
+    }
+    /// Checks an external binding before publishing a recovered orphan revision.
+    /// A concurrent rename between this check and publication remains possible.
+    pub fn begin_checked<'a>(
+        &'a self,
+        request: RunRequest,
+        check: &dyn Fn() -> Result<(), ArchyError>,
+    ) -> Result<BeginResult<'a>, ArchyError> {
+        self.begin_inner(request, Some(check))
+    }
+    fn begin_inner<'a>(
+        &'a self,
+        request: RunRequest,
+        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+    ) -> Result<BeginResult<'a>, ArchyError> {
         self.require_owner()?;
         if request.schema_version != RUN_REQUEST_SCHEMA_VERSION {
             return Err(err(
@@ -936,9 +969,14 @@ impl LockedProject<'_> {
         let next = current
             .checked_add(1)
             .ok_or_else(|| conflict("revision overflow"))?;
-        if let Some(receipt) =
-            self.recover_orphan(&request, &digest, &records, previous_sha256.clone(), next)?
-        {
+        if let Some(receipt) = self.recover_orphan(
+            &request,
+            &digest,
+            &records,
+            previous_sha256.clone(),
+            next,
+            check,
+        )? {
             return Ok(BeginResult::Replay(receipt));
         }
         let archy = open_dir(&self.store.root, ".archy")?;
@@ -1236,6 +1274,92 @@ mod interruption_tests {
             count: None,
             parent_variant_id: None,
             algorithm_version: "v1".into(),
+        }
+    }
+    #[test]
+    fn orphan_recovery_rechecks_real_binding_before_revision_publication() {
+        for replace_root in [false, true] {
+            let (root, store) = fixture();
+            let source = store.pin_source().unwrap();
+            let locked = store.lock().unwrap();
+            let mut pending = locked
+                .begin(request("orphan", 0))
+                .unwrap()
+                .pending()
+                .unwrap();
+            let run_id = pending.run_id().to_owned();
+            pending
+                .write("input.json", b"source", "application/json", "test")
+                .unwrap();
+            let error = pending
+                .commit_inner(metadata(), Interrupt::AfterRunPublication, None)
+                .unwrap_err();
+            assert!(error.retriable);
+            assert_eq!(locked.revision().unwrap(), 0);
+            let moved = root.with_extension("moved");
+            let replacement = root.with_extension("replacement");
+            let moved_source = root.join("project.moved");
+            let boundary_root = root.clone();
+            let boundary_moved = moved.clone();
+            let boundary_replacement = replacement.clone();
+            let boundary_moved_source = moved_source.clone();
+            RECOVERY_BOUNDARY.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new(move || {
+                    if replace_root {
+                        std::fs::rename(&boundary_root, &boundary_moved).unwrap();
+                        std::fs::create_dir(&boundary_root).unwrap();
+                        std::fs::write(boundary_root.join("project.json"), b"source").unwrap();
+                    } else {
+                        std::fs::rename(boundary_root.join("project.json"), &boundary_moved_source)
+                            .unwrap();
+                        std::fs::write(&boundary_replacement, b"changed").unwrap();
+                        std::fs::rename(&boundary_replacement, boundary_root.join("project.json"))
+                            .unwrap();
+                    }
+                }))
+            });
+            let check = || {
+                if !store.matches_root_path(&root).unwrap_or(false)
+                    || !store.source_matches(&source).unwrap_or(false)
+                {
+                    return Err(conflict("binding changed"));
+                }
+                Ok(())
+            };
+            check().unwrap();
+            let result = locked.begin_checked(request("orphan", 0), &check);
+            assert!(
+                result.is_err(),
+                "recovery published after binding replacement"
+            );
+            let rejection = result.err().unwrap();
+            assert!(rejection.retriable);
+            assert!(rejection.message.contains("binding changed"));
+            assert_eq!(locked.revision().unwrap(), 0);
+            assert!(locked.receipts().unwrap().is_empty());
+            if replace_root {
+                std::fs::remove_dir_all(&root).unwrap();
+                std::fs::rename(&moved, &root).unwrap();
+            } else {
+                std::fs::remove_file(root.join("project.json")).unwrap();
+                std::fs::rename(&moved_source, root.join("project.json")).unwrap();
+            }
+            check().unwrap();
+            let replay = locked
+                .begin_checked(request("orphan", 0), &check)
+                .unwrap()
+                .receipt()
+                .unwrap();
+            assert_eq!(replay.run_id, run_id);
+            assert_eq!(locked.revision().unwrap(), 1);
+            assert_eq!(
+                locked
+                    .begin_checked(request("orphan", 0), &check)
+                    .unwrap()
+                    .receipt(),
+                Some(replay)
+            );
+            std::fs::remove_dir_all(root).unwrap();
         }
     }
     #[test]

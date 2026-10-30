@@ -98,12 +98,16 @@ Item {
           PanelSectionHeader { text: "NEWEST VERIFIED RUNS" }
           Repeater {
             model: desktop.status ? desktop.status.runs : []
-            delegate: Button { required property var modelData; width: scrollArea.availableWidth; text: modelData.run_id + " · " + modelData.operation + " · revision " + modelData.revision + " · required checks " + (modelData.all_required_checks_passed ? "passed" : "unmet"); focusable: true; enabled: !desktop.busy; onClicked: { opener.abort("Run selection changed"); desktop.selectRun(modelData.run_id) } }
+            delegate: Button { required property var modelData; width: scrollArea.availableWidth; text: modelData.run_id + " · " + modelData.operation + " · revision " + modelData.revision + (modelData.operation === "render" ? " · render " + modelData.render_outcome : "") + " · required checks " + (modelData.all_required_checks_passed ? "passed" : "unmet"); focusable: true; enabled: !desktop.busy; onClicked: { opener.abort("Run selection changed"); desktop.selectRun(modelData.run_id) } }
           }
           Text { width: parent.width; text: desktop.status && desktop.status.runs.length === 0 ? "No accepted runs" : ""; textFormat: Text.PlainText; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
           Button { text: "Next 20 verified runs"; focusable: true; enabled: !desktop.busy && desktop.status && desktop.status.next_cursor !== null; onClicked: desktop.nextPage() }
           PanelSectionHeader { text: "SELECTED RUN · VERIFIED METADATA" }
-          Text { width: parent.width; text: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.run_id + " · " + desktop.status.selected_run.summary.operation + " · variants " + desktop.status.selected_run.summary.variant_count + " · required checks " + (desktop.status.selected_run.summary.all_required_checks_passed ? "passed" : "unmet")) : "No run selected"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Text { width: parent.width; text: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.run_id + " · " + desktop.status.selected_run.summary.operation + (desktop.status.selected_run.summary.operation === "render" ? " · render " + desktop.status.selected_run.summary.render_outcome : "") + " · variants " + desktop.status.selected_run.summary.variant_count + " · required checks " + (desktop.status.selected_run.summary.all_required_checks_passed ? "passed" : "unmet")) : "No run selected"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Repeater {
+            model: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.preview_symbols || []) : []
+            delegate: Text { required property var modelData; width: scrollArea.availableWidth; text: modelData.variant_id + " · preview views " + modelData.views.join(", ") + "\n" + modelData.notice; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          }
           Repeater {
             model: desktop.status && desktop.status.selected_run ? desktop.status.selected_run.artifacts : []
             delegate: Text { required property var modelData; width: scrollArea.availableWidth; text: modelData.id + " · " + modelData.kind + " · " + modelData.byte_len + " bytes · " + modelData.integrity + "\nSHA-256 " + modelData.sha256; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
@@ -114,18 +118,18 @@ Item {
           Text { width: parent.width; text: opener.message; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
           Repeater {
             model: desktop.status && !desktop.stale && desktop.status.selected_run ? desktop.status.selected_run.artifacts.filter(function(a) {
-              return a.kind === "report" || a.id.indexOf("previews/") === 0 || a.id.indexOf("scenes/") === 0
+              return a.kind === "report" || a.kind === "preview" || a.kind === "blender"
             }) : []
             delegate: Button {
               required property var modelData
-              property string openKind: modelData.kind === "report" ? "report" : (modelData.id.indexOf("previews/") === 0 ? "preview" : "blender")
+              property string openKind: modelData.kind
               text: "Open " + modelData.id + (desktop.hasOpenCapability(openKind) ? "" : " · viewer unavailable")
               enabled: !desktop.busy && !opener.busy && desktop.hasOpenCapability(openKind)
               focusable: enabled
               onClicked: opener.openArtifact(desktop.manifest, desktop.status, openKind, modelData.id)
             }
           }
-          Text { width: parent.width; text: desktop.status && desktop.status.selected_run && desktop.status.selected_run.artifacts.every(function(a) { return a.kind !== "report" && a.id.indexOf("previews/") !== 0 && a.id.indexOf("scenes/") !== 0 }) ? "No openable verified artifacts in this run" : ""; textFormat: Text.PlainText; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Text { width: parent.width; text: desktop.status && desktop.status.selected_run && desktop.status.selected_run.artifacts.every(function(a) { return a.kind !== "report" && a.kind !== "preview" && a.kind !== "blender" }) ? "No openable verified artifacts in this run" : ""; textFormat: Text.PlainText; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
           Button { text: "Close"; focusable: true; onClicked: root.requestClose() }
         }
       }

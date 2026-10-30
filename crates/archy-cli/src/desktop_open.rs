@@ -141,18 +141,39 @@ fn launch_viewer(mut command: Command, diagnostic: &Path) -> Result<(), ArchyErr
         thread::sleep(Duration::from_millis(10));
     }
 }
-fn supported_artifact(kind: DesktopOpenKind, artifact: &str) -> bool {
+pub(crate) fn is_openable_path(kind: DesktopOpenKind, artifact: &str) -> bool {
+    if !valid_id(artifact) {
+        return false;
+    }
+    let render_file = artifact.strip_prefix("renders/").and_then(|tail| {
+        let (variant, name) = tail.split_once('/')?;
+        (variant.starts_with("variant-")
+            && variant.len() == 72
+            && variant[8..]
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+        .then_some(name)
+    });
     match kind {
         DesktopOpenKind::Report => artifact == "report.md" || artifact == "report.json",
-        DesktopOpenKind::Preview => artifact.starts_with("previews/") && artifact.ends_with(".png"),
-        DesktopOpenKind::Blender => artifact.starts_with("scenes/") && artifact.ends_with(".blend"),
+        DesktopOpenKind::Preview => {
+            (artifact.starts_with("previews/") && artifact.ends_with(".png"))
+                || matches!(
+                    render_file,
+                    Some("view-top.png" | "view-front.png" | "view-iso.png")
+                )
+        }
+        DesktopOpenKind::Blender => {
+            (artifact.starts_with("scenes/") && artifact.ends_with(".blend"))
+                || render_file == Some("scene.blend")
+        }
     }
 }
 pub fn desktop_open(input: DesktopOpenInput) -> Result<DesktopOpenReceipt, ArchyError> {
     if !input.project.is_absolute()
         || uuid::Uuid::parse_str(&input.run).is_err()
         || !valid_id(&input.artifact)
-        || !supported_artifact(input.kind, &input.artifact)
+        || !is_openable_path(input.kind, &input.artifact)
     {
         return Err(denied("invalid project, run, artifact, or kind"));
     }
@@ -263,9 +284,9 @@ mod tests {
             "a\nwhoami",
             "previews/../../evil.png",
         ] {
-            assert!(!valid_id(bad) || !supported_artifact(DesktopOpenKind::Report, bad));
+            assert!(!valid_id(bad) || !is_openable_path(DesktopOpenKind::Report, bad));
         }
-        assert!(supported_artifact(DesktopOpenKind::Report, "report.md"));
+        assert!(is_openable_path(DesktopOpenKind::Report, "report.md"));
         let command = viewer_command(DesktopOpenKind::Report, path);
         assert_eq!(command.get_program(), "/usr/bin/xdg-open");
         assert_eq!(

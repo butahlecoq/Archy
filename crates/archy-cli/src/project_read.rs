@@ -214,6 +214,60 @@ impl BoundProjectRead {
             )
         })
     }
+    #[cfg(target_os = "linux")]
+    pub fn render(
+        &self,
+        source_run: String,
+        variant_id: String,
+        mutation: MutationOptions,
+    ) -> Result<crate::RenderReceipt, ArchyError> {
+        self.require_worker_source()?;
+        self.check_binding()?;
+        self.store.read_history()?;
+        let locked = self.store.lock()?;
+        self.check_binding()?;
+        if let Some(head) = locked.receipts()?.last() {
+            let run = verify_locked(&locked, &head.run_id)?;
+            if run.spec().project_id != self.spec.project_id {
+                return Err(artifact_invalid(
+                    "Accepted head belongs to another project ID",
+                ));
+            }
+        }
+        if let Some(recorded) =
+            crate::recorded_manifest_for_key(&locked, mutation.idempotency_key.as_deref())?
+            && recorded.parent_run_id.as_deref() != Some(source_run.as_str())
+        {
+            return Err(crate::request_conflict());
+        }
+        let source = verify_locked(&locked, &source_run)?;
+        if source.spec().project_id != self.spec.project_id {
+            return Err(artifact_invalid(
+                "Render source belongs to another project ID",
+            ));
+        }
+        self.check_binding()?;
+        let receipt =
+            crate::render::render_locked(&locked, source_run, variant_id, mutation, &|| {
+                self.check_binding()
+            })?;
+        let run = verify_locked(&locked, &receipt.run_id)?;
+        if run.spec().project_id != self.spec.project_id {
+            return Err(artifact_invalid(
+                "Accepted render belongs to another project ID",
+            ));
+        }
+        self.check_binding().map_err(|_| {
+            let mut error = ArchyError::new(
+                ErrorCode::RevisionConflict,
+                "project",
+                "Configured project changed during render; commit may have occurred on the pinned root; retry the same idempotency key after restoring the project binding",
+            );
+            error.retriable = true;
+            error
+        })?;
+        Ok(receipt)
+    }
 }
 pub struct BoundReadSnapshot<'a> {
     owner: &'a BoundProjectRead,

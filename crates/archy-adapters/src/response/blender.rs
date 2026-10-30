@@ -43,6 +43,21 @@ pub struct BlenderSuccess {
     pub artifacts: Vec<ClaimedArtifact>,
 }
 
+impl BlenderSuccess {
+    pub fn screen_width_edge_views(&self) -> Vec<String> {
+        self.warnings
+            .iter()
+            .map(|warning| {
+                warning
+                    .split_once(" view uses ")
+                    .expect("validated warning")
+                    .0
+                    .to_owned()
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BlenderFailure {
@@ -234,6 +249,24 @@ pub fn decode_blender_response(
             )?;
             validate_geometry(&success.geometry, request)?;
             validate_preset(&success.preset, request)?;
+            let bounds = request_bounds(request);
+            let narrow = (bounds[3] - bounds[0]).min(bounds[4] - bounds[1]);
+            let expected: Vec<_> = ["top", "front", "iso"]
+                .into_iter()
+                .zip(expected_camera_scales(bounds))
+                .filter(|(_, scale)| narrow < scale / 512.0 * 2.0)
+                .map(|(view, _)| {
+                    format!(
+                        "{view} view uses screen-width massing edges; GLB dimensions remain exact"
+                    )
+                })
+                .collect();
+            if success.warnings != expected {
+                return Err(bad(
+                    "warnings",
+                    "screen-width edge warnings differ from verified view geometry",
+                ));
+            }
         }
     }
     Ok(response)
@@ -290,19 +323,36 @@ fn validate_geometry(g: &BlenderGeometry, request: &BlenderRequest) -> Result<()
         volume_budget,
         "geometry.volume_m3",
     )?;
+    let expected = request_bounds(request);
+    for (got, want) in g.bounds_m.iter().zip(expected) {
+        near(*got, want, 1e-6, "geometry.bounds_m")?;
+    }
+    Ok(())
+}
+
+fn request_bounds(request: &BlenderRequest) -> [f64; 6] {
+    let wire = request.wire();
     let ring = &wire.params.footprint_xy_m;
-    let expected = [
+    [
         ring.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min),
         ring.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min),
         0.,
         ring.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max),
         ring.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max),
-        height,
-    ];
-    for (got, want) in g.bounds_m.iter().zip(expected) {
-        near(*got, want, 1e-6, "geometry.bounds_m")?;
-    }
-    Ok(())
+        wire.params.floor_to_floor_m * f64::from(wire.params.storeys),
+    ]
+}
+
+fn expected_camera_scales(bounds: [f64; 6]) -> [f64; 3] {
+    // The pinned worker frames the accepted box in top, front, and 45-degree iso views.
+    let width = bounds[3] - bounds[0];
+    let depth = bounds[4] - bounds[1];
+    let height = bounds[5] - bounds[2];
+    [
+        1.1 * width.max(depth),
+        1.1 * width.max(height),
+        1.1 * ((width + depth) / 2_f64.sqrt()).max((width + depth + 2. * height) / 6_f64.sqrt()),
+    ]
 }
 
 fn validate_preset(p: &BlenderPreset, request: &BlenderRequest) -> Result<(), ArchyError> {
@@ -373,11 +423,18 @@ fn validate_preset(p: &BlenderPreset, request: &BlenderRequest) -> Result<(), Ar
     if (0..3).any(|i| p.view_bounds_m[i] >= p.view_bounds_m[i + 3]) {
         return Err(bad("preset.view_bounds_m", "invalid view bounds"));
     }
-    for (camera, name) in [
+    let bounds = request_bounds(request);
+    for (got, expected) in p.view_bounds_m.iter().zip(bounds) {
+        near(*got, expected, 1e-6, "preset.view_bounds_m")?;
+    }
+    for ((camera, name), expected_scale) in [
         (&p.cameras.top, "Camera_top"),
         (&p.cameras.front, "Camera_front"),
         (&p.cameras.iso, "Camera_iso"),
-    ] {
+    ]
+    .into_iter()
+    .zip(expected_camera_scales(bounds))
+    {
         same(&camera.name, name, "preset.cameras.name")?;
         same(&camera.kind, "ORTHO", "preset.cameras.type")?;
         matrix(&camera.matrix_world, "preset.cameras.matrix_world")?;
@@ -386,6 +443,13 @@ fn validate_preset(p: &BlenderPreset, request: &BlenderRequest) -> Result<(), Ar
         if camera.ortho_scale <= 0. || camera.clip_end <= camera.clip_start {
             return Err(bad("preset.cameras", "invalid orthographic camera"));
         }
+        // Blender stores camera transforms as float32; the warning uses request bounds above.
+        near(
+            camera.ortho_scale,
+            expected_scale,
+            expected_scale * 5e-5 + 1e-6,
+            "preset.cameras.ortho_scale",
+        )?;
     }
     if p.objects.len() != request.wire().params.storeys as usize {
         return Err(bad("preset.objects", "storey object count differs"));

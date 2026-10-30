@@ -114,14 +114,23 @@ test('real child close/reopen before exit queues exactly one replacement child',
   assert.ok(model.complete(second, code, true, s.generation).report);
   assert.equal(model.reaped(s), false);
 });
-async function probeChild(script, timeoutMs = 500) {
+async function probeChild(script, timeoutMs = 500, startupDelayMs = 0) {
   const s = model.newSession(); const p = model.begin(s);
-  const child = spawn(process.execPath, ['-e', script], { cwd: '/', env: { LANG: 'C.UTF-8' } });
+  const child = spawn(process.execPath, ['-e',
+    `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${startupDelayMs}); require('node:fs').writeSync(3, 'ready'); ${script}`],
+    { cwd: '/', env: { LANG: 'C.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe', 'pipe'] });
   let timedOut = false;
-  const timer = setTimeout(() => {
+  const expire = () => {
     timedOut = true; model.teardown(s); child.kill('SIGTERM');
     setTimeout(() => child.kill('SIGKILL'), 20).unref();
-  }, timeoutMs);
+  };
+  // Match the production 20 s deadline for startup; measure the probe's
+  // shorter work deadline only after Node has actually begun executing.
+  let timer = setTimeout(expire, 20000);
+  child.stdio[3].once('data', () => {
+    clearTimeout(timer);
+    timer = setTimeout(expire, timeoutMs);
+  });
   const outDecoder = new StringDecoder('utf8'); const errDecoder = new StringDecoder('utf8');
   child.stdout.on('data', data => { if (!model.append(p, 'stdout', outDecoder.write(data))) { model.teardown(s); child.kill('SIGTERM'); } });
   child.stderr.on('data', data => { if (!model.append(p, 'stderr', errDecoder.write(data))) { model.teardown(s); child.kill('SIGTERM'); } });
@@ -131,7 +140,9 @@ async function probeChild(script, timeoutMs = 500) {
 }
 test('real subprocess probe handles fragmented output, stderr flood and timeout', async () => {
   const r = report(); r.checks[0].reason = 'café'; const json = JSON.stringify(r).replace('é', '\\u00e9');
-  const fragment = await probeChild(`const b=Buffer.from(${JSON.stringify(json)}); const i=37; process.stdout.write(b.subarray(0,i+1)); setTimeout(() => { process.stdout.write(b.subarray(i+1)); process.exitCode = 1 }, 10)`);
+  // A 650 ms pre-ready delay reproduces the old false timeout at 500 ms.
+  const fragment = await probeChild(`const b=Buffer.from(${JSON.stringify(json)}); const i=37; process.stdout.write(b.subarray(0,i+1)); setTimeout(() => { process.stdout.write(b.subarray(i+1)); process.exitCode = 1 }, 10)`, 500, 650);
+  assert.equal(fragment.timedOut, false);
   assert.ok(fragment.result.report);
   assert.equal(fragment.result.report.checks[0].reason, 'café');
   const flood = await probeChild(`process.stderr.write('x'.repeat(70000)); process.stdout.write(${JSON.stringify(json)})`);

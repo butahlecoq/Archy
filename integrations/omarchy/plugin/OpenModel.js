@@ -3,14 +3,16 @@ var MAX_BYTES = 8192;
 function validArtifact(kind, artifact) {
   if (typeof artifact !== 'string' || artifact.length > 128) return false;
   if (kind === 'report') return artifact === 'report.md' || artifact === 'report.json';
-  if (kind === 'preview') return /^previews\/[A-Za-z0-9_/-]+\.png$/.test(artifact) && artifact.indexOf('..') < 0;
-  if (kind === 'blender') return /^scenes\/[A-Za-z0-9_/-]+\.blend$/.test(artifact) && artifact.indexOf('..') < 0;
+  if (kind === 'preview') return (/^previews\/[A-Za-z0-9_/-]+\.png$/.test(artifact) && artifact.indexOf('..') < 0)
+    || /^renders\/variant-[0-9a-f]{64}\/view-(top|front|iso)\.png$/.test(artifact);
+  if (kind === 'blender') return (/^scenes\/[A-Za-z0-9_/-]+\.blend$/.test(artifact) && artifact.indexOf('..') < 0)
+    || /^renders\/variant-[0-9a-f]{64}\/scene\.blend$/.test(artifact);
   return false;
 }
 function argv(manifest, status, kind, artifact) {
   if (!DesktopModel.validManifest(manifest) || !status || !DesktopModel.validStatus(status, status.selected_run ? status.selected_run.summary.run_id : null)
       || !status.selected_run || !validArtifact(kind, artifact)
-      || !status.selected_run.artifacts.some(function(a) { return a.id === artifact && a.integrity === 'verified'; })) return null;
+      || !status.selected_run.artifacts.some(function(a) { return a.id === artifact && a.kind === kind && a.integrity === 'verified'; })) return null;
   return ['/usr/bin/archy','desktop','open','--project',manifest,'--run',status.selected_run.summary.run_id,
     '--artifact',artifact,'--kind',kind,'--json'];
 }

@@ -82,8 +82,12 @@ class PlaybookContracts(unittest.TestCase):
             self.assertFalse(schema["additionalProperties"])
             if name in mutations:
                 self.assertTrue({"destination", "idempotency_key", "expected_project_revision"} <= set(schema["required"]))
-        for name in ("render_variant", "export_ifc", "propose_approval"):
+        for name in ("export_ifc", "propose_approval"):
             self.assertIn(f"\"{name}\" => self.unavailable", (ROOT / "crates/archy-mcp/src/server.rs").read_text())
+        playbook = (ROOT / "docs/agent-playbooks/omarchy.md").read_text()
+        for text in (skill, playbook):
+            for term in ("`draft`", "`all_verified`", "`BACKEND_UNAVAILABLE`"):
+                self.assertIn(term, text)
 
     def test_authority_and_optional_session(self):
         skill = (ROOT / "integrations/agents/archy/SKILL.md").read_text()

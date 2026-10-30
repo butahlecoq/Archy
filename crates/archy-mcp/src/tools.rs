@@ -1,4 +1,4 @@
-use archy_cli::WorkflowReceipt;
+use archy_cli::{RenderReceipt, RenderResult, RenderVariant, WorkflowReceipt};
 use archy_core::project::v2;
 use archy_core::{ArchyError, NormalizedSpec};
 use archy_report::ComparisonDocument;
@@ -160,6 +160,39 @@ pub struct MutationData {
     pub variant_ids: Vec<String>,
     pub all_required_checks_passed: bool,
     pub exhaustion_explanations: Vec<String>,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RenderData {
+    pub project_id: String,
+    pub run_id: String,
+    pub revision: String,
+    pub path: String,
+    pub manifest_sha256: String,
+    pub source_run_id: String,
+    pub source_manifest_sha256: String,
+    pub all_verified: bool,
+    pub variants: Vec<RenderVariant>,
+}
+impl RenderData {
+    pub fn from_receipt(project_id: String, receipt: RenderReceipt) -> Self {
+        let all_verified = receipt
+            .record
+            .variants
+            .iter()
+            .all(|variant| matches!(&variant.result, RenderResult::Verified { .. }));
+        Self {
+            project_id,
+            run_id: receipt.run_id,
+            revision: receipt.revision.to_string(),
+            path: receipt.path,
+            manifest_sha256: receipt.manifest_sha256,
+            source_run_id: receipt.record.source_run_id,
+            source_manifest_sha256: receipt.record.source_manifest_sha256,
+            all_verified,
+            variants: receipt.record.variants,
+        }
+    }
 }
 impl MutationData {
     pub fn from_receipt(project_id: String, receipt: WorkflowReceipt) -> Self {
@@ -388,9 +421,9 @@ pub fn definitions() -> Vec<Tool> {
             "Evaluate one accepted variant in a scoped transaction",
             false,
         ),
-        typed::<RenderVariantArgs, PrerequisiteData>(
+        typed::<RenderVariantArgs, RenderData>(
             NAMES[5],
-            "Unavailable until render integration",
+            "Render one evaluated variant using the fixed supervised Blender service and return a verified or failed immutable receipt",
             false,
         ),
         typed::<CompareVariantsArgs, CompareVariantsData>(

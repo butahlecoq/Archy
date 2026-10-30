@@ -22,3 +22,5 @@ serde_json.workspace = true
 schemars.workspace = true
 rustix.workspace = true
 uuid.workspace = true
+png = "=0.18.1"
+gltf = { version = "=1.4.1", default-features = false, features = ["utils"] }

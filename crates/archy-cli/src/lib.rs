@@ -9,6 +9,10 @@ mod desktop_status;
 mod evaluate;
 mod generate;
 mod project_read;
+#[cfg(target_os = "linux")]
+mod render;
+#[cfg(target_os = "linux")]
+mod render_verify;
 mod run_integrity;
 
 #[cfg(target_os = "linux")]
@@ -30,18 +34,31 @@ pub use desktop_status::{
 pub use evaluate::evaluate;
 pub use generate::generate;
 pub use project_read::{BoundProjectRead, BoundReadSnapshot};
+#[cfg(target_os = "linux")]
+pub use render::{RenderInput, RenderReceipt, RenderResult, RenderVariant, render};
 pub use run_integrity::{TrustedRun, verify_run};
 
 use archy_core::project::v2;
 use archy_core::{
     ArchyError, ErrorCode, EvaluationReport, InputFormat, LockedProject, MutationContext,
-    NormalizedSpec, PendingRun, RunManifest, RunMetadata, RunReceipt, Variant, VariantOutcome,
-    parse_project_current, sha256_hex,
+    NormalizedSpec, PendingRun, RunManifest, RunMetadata, RunReceipt, RunRequest, Variant,
+    VariantOutcome, parse_project_current, sha256_hex,
 };
 use archy_generate::GenerationResult;
 use archy_report::{REPORT_CONTEXT_VERSION, ReportContext, render_report, render_report_v2};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+fn begin_with_binding<'a>(
+    locked: &'a LockedProject<'_>,
+    request: RunRequest,
+    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+) -> Result<archy_core::BeginResult<'a>, ArchyError> {
+    match check {
+        Some(check) => locked.begin_checked(request, check),
+        None => locked.begin(request),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutationOptions {

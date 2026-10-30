@@ -10,6 +10,42 @@ const open = vm.createContext({DesktopModel:desktop});
 const source = fs.readFileSync(path.join(root,'integrations/omarchy/plugin/OpenModel.js'),'utf8').replace(/^\.import[^\n]*\n/,'');
 vm.runInContext(source, open);
 const status = JSON.parse(fs.readFileSync(path.join(root,'tests/fixtures/desktop/accepted_status.json')));
+const renderStatus = JSON.parse(fs.readFileSync(path.join(root,'tests/fixtures/desktop/render_status.json')));
+
+test('disclosed render summary keeps fixed selected-run opener binding', () => {
+  const disclosed = structuredClone(renderStatus);
+  const preview = disclosed.selected_run.artifacts.find(a => a.kind === 'preview');
+  const symbol = {
+    variant_id: preview.id.split('/')[1], views: ['top'],
+    notice: 'Screen-width massing edges are nonphysical preview symbols; GLB dimensions remain exact.'
+  };
+  disclosed.runs[0].preview_symbols = [symbol];
+  disclosed.selected_run.summary.preview_symbols = [symbol];
+  assert.deepEqual(Array.from(open.argv('/tmp/project.yaml', disclosed, 'preview', preview.id)),
+    ['/usr/bin/archy','desktop','open','--project','/tmp/project.yaml','--run',disclosed.selected_run.summary.run_id,'--artifact',preview.id,'--kind','preview','--json']);
+  disclosed.selected_run.summary.preview_symbols = [];
+  assert.equal(open.argv('/tmp/project.yaml', disclosed, 'preview', preview.id), null);
+});
+
+test('captured render views and scene bind to selected verified run with fixed argv', () => {
+  assert.equal(desktop.validStatus(renderStatus), true);
+  for (const artifact of renderStatus.selected_run.artifacts.filter(a => a.kind === 'preview' || a.kind === 'blender')) {
+    const args = Array.from(open.argv('/tmp/project.yaml', renderStatus, artifact.kind, artifact.id));
+    assert.deepEqual(args, ['/usr/bin/archy','desktop','open','--project','/tmp/project.yaml','--run',renderStatus.selected_run.summary.run_id,'--artifact',artifact.id,'--kind',artifact.kind,'--json']);
+  }
+  for (const bad of ['renders/../view-top.png','renders/variant-bad/view-top.png','renders/variant-'+'a'.repeat(64)+'/evil.png','renders/variant-'+'a'.repeat(64)+'/../scene.blend'])
+    assert.equal(open.argv('/tmp/project.yaml',renderStatus,'preview',bad),null);
+  const scene=renderStatus.selected_run.artifacts.find(a=>a.kind==='blender').id;
+  assert.equal(open.argv('/tmp/project.yaml',renderStatus,'preview',scene),null);
+  const forged=structuredClone(renderStatus);
+  forged.selected_run.artifacts.find(a=>a.id===scene).kind='run_data';
+  assert.equal(open.argv('/tmp/project.yaml',forged,'blender',scene),null);
+  const missing=structuredClone(renderStatus);
+  missing.selected_run.artifacts=missing.selected_run.artifacts.filter(a=>a.id!==scene);
+  missing.selected_run.summary.artifact_count--;
+  missing.runs[0].artifact_count--;
+  assert.equal(open.argv('/tmp/project.yaml',missing,'blender',scene),null);
+});
 
 test('open argv binds exact selected run and verified report', () => {
   const artifact = status.selected_run.artifacts.find(a=>a.id==='report.md').id;

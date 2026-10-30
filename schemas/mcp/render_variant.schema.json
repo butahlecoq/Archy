@@ -130,15 +130,199 @@
         ],
         "type": "string"
       },
-      "PrerequisiteData": {
+      "RenderArtifact": {
         "additionalProperties": false,
         "properties": {
-          "status": {
+          "byte_len": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "producer": {
+            "type": "string"
+          },
+          "sha256": {
             "type": "string"
           }
         },
         "required": [
-          "status"
+          "path",
+          "sha256",
+          "byte_len",
+          "media_type",
+          "producer"
+        ],
+        "type": "object"
+      },
+      "RenderData": {
+        "additionalProperties": false,
+        "properties": {
+          "all_verified": {
+            "type": "boolean"
+          },
+          "manifest_sha256": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_manifest_sha256": {
+            "type": "string"
+          },
+          "source_run_id": {
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/$defs/RenderVariant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "run_id",
+          "revision",
+          "path",
+          "manifest_sha256",
+          "source_run_id",
+          "source_manifest_sha256",
+          "all_verified",
+          "variants"
+        ],
+        "type": "object"
+      },
+      "RenderPreviewSymbol": {
+        "additionalProperties": false,
+        "properties": {
+          "notice": {
+            "type": "string"
+          },
+          "views": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "views",
+          "notice"
+        ],
+        "type": "object"
+      },
+      "RenderResult": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "artifacts": {
+                "items": {
+                  "$ref": "#/$defs/RenderArtifact"
+                },
+                "type": "array"
+              },
+              "preview_foreground_pixels": {
+                "items": {
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "format": "uint32",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "preview_symbol": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RenderPreviewSymbol"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "const": "verified",
+                "type": "string"
+              },
+              "verifier_version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "verifier_version",
+              "artifacts",
+              "preview_foreground_pixels"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ArchyError"
+              },
+              "status": {
+                "const": "failed",
+                "type": "string"
+              },
+              "worker_response_sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RenderVariant": {
+        "additionalProperties": false,
+        "properties": {
+          "required_checks_passed": {
+            "type": "boolean"
+          },
+          "result": {
+            "$ref": "#/$defs/RenderResult"
+          },
+          "variant_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant_id",
+          "required_checks_passed",
+          "result"
         ],
         "type": "object"
       }
@@ -149,7 +333,7 @@
         "additionalProperties": false,
         "properties": {
           "data": {
-            "$ref": "#/$defs/PrerequisiteData"
+            "$ref": "#/$defs/RenderData"
           },
           "error": {
             "type": "null"

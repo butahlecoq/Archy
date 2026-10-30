@@ -44,6 +44,7 @@ pub struct TrustedRun {
     variants: Vec<Variant>,
     evaluations: Vec<EvaluationReport>,
     exhaustion: Vec<String>,
+    render_record: Option<crate::render::RenderRecord>,
 }
 impl TrustedRun {
     pub fn manifest(&self) -> &RunManifest {
@@ -66,6 +67,9 @@ impl TrustedRun {
     }
     pub fn exhaustion(&self) -> &[String] {
         &self.exhaustion
+    }
+    pub fn render_record(&self) -> Option<&crate::render::RenderRecord> {
+        self.render_record.as_ref()
     }
 }
 
@@ -272,6 +276,7 @@ fn verify_one(
             manifest.algorithm_version.as_str(),
             EVALUATION_VERSION | AUTHORITY_EVALUATION_VERSION
         ),
+        "render" => manifest.algorithm_version == crate::render::RENDER_VERSION,
         _ => return Err(artifact_invalid("unsupported run operation")),
     };
     if !supported {
@@ -284,7 +289,7 @@ fn verify_one(
             }
             None
         }
-        "edit" | "evaluate" => {
+        "edit" | "evaluate" | "render" => {
             let id = manifest
                 .parent_run_id
                 .as_deref()
@@ -296,8 +301,11 @@ fn verify_one(
             let authority_upgrade = prior.canonical.is_none()
                 && canonical.is_some()
                 && has_claimed_regulation(&prior.spec);
-            if !matches!(prior.manifest.operation.as_str(), "generate" | "edit")
-                || prior.spec != spec
+            if !(if manifest.operation == "render" {
+                prior.manifest.operation == "evaluate"
+            } else {
+                matches!(prior.manifest.operation.as_str(), "generate" | "edit")
+            }) || prior.spec != spec
                 || (prior.canonical != canonical && !authority_upgrade)
                 || prior.input != input
             {
@@ -307,6 +315,22 @@ fn verify_one(
         }
         _ => return Err(artifact_invalid("invalid run parent references")),
     };
+    if manifest.operation == "render" {
+        return verify_render_run(
+            stored,
+            manifest,
+            spec,
+            canonical,
+            input,
+            parent.expect("checked parent"),
+            history
+                .receipts()
+                .find(|r| r.run_id == run_id)
+                .ok_or_else(|| artifact_invalid("missing render receipt"))?
+                .path
+                .as_str(),
+        );
+    }
     let generation = if manifest.operation == "generate" {
         let count = manifest
             .count
@@ -527,5 +551,295 @@ fn verify_one(
         variants,
         evaluations,
         exhaustion,
+        render_record: None,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn verify_render_run(
+    stored: archy_core::VerifiedRun,
+    manifest: RunManifest,
+    spec: NormalizedSpec,
+    canonical: Option<v2::NormalizedSpec>,
+    input: Vec<u8>,
+    parent: &TrustedRun,
+    receipt_path: &str,
+) -> Result<TrustedRun, ArchyError> {
+    use crate::render::{RENDER_VERSION, RenderRecord, RenderResult};
+    if manifest.seed.is_some()
+        || manifest.count.is_some()
+        || manifest.parent_variant_id.is_some()
+        || manifest.outcomes.is_empty()
+    {
+        return Err(artifact_invalid("invalid render metadata"));
+    }
+    let bytes = stored
+        .artifact("render.json")
+        .ok_or_else(|| artifact_invalid("missing render record"))?;
+    let record: RenderRecord = serde_json::from_slice(bytes)
+        .map_err(|e| artifact_invalid(format!("render record: {e}")))?;
+    if record.schema_version != RENDER_VERSION
+        || record.source_run_id != parent.manifest.run_id
+        || record.source_manifest_sha256
+            != sha256_hex(
+                &serde_json::to_vec(&parent.manifest)
+                    .map_err(|e| artifact_invalid(e.to_string()))?,
+            )
+        || serde_json::to_vec(&record).map_err(|e| artifact_invalid(e.to_string()))? != bytes
+        || record.variants.len() != manifest.outcomes.len()
+    {
+        return Err(artifact_invalid("render source or record mismatch"));
+    }
+    let destination = receipt_path
+        .strip_suffix(&format!("/{}", manifest.run_id))
+        .ok_or_else(|| artifact_invalid("render receipt path differs"))?;
+    let request_for = |selection: serde_json::Value| -> Result<String, ArchyError> {
+        archy_core::digest_request(&archy_core::RunRequest {
+            schema_version: manifest.request_schema_version.clone(),
+            context: archy_core::MutationContext {
+                idempotency_key: manifest.idempotency_key.clone(),
+                expected_project_revision: manifest.expected_project_revision,
+                destination: destination.to_owned(),
+            },
+            operation: "render".into(),
+            request_bytes: serde_json::to_vec(&selection)
+                .map_err(|e| artifact_invalid(e.to_string()))?,
+            input_sha256: manifest.input_sha256.clone(),
+            source_run: manifest.parent_run_id.clone(),
+        })
+        .map_err(|e| artifact_invalid(format!("render request fingerprint: {e}")))
+    };
+    let selected_ids: Vec<&str> = if request_for(serde_json::json!({"selector":"all"}))?
+        == manifest.request_sha256
+    {
+        parent.variants.iter().map(|v| v.id.as_str()).collect()
+    } else {
+        let mut matched = None;
+        for variant in &parent.variants {
+            if request_for(serde_json::json!({"selector":"one","variant":variant.id}))?
+                == manifest.request_sha256
+            {
+                matched = Some(variant.id.as_str());
+                break;
+            }
+        }
+        vec![matched.ok_or_else(|| artifact_invalid("render request selector digest differs"))?]
+    };
+    if record
+        .variants
+        .iter()
+        .map(|v| v.variant_id.as_str())
+        .collect::<Vec<_>>()
+        != selected_ids
+    {
+        return Err(artifact_invalid(
+            "render results differ from requested variants",
+        ));
+    }
+    let input_path = match manifest.source_format.as_deref() {
+        Some("json") => "input.json",
+        Some("yaml") => "input.yaml",
+        _ => return Err(artifact_invalid("render source format")),
+    };
+    let mut expected = BTreeSet::from([
+        input_path.to_owned(),
+        "normalized.json".into(),
+        "render.json".into(),
+    ]);
+    if canonical.is_some() {
+        expected.insert("profile.json".into());
+    }
+    let mut variants = Vec::new();
+    let mut evaluations = Vec::new();
+    for (item, outcome) in record.variants.iter().zip(&manifest.outcomes) {
+        if item.variant_id != outcome.variant_id {
+            return Err(artifact_invalid("render result identity"));
+        }
+        let variant_path = format!("variants/{}.json", item.variant_id);
+        let eval_path = format!("evaluations/{}.json", item.variant_id);
+        let error_path = format!("errors/{}.json", item.variant_id);
+        if outcome.variant_artifact.as_deref() != Some(&variant_path) {
+            return Err(artifact_invalid("render failure outcome mismatch"));
+        }
+        let (variant, evaluation) = parent
+            .variants
+            .iter()
+            .zip(&parent.evaluations)
+            .find(|(v, _)| v.id == item.variant_id)
+            .ok_or_else(|| artifact_invalid("rendered variant absent from evaluation"))?;
+        if variants.iter().any(|v: &Variant| v.id == variant.id)
+            || item.required_checks_passed != evaluation.required_checks_passed
+            || stored.artifact(&variant_path)
+                != Some(
+                    serde_json::to_vec(variant)
+                        .map_err(|e| artifact_invalid(e.to_string()))?
+                        .as_slice(),
+                )
+            || stored.artifact(&eval_path)
+                != Some(
+                    serde_json::to_vec(evaluation)
+                        .map_err(|e| artifact_invalid(e.to_string()))?
+                        .as_slice(),
+                )
+        {
+            return Err(artifact_invalid(
+                "render snapshots differ from evaluated source",
+            ));
+        }
+        expected.extend([variant_path, eval_path.clone()]);
+        match &item.result {
+            RenderResult::Failed {
+                error,
+                worker_response_sha256,
+            } => {
+                if outcome.evaluation_artifact.is_some()
+                    || outcome.error_artifact.as_deref() != Some(&error_path)
+                    || !matches!(
+                        error.code,
+                        archy_core::ErrorCode::BackendUnavailable
+                            | archy_core::ErrorCode::BackendTimeout
+                            | archy_core::ErrorCode::ArtifactInvalid
+                            | archy_core::ErrorCode::InternalError
+                            | archy_core::ErrorCode::InvalidGeometry
+                            | archy_core::ErrorCode::InvalidSchema
+                    )
+                    || worker_response_sha256.as_ref().is_some_and(|h| {
+                        h.len() != 64
+                            || !h
+                                .bytes()
+                                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                    })
+                    || stored.artifact(&error_path)
+                        != Some(
+                            serde_json::to_vec(item)
+                                .map_err(|e| artifact_invalid(e.to_string()))?
+                                .as_slice(),
+                        )
+                {
+                    return Err(artifact_invalid("render failure record differs"));
+                }
+                expected.insert(error_path);
+            }
+            RenderResult::Verified {
+                verifier_version,
+                artifacts,
+                preview_foreground_pixels,
+                preview_symbol,
+            } => {
+                if verifier_version != crate::render_verify::VERIFIER_VERSION
+                    || outcome.evaluation_artifact.as_deref() != Some(&eval_path)
+                    || outcome.error_artifact.is_some()
+                    || artifacts.len() != 6
+                {
+                    return Err(artifact_invalid("render verification metadata"));
+                }
+                let prefix = format!("renders/{}/", item.variant_id);
+                let worker_request = archy_adapters::BlenderRequest::new(
+                    &spec,
+                    variant,
+                    &manifest.run_id,
+                    &parent.manifest.run_id,
+                    &sha256_hex(&input),
+                    "output",
+                )
+                .map_err(|e| artifact_invalid(format!("render request reconstruction: {e}")))?;
+                let response_bytes = stored
+                    .artifact(&format!("{prefix}response.json"))
+                    .ok_or_else(|| artifact_invalid("missing render worker response"))?;
+                let worker_response =
+                    archy_adapters::decode_blender_response(response_bytes, &worker_request)
+                        .map_err(|e| artifact_invalid(format!("render worker response: {e}")))?;
+                let claims = match worker_response {
+                    archy_adapters::BlenderResponse::Ok(success) => {
+                        let views = success.screen_width_edge_views();
+                        let expected_symbol =
+                            (!views.is_empty()).then(|| crate::render::RenderPreviewSymbol {
+                                views,
+                                notice: crate::render::SCREEN_WIDTH_EDGE_NOTICE.into(),
+                            });
+                        if *preview_symbol != expected_symbol {
+                            return Err(artifact_invalid(
+                                "render preview symbol differs from worker response",
+                            ));
+                        }
+                        success.artifacts
+                    }
+                    archy_adapters::BlenderResponse::Error(_) => {
+                        return Err(artifact_invalid(
+                            "verified render has worker error response",
+                        ));
+                    }
+                };
+                let names = [
+                    "response.json",
+                    "scene.blend",
+                    "model.glb",
+                    "view-top.png",
+                    "view-front.png",
+                    "view-iso.png",
+                ];
+                for (entry, name) in artifacts.iter().zip(names) {
+                    let expected_media = match name {
+                        "response.json" => "application/json",
+                        "scene.blend" => "application/x-blender",
+                        "model.glb" => "model/gltf-binary",
+                        _ => "image/png",
+                    };
+                    if entry.path != format!("{prefix}{name}")
+                        || entry.media_type != expected_media
+                        || entry.producer != "blender-worker-v1"
+                        || stored.artifact(&entry.path).is_none_or(|bytes| {
+                            bytes.len() as u64 != entry.byte_len
+                                || sha256_hex(bytes) != entry.sha256
+                        })
+                        || !manifest.artifacts.iter().any(|a| {
+                            a.path == entry.path
+                                && a.sha256 == entry.sha256
+                                && a.byte_len == entry.byte_len
+                                && a.media_type == entry.media_type
+                                && a.producer == entry.producer
+                        })
+                    {
+                        return Err(artifact_invalid("render artifact bytes or provenance"));
+                    }
+                    expected.insert(entry.path.clone());
+                }
+                for (claim, entry) in claims.iter().zip(&artifacts[1..]) {
+                    if claim.path != entry.path.strip_prefix(&prefix).unwrap_or("")
+                        || claim.sha256 != entry.sha256
+                        || claim.size_bytes != entry.byte_len
+                        || claim.media_type != entry.media_type
+                        || claim.producer != entry.producer
+                    {
+                        return Err(artifact_invalid(
+                            "render worker claim differs from captured bytes",
+                        ));
+                    }
+                }
+                let checked = crate::render_verify::verify_bytes(
+                    |name| stored.artifact(&format!("{prefix}{name}")),
+                    variant,
+                    evaluation,
+                )?;
+                if &checked != preview_foreground_pixels {
+                    return Err(artifact_invalid("render verification result changed"));
+                }
+            }
+        }
+        variants.push(variant.clone());
+        evaluations.push(evaluation.clone());
+    }
+    if stored.artifacts().keys().cloned().collect::<BTreeSet<_>>() != expected {
+        return Err(artifact_invalid("render artifact inventory differs"));
+    }
+    Ok(TrustedRun {
+        manifest,
+        spec,
+        canonical,
+        input,
+        variants,
+        evaluations,
+        exhaustion: Vec::new(),
+        render_record: Some(record),
     })
 }

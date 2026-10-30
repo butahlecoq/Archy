@@ -85,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
         {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
         {'source_run':'r','variant_id':'v','reason':'review','idempotency_key':'k','expected_project_revision':'0','destination':'runs'}],strict=True),12):
         r=call(p,name,{**project_args,**extra},i)['result']; assert r['isError'] is True,(name,r)
-        expected='INVALID_SCHEMA' if name=='compare_variants' else 'BACKEND_UNAVAILABLE'
+        expected='INVALID_SCHEMA' if name in ('render_variant','compare_variants') else 'BACKEND_UNAVAILABLE'
         assert r['structuredContent']['error']['code']==expected,name
         Draft202012Validator(json.loads((ROOT/'schemas/mcp'/f'{name}.schema.json').read_text())['output']).validate(r['structuredContent'])
     assert call(p,'unknown',{},20)['error']['code']==-32601
@@ -252,7 +252,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
             second=json.dumps(request(2,tool,base)).encode()
             replies=run_frames(first,second)
             assert set(replies)==({1,2} if valid else {None,2}),(tool,field,label,replies)
-            expected=('INVALID_SCHEMA' if tool in ('compare_variants','evaluate_variant') else
+            expected=('INVALID_SCHEMA' if tool in ('compare_variants','evaluate_variant','render_variant') else
                       'PERMISSION_DENIED' if tool=='generate_variants' else 'BACKEND_UNAVAILABLE')
             assert replies[2]['result']['structuredContent']['error']['code']==expected
             if valid:

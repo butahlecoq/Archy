@@ -90,6 +90,14 @@ fn checked_outcome(
     }
 }
 
+pub(crate) fn run_blender_request(
+    request: BlenderRequest,
+    cancel: &AtomicBool,
+) -> Result<CaptureOutcome, ArchyError> {
+    let (scratch, exit) = complete_service(ServiceRequest::Blender(request.clone()), cancel)?;
+    checked_outcome(capture_blender(scratch.as_file(), &request)?, exit)
+}
+
 /// Run an accepted request through the fixed service, verify teardown, then
 /// capture bounded output bytes. Publication remains a separate decision.
 pub fn run_accepted_service(

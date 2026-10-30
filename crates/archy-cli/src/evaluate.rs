@@ -114,7 +114,7 @@ pub(crate) fn evaluate_locked(
         source_run: Some(source_id.clone()),
     };
     if recorded.is_some() {
-        return match locked.begin(request)? {
+        return match crate::begin_with_binding(locked, request, check)? {
             archy_core::BeginResult::Replay(receipt) => {
                 let verified = verify_locked(locked, &receipt.run_id)?;
                 Ok(workflow_receipt(receipt, &verified))
@@ -151,7 +151,7 @@ pub(crate) fn evaluate_locked(
             "Source run has no variants to evaluate",
         ));
     }
-    let pending = match locked.begin(request)? {
+    let pending = match crate::begin_with_binding(locked, request, check)? {
         archy_core::BeginResult::Replay(receipt) => {
             let verified = verify_locked(locked, &receipt.run_id)?;
             return Ok(workflow_receipt(receipt, &verified));

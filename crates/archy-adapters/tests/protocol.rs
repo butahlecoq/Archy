@@ -207,6 +207,59 @@ fn strict_blender_response_fixture_and_mutations() {
 }
 
 #[test]
+fn screen_width_warnings_match_affected_views_and_cannot_be_forged() {
+    let (spec, variant) = source();
+    let request = BlenderRequest::new(
+        &spec,
+        &variant,
+        "request-1",
+        "run-1",
+        &"a".repeat(64),
+        "runs/run-1/blender",
+    )
+    .unwrap();
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut value: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("tests/fixtures/backend/blender-response.json")).unwrap(),
+    )
+    .unwrap();
+    let decode = |value: &serde_json::Value| {
+        decode_blender_response(&serde_json::to_vec(value).unwrap(), &request)
+    };
+    assert!(decode(&value).is_ok());
+    let original_cameras = value["preset"]["cameras"].clone();
+    let original_bounds = value["preset"]["view_bounds_m"].clone();
+    value["warnings"] = serde_json::json!([
+        "top view uses screen-width massing edges; GLB dimensions remain exact"
+    ]);
+    assert!(decode(&value).is_err());
+    value["preset"]["cameras"]["top"]["ortho_scale"] = serde_json::json!(3000.0);
+    assert!(
+        decode(&value).is_err(),
+        "forged scale must not justify a warning"
+    );
+    value["warnings"] = serde_json::json!([]);
+    for camera in ["top", "front", "iso"] {
+        value["preset"]["cameras"][camera]["ortho_scale"] = serde_json::json!(0.01);
+    }
+    assert!(
+        decode(&value).is_err(),
+        "forged small scales must be rejected"
+    );
+    value["preset"]["cameras"] = original_cameras;
+    value["preset"]["view_bounds_m"] = serde_json::json!([0, 0, 0, 20, 35, 9.6]);
+    assert!(
+        decode(&value).is_err(),
+        "reported framing must match accepted geometry"
+    );
+    value["preset"]["view_bounds_m"] = original_bounds;
+    value["warnings"] = serde_json::json!([
+        "front view uses screen-width massing edges; GLB dimensions remain exact"
+    ]);
+    assert!(decode(&value).is_err());
+}
+
+#[test]
 fn strict_ifc_response_fixture_and_mutations() {
     let (spec, variant) = source();
     let request = IfcRequest::new(

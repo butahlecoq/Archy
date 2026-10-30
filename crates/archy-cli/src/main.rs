@@ -93,6 +93,25 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Render accepted evaluated variants through the fixed service boundary.
+    Render {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long, conflicts_with = "all", required_unless_present = "all")]
+        variant: Option<String>,
+        #[arg(long, conflicts_with = "variant", required_unless_present = "variant")]
+        all: bool,
+        #[arg(long)]
+        run: Option<String>,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+        #[arg(long)]
+        expected_project_revision: Option<u64>,
+        #[arg(long, default_value = "runs")]
+        destination: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 #[derive(Subcommand)]
 enum DesktopCommand {
@@ -172,6 +191,7 @@ fn main() -> std::process::ExitCode {
             | Command::Validate { json: true, .. }
             | Command::Generate { json: true, .. }
             | Command::Evaluate { json: true, .. }
+            | Command::Render { json: true, .. }
     );
     let desktop = matches!(&cli.command, Command::Desktop { .. });
     let result = match cli.command {
@@ -282,6 +302,36 @@ fn main() -> std::process::ExitCode {
                 _ => return invalid_arguments("evaluate requires --variant or --all", json),
             };
             archy_cli::evaluate(EvaluateInput {
+                project,
+                source_run: run,
+                selection,
+                mutation: MutationOptions {
+                    idempotency_key,
+                    expected_project_revision,
+                    destination,
+                },
+            })
+            .and_then(|receipt| {
+                serde_json::to_value(receipt)
+                    .map_err(|e| ArchyError::new(ErrorCode::InternalError, "$", e.to_string()))
+            })
+        }
+        Command::Render {
+            project,
+            variant,
+            all,
+            run,
+            idempotency_key,
+            expected_project_revision,
+            destination,
+            ..
+        } => {
+            let selection = match (variant, all) {
+                (Some(id), false) => VariantSelection::One(id),
+                (None, true) => VariantSelection::All,
+                _ => return invalid_arguments("render requires --variant or --all", json),
+            };
+            archy_cli::render(archy_cli::RenderInput {
                 project,
                 source_run: run,
                 selection,

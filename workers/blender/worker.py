@@ -45,11 +45,50 @@ def _camera(scene, bounds, view):
     inverse = camera.matrix_world.inverted()
     projected = [inverse @ corner for corner in corners]
     camera_data.ortho_scale = 1.1 * max(max(p.x for p in projected) - min(p.x for p in projected),
-                                         max(p.y for p in projected) - min(p.y for p in projected), 1.0)
+                                         max(p.y for p in projected) - min(p.y for p in projected))
     camera_data.clip_start = 0.01
     camera_data.clip_end = max(1000, (location - center).length + max(span) * 2)
     scene.camera = camera
     return camera
+
+
+def _preview_edges(scene, ring, height, pixel_m, camera):
+    """Draw mass edges at screen width for an underresolved view, outside the GLB."""
+    import bpy
+    from mathutils import Vector
+    curve = bpy.data.curves.new("PreviewMassingEdges", "CURVE")
+    curve.dimensions = "3D"
+    curve.bevel_resolution = 0
+    curve.resolution_u = 1
+    curve.bevel_depth = pixel_m * 0.75
+    offset = camera.matrix_world.to_quaternion() @ Vector((0, 0, pixel_m))
+    for z in (0, height):
+        spline = curve.splines.new("POLY")
+        spline.points.add(len(ring) - 1)
+        for point, (x, y) in zip(spline.points, ring):
+            location = Vector((x, y, z)) + offset
+            point.co = (location.x, location.y, location.z, 1.0)
+        spline.use_cyclic_u = True
+    for x, y in ring:
+        spline = curve.splines.new("POLY")
+        spline.points.add(1)
+        for point, z in zip(spline.points, (0, height)):
+            location = Vector((x, y, z)) + offset
+            point.co = (location.x, location.y, location.z, 1.0)
+    material = bpy.data.materials.new("PreviewMassingEdgesInk")
+    material.diffuse_color = (0.8, 0.9, 1.0, 1.0)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    emission = nodes.new("ShaderNodeEmission")
+    emission.inputs["Color"].default_value = (0.8, 0.9, 1.0, 1.0)
+    emission.inputs["Strength"].default_value = 1.0
+    output = nodes.new("ShaderNodeOutputMaterial")
+    material.node_tree.links.new(emission.outputs[0], output.inputs["Surface"])
+    curve.materials.append(material)
+    obj = bpy.data.objects.new("PreviewMassingEdges", curve)
+    scene.collection.objects.link(obj)
+    return obj
 
 
 def _run(request, directory):
@@ -91,9 +130,6 @@ def _run(request, directory):
     light = bpy.data.objects.new("KeyLight", light_data)
     scene.collection.objects.link(light)
     bounds = geometry["bounds_m"]
-    site = request["site"]["polygon_xy_m"][:-1]
-    view_bounds = [min(bounds[0], *(p[0] for p in site)), min(bounds[1], *(p[1] for p in site)), bounds[2],
-                   max(bounds[3], *(p[0] for p in site)), max(bounds[4], *(p[1] for p in site)), bounds[5]]
     light.location = ((bounds[0] + bounds[3]) / 2 + 5, (bounds[1] + bounds[4]) / 2 - 5, bounds[5] + 12)
     for obj in bpy.context.selected_objects:
         obj.select_set(False)
@@ -105,11 +141,23 @@ def _run(request, directory):
                               export_cameras=False, export_lights=False,
                               export_draco_mesh_compression_enable=False)
     cameras = {}
+    outlined_views = []
     for view in ("top", "front", "iso"):
-        camera = _camera(scene, view_bounds, view)
+        camera = _camera(scene, bounds, view)
+        outline = None
+        pixel_m = camera.data.ortho_scale / 512
+        if min(bounds[3] - bounds[0], bounds[4] - bounds[1]) < pixel_m * 2:
+            outline = _preview_edges(scene, request["params"]["footprint_xy_m"][:-1], bounds[5], pixel_m, camera)
+            outlined_views.append(view)
         bpy.context.view_layer.update()
         scene.render.filepath = str(directory / ("view-" + view + ".png"))
         bpy.ops.render.render(write_still=True)
+        if outline is not None:
+            curve = outline.data
+            ink = curve.materials[0]
+            bpy.data.objects.remove(outline, do_unlink=True)
+            bpy.data.curves.remove(curve)
+            bpy.data.materials.remove(ink)
         cameras[view] = {"name": camera.name, "type": camera.data.type,
                          "matrix_world": [list(row) for row in camera.matrix_world],
                          "ortho_scale": camera.data.ortho_scale,
@@ -156,7 +204,7 @@ def _run(request, directory):
                                 "energy": light_data.energy, "size": light_data.size},
                       "glb_export": {"format": "GLB", "selected_only": True, "export_yup": True,
                                      "animations": False, "cameras": False, "lights": False, "compression": False},
-                      "view_bounds_m": view_bounds, "saved_render_path": scene.render.filepath}
+                      "view_bounds_m": bounds, "saved_render_path": scene.render.filepath}, outlined_views
 
 
 def main():
@@ -178,7 +226,7 @@ def main():
         if input_path.stat().st_size > protocol.MAX_REQUEST_BYTES:
             raise protocol.ProtocolError("request exceeds 1 MiB", "$")
         request = protocol.parse_request(input_path.read_bytes())
-        geometry, preset = _run(request, directory)
+        geometry, preset, outlined_views = _run(request, directory)
         media = {"scene.blend": "application/x-blender", "model.glb": "model/gltf-binary"}
         artifacts = [{"path": name, "sha256": _digest(directory / name),
                       "size_bytes": (directory / name).stat().st_size,
@@ -189,7 +237,8 @@ def main():
                    "run_id": request["run_id"], "request_digest": request["input_digest"],
                    "worker_version": "blender-worker-v1", "blender_version": bpy.app.version_string,
                    "build_hash": bpy.app.build_hash.decode() if isinstance(bpy.app.build_hash, bytes) else str(bpy.app.build_hash),
-                   "python_version": sys.version, "status": "ok", "warnings": [],
+                   "python_version": sys.version, "status": "ok",
+                   "warnings": [view + " view uses screen-width massing edges; GLB dimensions remain exact" for view in outlined_views],
                    "preset": preset, "geometry": geometry, "artifacts": artifacts}
     except protocol.ProtocolError as error:
         payload = {"schema_version": protocol.SCHEMA_VERSION, "status": "error", "error": error.envelope(), "artifacts": []}

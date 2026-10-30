@@ -8,6 +8,106 @@ const model = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(root, 'integrations/omarchy/plugin/DesktopModel.js'), 'utf8'), model);
 const caps = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/desktop/capabilities.json')));
 const status = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/desktop/accepted_status.json')));
+const renderStatus = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/desktop/render_status.json')));
+// Captured from generate --count 90, evaluate --all, render --all, desktop status --run.
+const largeRenderStatus = JSON.parse(fs.readFileSync(path.join(root, 'tests/fixtures/desktop/render_status_90_variants.json')));
+
+test('verified render preview disclosure survives the selected-run desktop contract', () => {
+  const disclosed = structuredClone(renderStatus);
+  const symbol = {
+    variant_id: disclosed.selected_run.artifacts.find(a => a.id.startsWith('renders/variant-')).id.split('/')[1],
+    views: ['top'],
+    notice: 'Screen-width massing edges are nonphysical preview symbols; GLB dimensions remain exact.'
+  };
+  disclosed.runs[0].preview_symbols = [symbol];
+  disclosed.selected_run.summary.preview_symbols = [symbol];
+  assert.equal(model.validStatus(disclosed), true);
+  disclosed.selected_run.summary.preview_symbols = [];
+  assert.equal(model.validStatus(disclosed), false);
+  for (const edit of [
+    x => { x.runs[0].preview_symbols[0].views = ['top', 'top']; x.selected_run.summary.preview_symbols[0].views = ['top', 'top']; },
+    x => { x.runs[0].preview_symbols[0].notice = 'verified'; x.selected_run.summary.preview_symbols[0].notice = 'verified'; },
+  ]) {
+    const bad = structuredClone(renderStatus);
+    bad.runs[0].preview_symbols = [structuredClone(symbol)];
+    bad.selected_run.summary.preview_symbols = [structuredClone(symbol)];
+    edit(bad);
+    assert.equal(model.validStatus(bad), false);
+  }
+});
+
+test('preview symbols are render-only and bounded by variant count', () => {
+  const nonRender = structuredClone(status);
+  nonRender.runs[0].preview_symbols = [];
+  nonRender.selected_run.summary.preview_symbols = [];
+  assert.equal(model.validStatus(nonRender), false);
+  const render = structuredClone(renderStatus);
+  const symbol = {
+    variant_id: 'variant-' + 'a'.repeat(64),
+    views: ['top'],
+    notice: 'Screen-width massing edges are nonphysical preview symbols; GLB dimensions remain exact.'
+  };
+  render.runs[0].variant_count = 0;
+  render.selected_run.summary.variant_count = 0;
+  render.runs[0].preview_symbols = [symbol];
+  render.selected_run.summary.preview_symbols = [symbol];
+  assert.equal(model.validStatus(render), false);
+  render.runs[0].variant_count = 1;
+  render.selected_run.summary.variant_count = 1;
+  assert.equal(model.validStatus(render), true);
+});
+
+test('captured 90-variant Rust status is readable through the bounded desktop probe', () => {
+  const selected = largeRenderStatus.selected_run;
+  assert.equal(selected.summary.variant_count, 90);
+  assert.equal(selected.summary.artifact_count, 274);
+  assert.equal(selected.artifacts.length, 274);
+  const bytes = fs.readFileSync(path.join(root, 'tests/fixtures/desktop/render_status_90_variants.json'), 'utf8');
+  assert.equal(Buffer.byteLength(bytes), 66298);
+  const p = model.newProbe(1, 'status', selected.summary.run_id);
+  assert.equal(model.append(p, 'stdout', bytes), true);
+  assert.equal(model.complete(p, 0, 0, 1).status?.selected_run.summary.artifact_count, 274);
+});
+
+test('accepted-run limits allow the last legal artifact and reject overflow', () => {
+  const atLimit = structuredClone(largeRenderStatus);
+  while (atLimit.selected_run.artifacts.length < 4096) {
+    atLimit.selected_run.artifacts.push({
+      id: 'extra/' + atLimit.selected_run.artifacts.length,
+      kind: 'run_data', byte_len: 0, sha256: 'a'.repeat(64), integrity: 'verified'
+    });
+  }
+  atLimit.runs[0].variant_count = 1000;
+  atLimit.selected_run.summary.variant_count = 1000;
+  atLimit.runs[0].artifact_count = 4096;
+  atLimit.selected_run.summary.artifact_count = 4096;
+  assert.equal(model.validStatus(atLimit), true);
+  const tooManyVariants = structuredClone(atLimit);
+  tooManyVariants.runs[0].variant_count = tooManyVariants.selected_run.summary.variant_count = 1001;
+  assert.equal(model.validStatus(tooManyVariants), false);
+  atLimit.selected_run.artifacts.push({
+    id: 'extra/4096', kind: 'run_data', byte_len: 0, sha256: 'a'.repeat(64), integrity: 'verified'
+  });
+  atLimit.runs[0].artifact_count = atLimit.selected_run.summary.artifact_count = 4097;
+  assert.equal(model.validStatus(atLimit), false);
+});
+
+test('captured render fixture and failed status keep exact typed summaries', () => {
+  assert.equal(model.validStatus(renderStatus), true);
+  const failed = structuredClone(renderStatus);
+  failed.runs[0].render_outcome = 'failed';
+  failed.selected_run.summary.render_outcome = 'failed';
+  failed.selected_run.artifacts = [];
+  failed.runs[0].artifact_count = 0;
+  failed.selected_run.summary.artifact_count = 0;
+  assert.equal(model.validStatus(failed), true);
+  for (const mutate of [
+    x => { delete x.runs[0].render_outcome; delete x.selected_run.summary.render_outcome; },
+    x => { x.runs[0].render_outcome = 'invented'; x.selected_run.summary.render_outcome = 'invented'; },
+    x => { x.runs[1].render_outcome = 'failed'; },
+    x => { x.selected_run.summary.render_outcome = 'partial'; },
+  ]) { const bad = structuredClone(renderStatus); mutate(bad); assert.equal(model.validStatus(bad), false); }
+});
 
 test('fixed capabilities and bounded verified status accept published fixtures', () => {
   assert.ok(model.validCapabilities(caps));
@@ -51,6 +151,10 @@ test('transport rejects non-ASCII, stderr, oversized and stale completions', () 
   assert.equal(model.complete(q, 0, 0, 1).status, null);
   const u = model.newProbe(1, 'status'); assert.equal(model.append(u, 'stdout', 'é'), false);
   const big = model.newProbe(1, 'capabilities'); assert.equal(model.append(big, 'stdout', 'a'.repeat(65537)), false);
+  const statusLimit = model.newProbe(1, 'status');
+  assert.equal(model.append(statusLimit, 'stdout', 'a'.repeat(33554432)), true);
+  assert.equal(model.append(statusLimit, 'stdout', 'a'), false);
+  assert.equal(model.complete(statusLimit, 0, 0, 1).status, null);
 });
 test('selected run matches the requested page and explicit selector', () => {
   const probe = (document, requestedRunId) => {

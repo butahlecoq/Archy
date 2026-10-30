@@ -65,11 +65,7 @@ impl ArchyServer {
             "list_variants" => self.list_variants(parse(args)?),
             "generate_variants" => self.generate_variants(parse(args)?),
             "evaluate_variant" => self.evaluate_variant(parse(args)?),
-            "render_variant" => self.unavailable::<RenderVariantArgs>(
-                args,
-                name,
-                "Verified render service is unavailable",
-            ),
+            "render_variant" => self.render_variant(parse(args)?),
             "compare_variants" => self.compare_variants(parse(args)?),
             "export_ifc" => self.unavailable::<ExportIfcArgs>(
                 args,
@@ -138,6 +134,36 @@ impl ArchyServer {
                 .project
                 .evaluate(args.source_run, args.variant_id, options)?;
             Ok(MutationData::from_receipt(args.project_id, receipt))
+        })())
+    }
+    fn render_variant(&self, args: RenderVariantArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            if !valid_run_uuid(&args.source_run) {
+                return Err(ArchyError::schema("source_run", "Expected a run UUID"));
+            }
+            if args.preset != "draft" {
+                return Err(ArchyError::schema(
+                    "preset",
+                    "Only the fixed draft preset is supported",
+                ));
+            }
+            let options = mutation_options(
+                args.idempotency_key,
+                args.expected_project_revision,
+                args.destination,
+            )?;
+            let _guard = self.mutations.lock().map_err(|_| {
+                ArchyError::new(
+                    ErrorCode::InternalError,
+                    "mutation",
+                    "Transaction gate is unavailable",
+                )
+            })?;
+            let receipt = self
+                .project
+                .render(args.source_run, args.variant_id, options)?;
+            Ok(RenderData::from_receipt(args.project_id, receipt))
         })())
     }
     fn get_project(&self, args: GetProjectArgs) -> CallToolResult {

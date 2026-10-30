@@ -1,4 +1,4 @@
-"""Real Blender camera coverage and preview presence for bounded A08 shapes."""
+"""Real Blender camera coverage and preview presence for bounded massing shapes."""
 
 import json
 import os
@@ -37,7 +37,7 @@ def shape_request(shape, aspect):
 
 @unittest.skipUnless(os.environ.get("ARCHY_BLENDER_BIN"), "set ARCHY_BLENDER_BIN for real Blender integration")
 class RenderPresetTests(unittest.TestCase):
-    def test_six_shape_aspects_frame_site_and_massing_with_visible_previews(self):
+    def test_six_shape_aspects_frame_massing_with_visible_previews(self):
         import numpy as np
         from PIL import Image
         import protocol
@@ -77,20 +77,16 @@ class RenderPresetTests(unittest.TestCase):
                     ring = item["params"]["footprint_xy_m"][:-1]
                     top = item["params"]["storeys"] * item["params"]["floor_to_floor_m"]
                     mass_points = [(x, y, z) for x, y in ring for z in (0.0, top)]
-                    site_points = [(x, y, 0.0) for x, y in item["site"]["polygon_xy_m"][:-1]]
                     for view in ("top", "front", "iso"):
                         camera = preset["cameras"][view]
                         inverse = np.linalg.inv(np.asarray(camera["matrix_world"], dtype=float))
                         half = camera["ortho_scale"] / 2
-                        for label, points in (("massing", mass_points), ("site", site_points)):
-                            coords = np.array([inverse @ np.array([*point, 1.0]) for point in points])
-                            self.assertLessEqual(float(np.max(np.abs(coords[:, :2]))), half,
-                                                 f"{shape} {aspect} {view}: {label} outside camera frame")
-                            depths = -coords[:, 2]
-                            self.assertGreater(float(np.min(depths)), camera["clip_start"])
-                            self.assertLess(float(np.max(depths)), camera["clip_end"])
-                            if label == "massing":
-                                mass_coords = coords
+                        mass_coords = np.array([inverse @ np.array([*point, 1.0]) for point in mass_points])
+                        self.assertLessEqual(float(np.max(np.abs(mass_coords[:, :2]))), half,
+                                             f"{shape} {aspect} {view}: massing outside camera frame")
+                        depths = -mass_coords[:, 2]
+                        self.assertGreater(float(np.min(depths)), camera["clip_start"])
+                        self.assertLess(float(np.max(depths)), camera["clip_end"])
                         image_path = job / f"view-{view}.png"
                         with Image.open(image_path) as image:
                             self.assertEqual((image.format, image.size), ("PNG", (512, 512)))
@@ -108,6 +104,109 @@ class RenderPresetTests(unittest.TestCase):
                         visible = np.max(np.abs(crop - background), axis=2) > 12
                         self.assertGreater(int(np.count_nonzero(visible)), 32,
                                            f"{shape} {aspect} {view}: no foreground inside projected massing")
+
+    def test_thin_massing_edges_remain_visible_at_camera_resolution(self):
+        from PIL import Image
+        import protocol
+
+        output_root = os.environ.get("ARCHY_A08_OUTPUT_DIR")
+        if output_root:
+            Path(output_root).mkdir(parents=True, exist_ok=True)
+        for width, depth in ((200, 2), (200, 0.1), (200, 0.05), (200, 0.02),
+                             (200, 0.005), (200, 0.0001), (0.05, 200), (0.0001, 200)):
+            with self.subTest(width=width, depth=depth), tempfile.TemporaryDirectory(dir=output_root) as tmp:
+                job = Path(tmp)
+                item = shape_request("rectangle", "wide")
+                item["params"]["parameters"]["width_m"] = width
+                item["params"]["parameters"]["depth_m"] = depth
+                item["params"]["footprint_xy_m"] = [[2, 2], [2 + width, 2], [2 + width, 2 + depth],
+                                                       [2, 2 + depth], [2, 2]]
+                item["site"]["polygon_xy_m"] = [[0, 0], [width + 4, 0], [width + 4, depth + 4],
+                                                 [0, depth + 4], [0, 0]]
+                protocol.validate_request(item)
+                (job / "request.json").write_text(json.dumps(item))
+                result = subprocess.run(
+                    [os.environ["ARCHY_BLENDER_BIN"], "--background", "--factory-startup",
+                     "--disable-autoexec", "--offline-mode", "--python-exit-code", "20",
+                     "--threads", "1", "--python", str(ROOT / "workers/blender/worker.py"),
+                     "--", "--request", str(job / "request.json"),
+                     "--response", str(job / "response.json")],
+                    cwd=job, capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout[-2000:] + result.stderr[-2000:])
+                response = json.loads((job / "response.json").read_text())
+                protocol.validate_response(response)
+                self.assertEqual(response["status"], "ok")
+                self.assertEqual(bool(response["warnings"]), min(width, depth) < 2 * response["preset"]["cameras"]["top"]["ortho_scale"] / 512)
+                self.assertLess(sum((job / artifact["path"]).stat().st_size
+                                    for artifact in response["artifacts"]), 64 * 1024 * 1024)
+                for view in ("top", "front", "iso"):
+                    with Image.open(job / f"view-{view}.png") as image:
+                        self.assertEqual((image.size, image.mode), ((512, 512), "RGBA"))
+                        pixels = image.convert("RGB")
+                    background = pixels.getpixel((0, 0))
+                    changed = sum(max(abs(a - b) for a, b in zip(pixel, background)) > 8
+                                  for pixel in pixels.get_flattened_data())
+                    self.assertGreaterEqual(changed, 128, (depth, view, changed))
+
+    def test_positive_footprint_below_blender_tessellation_resolution_reports_backend_limit(self):
+        import protocol
+
+        with tempfile.TemporaryDirectory(dir=os.environ.get("ARCHY_A08_OUTPUT_DIR")) as tmp:
+            job = Path(tmp)
+            item = shape_request("rectangle", "wide")
+            depth = 0.000002
+            item["params"]["parameters"]["depth_m"] = depth
+            item["params"]["footprint_xy_m"] = [[2, 2], [202, 2], [202, 2 + depth],
+                                                   [2, 2 + depth], [2, 2]]
+            item["site"]["polygon_xy_m"] = [[0, 0], [204, 0], [204, depth + 4],
+                                             [0, depth + 4], [0, 0]]
+            protocol.validate_request(item)
+            (job / "request.json").write_text(json.dumps(item))
+            result = subprocess.run(
+                [os.environ["ARCHY_BLENDER_BIN"], "--background", "--factory-startup",
+                 "--disable-autoexec", "--offline-mode", "--python-exit-code", "20",
+                 "--threads", "1", "--python", str(ROOT / "workers/blender/worker.py"),
+                 "--", "--request", str(job / "request.json"),
+                 "--response", str(job / "response.json")],
+                cwd=job, capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 20)
+            response = json.loads((job / "response.json").read_text())
+            protocol.validate_response(response)
+            self.assertEqual(response["error"]["code"], "BACKEND_UNAVAILABLE")
+            self.assertIn("tessellation cannot resolve", response["error"]["message"])
+            self.assertEqual(response["artifacts"], [])
+
+    def test_ten_micrometer_orientations_report_specific_backend_limits(self):
+        import protocol
+
+        for width, depth in ((200.0, 0.00001), (0.00001, 200.0)):
+            with self.subTest(width=width, depth=depth), tempfile.TemporaryDirectory(
+                dir=os.environ.get("ARCHY_A08_OUTPUT_DIR")
+            ) as tmp:
+                job = Path(tmp)
+                item = shape_request("rectangle", "wide")
+                item["params"]["parameters"].update(width_m=width, depth_m=depth)
+                item["params"]["footprint_xy_m"] = [[2, 2], [2 + width, 2],
+                    [2 + width, 2 + depth], [2, 2 + depth], [2, 2]]
+                item["site"]["polygon_xy_m"] = [[0, 0], [width + 4, 0],
+                    [width + 4, depth + 4], [0, depth + 4], [0, 0]]
+                protocol.validate_request(item)
+                (job / "request.json").write_text(json.dumps(item))
+                result = subprocess.run(
+                    [os.environ["ARCHY_BLENDER_BIN"], "--background", "--factory-startup",
+                     "--disable-autoexec", "--offline-mode", "--python-exit-code", "20",
+                     "--threads", "1", "--python", str(ROOT / "workers/blender/worker.py"),
+                     "--", "--request", str(job / "request.json"),
+                     "--response", str(job / "response.json")],
+                    cwd=job, capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, 20, result.stdout + result.stderr)
+                response = json.loads((job / "response.json").read_text())
+                protocol.validate_response(response)
+                self.assertEqual(response["error"]["code"], "BACKEND_UNAVAILABLE")
+                self.assertEqual(response["error"]["field"], "params.footprint_xy_m")
+                self.assertIn("tessellation", response["error"]["message"])
+                self.assertEqual(response["artifacts"], [])
+                self.assertEqual(sorted(p.name for p in job.iterdir()), ["request.json", "response.json"])
 
 
 if __name__ == "__main__":

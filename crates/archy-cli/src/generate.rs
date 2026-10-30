@@ -1,6 +1,6 @@
 use crate::{
     GenerateInput, GenerationMode, MutationOptions, RunPayload, WorkflowReceipt, artifact_invalid,
-    input_format, publish, recorded_manifest_for_key, request_conflict,
+    begin_with_binding, input_format, publish, recorded_manifest_for_key, request_conflict,
     run_integrity::{migrate_claimed_v1_source, verify_locked},
     workflow_receipt,
 };
@@ -84,7 +84,7 @@ pub(crate) fn generate_locked(
                 input_sha256: sha256_hex(&raw),
                 source_run: None,
             };
-            let pending = match locked.begin(request)? {
+            let pending = match begin_with_binding(locked, request, check)? {
                 archy_core::BeginResult::Replay(receipt) => {
                     let verified = verify_locked(locked, &receipt.run_id)?;
                     return Ok(workflow_receipt(receipt, &verified));
@@ -186,7 +186,7 @@ pub(crate) fn generate_locked(
                 },
                 source_run: Some(from_run.clone()),
             };
-            let pending = match locked.begin(request)? {
+            let pending = match begin_with_binding(locked, request, check)? {
                 archy_core::BeginResult::Replay(receipt) => {
                     let verified = verify_locked(locked, &receipt.run_id)?;
                     return Ok(workflow_receipt(receipt, &verified));
