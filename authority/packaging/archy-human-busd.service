@@ -1,0 +1,24 @@
+[Unit]
+Description=Archy human review bus boundary
+After=dbus.service systemd-logind.service
+Requires=dbus.service
+StartLimitIntervalSec=10min
+StartLimitBurst=3
+
+[Service]
+Type=dbus
+BusName=org.archy.Authority1
+User=archy-broker
+Group=archy-broker
+ExecStart=/usr/lib/archy/archy-human-busd
+Restart=on-failure
+RestartSec=30s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+StateDirectory=archy-authority
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

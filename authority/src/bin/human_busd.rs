@@ -12,6 +12,16 @@ fn retry_delay(attempt: u8) -> Option<std::time::Duration> {
         .map(|seconds| std::time::Duration::from_secs(*seconds))
 }
 
+const STABLE_CONNECTION: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn next_incident(previous: u8, connected_for: std::time::Duration) -> u8 {
+    if connected_for >= STABLE_CONNECTION {
+        1
+    } else {
+        previous.saturating_add(1)
+    }
+}
+
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
     if args.len() == 7 && args[1] == "--snapshot-worker" {
@@ -59,10 +69,10 @@ async fn run() -> io::Result<()> {
     // The procfs link refers to this running image even if its package path
     // changes before a worker is spawned.
     let worker = std::path::PathBuf::from("/proc/self/exe");
-    // A finite incident budget prevents one sender from keeping this privileged
-    // process in a perpetual reconnect loop. Every connection owns fresh
-    // identity checks and review capacity; no caller lease survives closure.
-    for attempt in 0..4 {
+    // A stable connection starts a new finite incident window. A burst still
+    // exits to the bounded external supervisor; it cannot spin here forever.
+    let mut incidents = 0;
+    loop {
         let _store = Store::open(state, Some(ids.broker))?;
         let project = Arc::new(ProtectedProject::open(
             &state.join("project/project.json"),
@@ -80,11 +90,18 @@ async fn run() -> io::Result<()> {
                 .await
         }
         .await;
-        if let Ok(connection) = connection {
+        let connected_for = if let Ok(connection) = connection {
+            let connected_at = std::time::Instant::now();
             connection.closed().await;
-        }
-        if let Some(delay) = retry_delay(attempt) {
+            connected_at.elapsed()
+        } else {
+            std::time::Duration::ZERO
+        };
+        incidents = next_incident(incidents, connected_for);
+        if let Some(delay) = retry_delay(incidents - 1) {
             async_io::Timer::after(delay).await;
+        } else {
+            break;
         }
     }
     Err(io::Error::new(
@@ -104,5 +121,20 @@ mod tests {
         assert_eq!(retry_delay(2), Some(std::time::Duration::from_secs(4)));
         assert_eq!(retry_delay(3), None);
         assert_eq!(retry_delay(u8::MAX), None);
+        assert_eq!(next_incident(3, std::time::Duration::from_secs(59)), 4);
+        assert_eq!(next_incident(3, STABLE_CONNECTION), 1);
+        assert_eq!(next_incident(1, std::time::Duration::ZERO), 2);
+        let mut incidents = 0;
+        for expected in 1..=4 {
+            incidents = next_incident(incidents, std::time::Duration::ZERO);
+            assert_eq!(incidents, expected);
+            assert_eq!(retry_delay(incidents - 1).is_some(), expected < 4);
+        }
+        incidents = next_incident(incidents, STABLE_CONNECTION);
+        assert_eq!(incidents, 1);
+        assert_eq!(
+            retry_delay(incidents - 1),
+            Some(std::time::Duration::from_secs(1))
+        );
     }
 }

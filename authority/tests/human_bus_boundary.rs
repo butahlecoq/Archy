@@ -194,6 +194,22 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
     let proposal_digest = store.submit(&proposal).unwrap();
     let expected_snapshot = project.snapshot(&proposal).unwrap();
     let project = Arc::new(project);
+    let worker = base.join("gated-snapshot-worker");
+    let hold = base.join("hold-snapshot");
+    let ready = base.join("snapshot-ready");
+    fs::write(
+        &worker,
+        format!(
+            "#!/bin/sh\nset -eu\nreply=$(mktemp '{}/reply.XXXXXX')\n'{}' \"$@\" > \"$reply\"\nif test -e '{}'; then\n  touch '{}'\n  while test -e '{}'; do sleep 0.02; done\nfi\ncat \"$reply\"\nrm -f \"$reply\"\n",
+            base.display(),
+            env!("CARGO_BIN_EXE_archy-human-busd"),
+            hold.display(),
+            ready.display(),
+            hold.display(),
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&worker, fs::Permissions::from_mode(0o700)).unwrap();
     let interface = HumanBus::new(
         project.clone(),
         Identities {
@@ -201,7 +217,7 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             broker: uid.wrapping_add(2),
             human: uid,
         },
-        PathBuf::from(env!("CARGO_BIN_EXE_archy-human-busd")),
+        worker,
     );
     zbus::block_on(async {
         let service = Builder::address(address.as_str())
@@ -425,6 +441,42 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
         let after_lock: (String, String) =
             first_proxy.call("Review", &proposal_digest).await.unwrap();
         assert_eq!(after_lock.0.as_bytes(), expected_snapshot.bytes());
+        // Keep the child snapshot blocked after admission, then remove the
+        // session before allowing protected bytes to reach the bus method.
+        fs::write(&hold, b"").unwrap();
+        let caller = first.clone();
+        let digest = proposal_digest.clone();
+        let pending = std::thread::spawn(move || {
+            zbus::block_on(async {
+                let proxy = zbus::Proxy::new(
+                    &caller,
+                    "org.archy.Authority1",
+                    "/org/archy/Authority1",
+                    "org.archy.Authority1",
+                )
+                .await
+                .unwrap();
+                proxy
+                    .call::<_, _, (String, String)>("Review", &digest)
+                    .await
+            })
+        });
+        let transition_deadline = Instant::now() + Duration::from_secs(2);
+        while !ready.exists() && Instant::now() < transition_deadline {
+            async_io::Timer::after(Duration::from_millis(5)).await;
+        }
+        assert!(
+            ready.exists(),
+            "worker must finish snapshot before transition"
+        );
+        assert!(!pending.is_finished(), "snapshot reply must still be gated");
+        active.store(false, Ordering::SeqCst);
+        fs::remove_file(&hold).unwrap();
+        assert!(
+            pending.join().unwrap().is_err(),
+            "session transition during snapshot must deny protected bytes"
+        );
+        active.store(true, Ordering::SeqCst);
         active.store(false, Ordering::SeqCst);
         let inactive: zbus::Result<(String, String)> =
             first_proxy.call("Review", &proposal_digest).await;
@@ -504,7 +556,7 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             "oversize frame must close service connection"
         );
         drop(service);
-        let recovered_service = Builder::address(address.as_str())
+        let mut recovered_service = Builder::address(address.as_str())
             .unwrap()
             .max_message_size(64 * 1024)
             .max_queued(4)
@@ -527,6 +579,54 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             .build()
             .await
             .unwrap();
+        for _ in 0..3 {
+            let oversized = Builder::address(address.as_str())
+                .unwrap()
+                .method_timeout(Duration::from_secs(2))
+                .build()
+                .await
+                .unwrap();
+            let oversized_proxy = zbus::Proxy::new(
+                &oversized,
+                "org.archy.Authority1",
+                "/org/archy/Authority1",
+                "org.archy.Authority1",
+            )
+            .await
+            .unwrap();
+            let rejected: zbus::Result<(String, String)> = oversized_proxy
+                .call("Review", &("a".repeat(70 * 1024)))
+                .await;
+            assert!(rejected.is_err());
+            assert!(
+                recovered_service.is_closed(),
+                "oversized frame closes one service connection"
+            );
+            drop(recovered_service);
+            recovered_service = Builder::address(address.as_str())
+                .unwrap()
+                .max_message_size(64 * 1024)
+                .max_queued(4)
+                .method_timeout(Duration::from_secs(1))
+                .name("org.archy.Authority1")
+                .unwrap()
+                .serve_at(
+                    "/org/archy/Authority1",
+                    HumanBus::new(
+                        project.clone(),
+                        Identities {
+                            agent: uid.wrapping_add(1),
+                            broker: uid.wrapping_add(2),
+                            human: uid,
+                        },
+                        PathBuf::from(env!("CARGO_BIN_EXE_archy-human-busd")),
+                    ),
+                )
+                .unwrap()
+                .build()
+                .await
+                .unwrap();
+        }
         let recovered_proxy = zbus::Proxy::new(
             &first,
             "org.archy.Authority1",

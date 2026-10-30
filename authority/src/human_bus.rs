@@ -152,6 +152,40 @@ impl HumanBus {
         }
         Ok(())
     }
+
+    async fn still_authorized(
+        &self,
+        conn: &Connection,
+        header: Header<'_>,
+        peer: &PinnedBusPeer,
+    ) -> Result<(), Error> {
+        if header.sender().map(|name| name.as_str()) != Some(peer.sender()) {
+            return Err(denied());
+        }
+        peer.check_alive().map_err(|_| denied())?;
+        let bus = DBusProxy::new(conn).await.map_err(|_| denied())?;
+        let name = BusName::try_from(peer.sender()).map_err(|_| denied())?;
+        let credentials = bus
+            .get_connection_credentials(name)
+            .await
+            .map_err(|_| denied())?;
+        if credentials.unix_user_id() != Some(peer.uid())
+            || credentials.process_id() != Some(peer.pid())
+        {
+            return Err(denied());
+        }
+        self.active_local_session(conn, peer).await?;
+        let credentials = bus
+            .get_connection_credentials(BusName::try_from(peer.sender()).map_err(|_| denied())?)
+            .await
+            .map_err(|_| denied())?;
+        if credentials.unix_user_id() != Some(peer.uid())
+            || credentials.process_id() != Some(peer.pid())
+        {
+            return Err(denied());
+        }
+        peer.check_alive().map_err(|_| denied())
+    }
 }
 
 #[cfg(test)]
@@ -212,7 +246,7 @@ impl HumanBus {
         }
         let deadline = Instant::now() + REVIEW_DEADLINE;
         let slot = self.review_slot()?;
-        let _peer = futures_lite::future::or(self.peer(conn, header), async {
+        let peer = futures_lite::future::or(self.peer(conn, header.clone()), async {
             async_io::Timer::at(deadline).await;
             Err(denied())
         })
@@ -252,11 +286,21 @@ impl HumanBus {
             finished.store(true, Ordering::Release);
             return Err(denied());
         }
-        futures_lite::future::or(async { receive.await.map_err(|_| denied())? }, async {
+        let snapshot =
+            futures_lite::future::or(async { receive.await.map_err(|_| denied())? }, async {
+                async_io::Timer::at(deadline).await;
+                Err(denied())
+            })
+            .await?;
+        futures_lite::future::or(self.still_authorized(conn, header, &peer), async {
             async_io::Timer::at(deadline).await;
             Err(denied())
         })
-        .await
+        .await?;
+        if Instant::now() >= deadline {
+            return Err(denied());
+        }
+        Ok(snapshot)
     }
 
     /// No authentication result or caller-supplied assertion can approve a design.
