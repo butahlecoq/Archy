@@ -1,5 +1,7 @@
 # Issue #21: libXt transitive library inventory
 
+Follow-up: [the historical Arch inventory recovery](issue-21-historical-arch-inventory-recovery-20261030.md) verifies the superseded package's 54 system-file rows against the exact pinned image. Statements below about missing rows describe the original `211c816f` audit state.
+
 Base: `a601e4d1c92c9c9859b4059ae8737a745581efa4`. This is a read-only source and archive audit in a new worktree with private disk scratch. It adds no library, package, runtime allowlist, review record, or target approval. Independent review of this evidence is pending.
 
 ## Pinned payload and requesters
