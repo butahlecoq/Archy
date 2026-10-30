@@ -163,7 +163,7 @@ pub(crate) fn verify_locked(
     verify_history(&history, run_id)
 }
 
-pub(crate) fn verify_history(
+pub fn verify_history(
     history: &AcceptedHistory<'_>,
     run_id: &str,
 ) -> Result<TrustedRun, ArchyError> {

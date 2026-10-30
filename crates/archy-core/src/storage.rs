@@ -228,7 +228,7 @@ fn write_synced(parent: &File, name: &str, bytes: &[u8]) -> Result<(), ArchyErro
     maybe_fault(FaultPoint::FileSync)?;
     file.sync_all().map_err(|e| ioerr("sync file", e))
 }
-fn dir_entries(dir: &File) -> Result<Vec<String>, ArchyError> {
+fn dir_entries(dir: &File, max_entries: usize) -> Result<Vec<String>, ArchyError> {
     let mut cursor = fs::Dir::read_from(dir).map_err(|e| ioerr("read directory", e))?;
     let mut names = Vec::new();
     while let Some(entry) = cursor.read() {
@@ -240,7 +240,7 @@ fn dir_entries(dir: &File) -> Result<Vec<String>, ArchyError> {
         if name != "." && name != ".." {
             names.push(name.to_owned());
         }
-        if names.len() > 100_000 {
+        if names.len() > max_entries {
             return Err(invalid("too many managed entries"));
         }
     }
@@ -513,7 +513,7 @@ impl ProjectStore {
     }
     /// Read a validated accepted prefix without locking, creating, or recovering state.
     pub fn read_history(&self) -> Result<AcceptedHistory<'_>, ArchyError> {
-        let (records, head_sha256) = match revisions_from(&self.root, true)? {
+        let (records, head_sha256) = match revisions_from(&self.root, true, None)? {
             Some((records, head, _)) => (records, head),
             None => (Vec::new(), None),
         };
@@ -570,7 +570,11 @@ impl ProjectStore {
 
 type RevisionSnapshot = (Vec<RevisionRecord>, Option<String>, File);
 
-fn revisions_from(root: &File, absent_ok: bool) -> Result<Option<RevisionSnapshot>, ArchyError> {
+fn revisions_from(
+    root: &File,
+    absent_ok: bool,
+    limits: Option<(usize, u64)>,
+) -> Result<Option<RevisionSnapshot>, ArchyError> {
     let archy = match open_dir(root, ".archy") {
         Ok(dir) => dir,
         Err(_)
@@ -592,7 +596,10 @@ fn revisions_from(root: &File, absent_ok: bool) -> Result<Option<RevisionSnapsho
         }
     })?;
     let mut numbered = Vec::new();
-    for name in dir_entries(&dir)? {
+    for name in dir_entries(
+        &dir,
+        limits.map_or(100_000, |(count, _)| count.saturating_add(32)),
+    )? {
         if name.starts_with(".tmp-") {
             continue;
         }
@@ -604,11 +611,17 @@ fn revisions_from(root: &File, absent_ok: bool) -> Result<Option<RevisionSnapsho
         }
         numbered.push(name);
     }
+    if let Some((max_revisions, _)) = limits
+        && numbered.len() > max_revisions
+    {
+        return Err(invalid("review history revision limit exceeded"));
+    }
     numbered.sort();
     let mut records = Vec::new();
     let mut prev = None;
     let mut seen_keys = HashSet::new();
     let mut seen_runs = HashSet::new();
+    let mut remaining = limits.map_or(u64::MAX, |(_, bytes)| bytes);
     for (index, name) in numbered.iter().enumerate() {
         let n = u64::try_from(index + 1).map_err(|_| invalid("revision overflow"))?;
         if *name != format!("{n:020}.json") {
@@ -616,6 +629,9 @@ fn revisions_from(root: &File, absent_ok: bool) -> Result<Option<RevisionSnapsho
         }
         let mut file = existing_file(&dir, name).map_err(|e| invalid(e.message))?;
         let bytes = read_bounded(&mut file, MAX_REVISION_BYTES)?;
+        remaining = remaining
+            .checked_sub(bytes.len() as u64)
+            .ok_or_else(|| invalid("review history byte limit exceeded"))?;
         let record: RevisionRecord = serde_json::from_slice(&bytes)
             .map_err(|e| invalid(format!("invalid revision JSON: {e}")))?;
         if record.schema_version != REVISION_SCHEMA_VERSION {
@@ -634,13 +650,22 @@ fn revisions_from(root: &File, absent_ok: bool) -> Result<Option<RevisionSnapsho
         {
             return Err(invalid("invalid revision chain"));
         }
-        read_record_run(root, &record)?;
+        read_record_run_budget(root, &record, &mut remaining, limits.is_some())?;
         prev = Some(sha256_hex(&bytes));
         records.push(record);
     }
     Ok(Some((records, prev, dir)))
 }
 fn read_record_run(root: &File, record: &RevisionRecord) -> Result<VerifiedRun, ArchyError> {
+    let mut unlimited = u64::MAX;
+    read_record_run_budget(root, record, &mut unlimited, false)
+}
+fn read_record_run_budget(
+    root: &File,
+    record: &RevisionRecord,
+    remaining: &mut u64,
+    review_limits: bool,
+) -> Result<VerifiedRun, ArchyError> {
     let receipt = &record.receipt;
     let parts = name_path(&receipt.path).map_err(|e| invalid(e.message))?;
     if parts.last() != Some(&receipt.run_id.as_str())
@@ -655,6 +680,9 @@ fn read_record_run(root: &File, record: &RevisionRecord) -> Result<VerifiedRun, 
     }
     let mut manifest_file = existing_file(&dir, "manifest.json").map_err(|e| invalid(e.message))?;
     let manifest_bytes = read_bounded(&mut manifest_file, MAX_MANIFEST_BYTES)?;
+    *remaining = remaining
+        .checked_sub(manifest_bytes.len() as u64)
+        .ok_or_else(|| invalid("review history byte limit exceeded"))?;
     if sha256_hex(&manifest_bytes) != receipt.manifest_sha256 {
         return Err(invalid("manifest hash mismatch"));
     }
@@ -673,6 +701,13 @@ fn read_record_run(root: &File, record: &RevisionRecord) -> Result<VerifiedRun, 
     {
         return Err(invalid("invalid manifest identity or inventory"));
     }
+    if review_limits
+        && (manifest.outcomes.len() > 32
+            || manifest.count.is_some_and(|n| n > 32)
+            || manifest.artifacts.len() > 256)
+    {
+        return Err(invalid("review run work limit exceeded"));
+    }
     let mut inventory = BTreeMap::new();
     let mut aggregate_bytes = 0_u64;
     for artifact in &manifest.artifacts {
@@ -690,10 +725,21 @@ fn read_record_run(root: &File, record: &RevisionRecord) -> Result<VerifiedRun, 
         aggregate_bytes = aggregate_bytes
             .checked_add(artifact.byte_len)
             .ok_or_else(|| invalid("run byte count overflow"))?;
+        *remaining = remaining
+            .checked_sub(artifact.byte_len)
+            .ok_or_else(|| invalid("review history byte limit exceeded"))?;
         if aggregate_bytes > MAX_RUN_BYTES as u64 {
             return Err(invalid("run exceeds aggregate size limit"));
         }
         let mut file = open_path(&dir, &artifact.path).map_err(|e| invalid(e.message))?;
+        if file
+            .metadata()
+            .map_err(|e| ioerr("artifact metadata", e))?
+            .len()
+            != artifact.byte_len
+        {
+            return Err(invalid("artifact declared length differs from file"));
+        }
         let bytes = read_bounded(&mut file, MAX_ARTIFACT_BYTES)?;
         if bytes.len() as u64 != artifact.byte_len || sha256_hex(&bytes) != artifact.sha256 {
             return Err(invalid("artifact hash or length mismatch"));
@@ -782,7 +828,7 @@ impl LockedProject<'_> {
             };
             dest = File::from(fd);
         }
-        for name in dir_entries(&dest)? {
+        for name in dir_entries(&dest, 100_000)? {
             if uuid::Uuid::parse_str(&name).is_err()
                 || records.iter().any(|r| r.receipt.run_id == name)
             {
@@ -856,7 +902,8 @@ impl LockedProject<'_> {
     }
     fn revisions(&self) -> Result<(Vec<RevisionRecord>, Option<String>, File), ArchyError> {
         self.require_owner()?;
-        revisions_from(&self.store.root, false)?.ok_or_else(|| invalid("missing managed history"))
+        revisions_from(&self.store.root, false, None)?
+            .ok_or_else(|| invalid("missing managed history"))
     }
     fn read_record_run(&self, record: &RevisionRecord) -> Result<VerifiedRun, ArchyError> {
         read_record_run(&self.store.root, record)
@@ -871,6 +918,22 @@ impl LockedProject<'_> {
     /// Validate the full accepted chain once, then read selected runs against it.
     pub fn accepted_history(&self) -> Result<AcceptedHistory<'_>, ArchyError> {
         let (records, head_sha256, _) = self.revisions()?;
+        Ok(AcceptedHistory {
+            store: self.store,
+            records,
+            head_sha256,
+        })
+    }
+    /// Fail before reading run artifacts when the accepted prefix exceeds a caller's review budget.
+    pub fn accepted_history_bounded(
+        &self,
+        max_revisions: usize,
+        max_bytes: u64,
+    ) -> Result<AcceptedHistory<'_>, ArchyError> {
+        self.require_owner()?;
+        let (records, head_sha256, _) =
+            revisions_from(&self.store.root, false, Some((max_revisions, max_bytes)))?
+                .ok_or_else(|| invalid("missing managed history"))?;
         Ok(AcceptedHistory {
             store: self.store,
             records,

@@ -1,0 +1,257 @@
+--- a/src/connection/builder.rs
++++ b/src/connection/builder.rs
+@@ -87,6 +87,7 @@
+ pub struct Builder<'a> {
+     target: Option<Target>,
+     max_queued: Option<usize>,
++    max_message_size: usize,
+     // This is only set for p2p server case or pre-authenticated sockets.
+     guid: Option<Guid<'a>>,
+     #[cfg(feature = "p2p")]
+@@ -384,6 +385,14 @@
+         self
+     }
+ 
++    /// Set the maximum complete incoming message size, including header and padding.
++    /// The reader checks the primary header before allocating the body. The bound
++    /// also applies to the bus Hello reply; outgoing messages are unaffected.
++    pub fn max_message_size(mut self, max: usize) -> Self {
++        self.max_message_size = max.min(crate::message::header::MAX_MESSAGE_SIZE);
++        self
++    }
++
+     /// Enable or disable the internal executor thread.
+     ///
+     /// The thread is enabled by default.
+@@ -633,6 +642,7 @@
+             already_received_bytes,
+             #[cfg(unix)]
+             already_received_fds,
++            self.max_message_size,
+         );
+ 
+         for name in self.names {
+@@ -649,6 +659,7 @@
+             #[cfg(feature = "p2p")]
+             p2p: false,
+             max_queued: None,
++            max_message_size: crate::message::header::MAX_MESSAGE_SIZE,
+             guid: None,
+             internal_executor: true,
+             interfaces: HashMap::new(),
+@@ -695,6 +706,7 @@
+                         self.auth_mechanism,
+                         is_bus_conn,
+                         self.user_id,
++                        self.max_message_size,
+                     )
+                     .await
+                 }
+@@ -730,6 +742,7 @@
+                 self.auth_mechanism,
+                 is_bus_conn,
+                 self.user_id,
++                self.max_message_size,
+             )
+             .await
+         }
+--- a/src/connection/handshake/client.rs
++++ b/src/connection/handshake/client.rs
+@@ -18,6 +18,7 @@
+     server_guid: Option<OwnedGuid>,
+     bus: bool,
+     user_id: Result<String>,
++    max_message_size: usize,
+ }
+ 
+ impl Client {
+@@ -28,6 +29,7 @@
+         server_guid: Option<OwnedGuid>,
+         bus: bool,
+         user_id: Option<u32>,
++        max_message_size: usize,
+     ) -> Client {
+         let mechanism = mechanism.unwrap_or_else(|| socket.read().auth_mechanism());
+ 
+@@ -35,6 +37,7 @@
+             common: Common::new(socket, mechanism),
+             server_guid,
+             bus,
++            max_message_size,
+             user_id: match user_id {
+                 Some(value) => Ok(value.to_string()),
+                 None => sasl_auth_id(),
+@@ -201,7 +204,8 @@
+ 
+         // If we're a bus connection, we need to read the unique name from `Hello` response.
+         let unique_name = if self.bus {
+-            let unique_name = receive_hello_response(&mut read, &mut recv_buffer).await?;
++            let unique_name =
++                receive_hello_response(&mut read, &mut recv_buffer, self.max_message_size).await?;
+ 
+             Some(unique_name)
+         } else {
+@@ -236,6 +240,7 @@
+ async fn receive_hello_response(
+     read: &mut Box<dyn ReadHalf>,
+     recv_buffer: &mut Vec<u8>,
++    max_message_size: usize,
+ ) -> Result<OwnedUniqueName> {
+     use crate::message::Type;
+ 
+@@ -245,6 +250,7 @@
+             recv_buffer,
+             #[cfg(unix)]
+             &mut vec![],
++            max_message_size,
+         )
+         .await?;
+     match reply.message_type() {
+--- a/src/connection/handshake/mod.rs
++++ b/src/connection/handshake/mod.rs
+@@ -54,10 +54,18 @@
+         mechanism: Option<AuthMechanism>,
+         bus: bool,
+         user_id: Option<u32>,
++        max_message_size: usize,
+     ) -> Result<Self> {
+-        Client::new(socket, mechanism, server_guid, bus, user_id)
+-            .perform()
+-            .await
++        Client::new(
++            socket,
++            mechanism,
++            server_guid,
++            bus,
++            user_id,
++            max_message_size,
++        )
++        .perform()
++        .await
+     }
+ 
+     /// Create a server-side `Authenticated` for the given `socket`.
+@@ -158,7 +166,14 @@
+         let (p0, p1) = create_async_socket_pair();
+ 
+         let guid = OwnedGuid::from(Guid::generate());
+-        let client = Client::new(p0.into(), None, Some(guid.clone()), false, None);
++        let client = Client::new(
++            p0.into(),
++            None,
++            Some(guid.clone()),
++            false,
++            None,
++            crate::message::header::MAX_MESSAGE_SIZE,
++        );
+         let server = Server::new(p1.into(), guid, Some(geteuid().as_raw()), None, None).unwrap();
+ 
+         // proceed to the handshakes
+--- a/src/connection/mod.rs
++++ b/src/connection/mod.rs
+@@ -1301,6 +1301,7 @@
+         socket_read: Box<dyn socket::ReadHalf>,
+         already_read: Vec<u8>,
+         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
++        max_message_size: usize,
+     ) {
+         let inner = &self.inner;
+         inner
+@@ -1313,6 +1314,7 @@
+                     already_read,
+                     #[cfg(unix)]
+                     already_received_fds,
++                    max_message_size,
+                     inner.socket_status.clone(),
+                 )
+                 .spawn(&inner.executor),
+--- a/src/connection/socket/channel.rs
++++ b/src/connection/socket/channel.rs
+@@ -63,6 +63,7 @@
+         _seq: u64,
+         _already_received_bytes: &mut Vec<u8>,
+         #[cfg(unix)] _already_received_fds: &mut Vec<std::os::fd::OwnedFd>,
++        _max_message_size: usize,
+     ) -> crate::Result<Message> {
+         self.0.recv().await.map_err(|e| {
+             crate::Error::InputOutput(io::Error::new(io::ErrorKind::BrokenPipe, e).into())
+--- a/src/connection/socket/mod.rs
++++ b/src/connection/socket/mod.rs
+@@ -95,6 +95,7 @@
+         seq: u64,
+         already_received_bytes: &mut Vec<u8>,
+         #[cfg(unix)] already_received_fds: &mut Vec<OwnedFd>,
++        max_message_size: usize,
+     ) -> crate::Result<Message> {
+         #[cfg(unix)]
+         let mut fds = vec![];
+@@ -140,11 +141,16 @@
+         };
+ 
+         let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
+-        let header_len = MIN_MESSAGE_SIZE + fields_len as usize;
++        let header_len = MIN_MESSAGE_SIZE
++            .checked_add(fields_len as usize)
++            .ok_or(crate::Error::ExcessData)?;
+         let body_padding = padding_for_8_bytes(header_len);
+         let body_len = primary_header.body_len() as usize;
+-        let total_len = header_len + body_padding + body_len;
+-        if total_len > MAX_MESSAGE_SIZE {
++        let total_len = header_len
++            .checked_add(body_padding)
++            .and_then(|n| n.checked_add(body_len))
++            .ok_or(crate::Error::ExcessData)?;
++        if total_len > max_message_size.min(MAX_MESSAGE_SIZE) {
+             return Err(crate::Error::ExcessData);
+         }
+ 
+@@ -349,6 +355,7 @@
+         seq: u64,
+         already_received_bytes: &mut Vec<u8>,
+         #[cfg(unix)] already_received_fds: &mut Vec<OwnedFd>,
++        max_message_size: usize,
+     ) -> crate::Result<Message> {
+         (**self)
+             .receive_message(
+@@ -356,6 +363,7 @@
+                 already_received_bytes,
+                 #[cfg(unix)]
+                 already_received_fds,
++                max_message_size,
+             )
+             .await
+     }
+--- a/src/connection/socket_reader.rs
++++ b/src/connection/socket_reader.rs
+@@ -27,6 +27,7 @@
+     #[cfg(unix)]
+     already_received_fds: Vec<std::os::fd::OwnedFd>,
+     prev_seq: u64,
++    max_message_size: usize,
+     socket_status: Arc<SocketStatus>,
+ }
+ 
+@@ -37,6 +38,7 @@
+         pending_method_calls: PendingMethodCalls,
+         already_received_bytes: Vec<u8>,
+         #[cfg(unix)] already_received_fds: Vec<std::os::fd::OwnedFd>,
++        max_message_size: usize,
+         socket_status: Arc<SocketStatus>,
+     ) -> Self {
+         Self {
+@@ -47,6 +49,7 @@
+             #[cfg(unix)]
+             already_received_fds,
+             prev_seq: 0,
++            max_message_size,
+             socket_status,
+         }
+     }
+@@ -154,6 +157,7 @@
+                 &mut self.already_received_bytes,
+                 #[cfg(unix)]
+                 &mut self.already_received_fds,
++                self.max_message_size,
+             )
+             .await?;
+         self.prev_seq = seq;
