@@ -16,6 +16,8 @@ packaging/arch/libxcrypt_compat_source.sh \
   /private/scratch/new-libxcrypt-build
 ```
 
+The executable-mode follow-on ran this direct invocation with the pinned archive and fresh private scratch at `.t/a23-libcrypt-executable-followon-20261030/new-libxcrypt-build`. The command completed its ABI checks and upstream suite (41 passed, 14 skipped, 0 failed, 0 errors); its output is retained in the sibling `invocation.log`. The resulting local library SHA-256 was `7d43bc388855283d30df3d3168a0a6941281c890215aac29ee58e06f837d22c1`.
+
 This Ubuntu host has GCC 15.2.0. The unmodified configure flags failed at `crypt-gost-yescrypt.c:134` and `crypt-sm3-yescrypt.c:139` because `-Werror=discarded-qualifiers` rejects upstream assignments. The source check adds `CFLAGS='-O2 -Wno-error=discarded-qualifiers'`; it changes warning handling only. The first successful local build produced `libcrypt.so.1.1.0` SHA-256 `e61c50236145532adbab484d26494fc011391f0d4f0eac9418a9d08b3a29b644`. Upstream check results: 55 total, 41 pass, 14 skip, 0 fail, 0 error. The installed `DESTDIR` copy had the same hash. The scripted repeat passed the same 55 tests and produced SHA-256 `2147324272b5712fa430e0e840e225e12827847b22fcea55101f6d1d106441e8`. These host build bytes are not reproducible across the two build paths; neither is a candidate payload.
 
 The local build's SONAME is `libcrypt.so.1`; its only direct ELF need is `libc.so.6`; it exports `crypt_r@@XCRYPT_2.0`. It requires `GLIBC_2.43`, however, so its ABI cannot be assumed compatible with the intended Arch/Omarchy target. Its bytes do not match the Arch package binary. The build validates the source and requested symbol, not reproducible Arch package bytes or target suitability.
@@ -32,7 +34,7 @@ The pinned source's `LICENSING` SHA-256 is `9144e66d8140feb84f0e4e344906ac425378
 
 ## Reproduction and remaining gates
 
-The commands below were run from private scratch; the source check above is the repeatable build/ABI check. The prior Arch signature verification is recorded in `a23-runtime-rereview-fixes-20261030.md`.
+The commands below were run from private scratch; the source check above is the repeatable build/ABI check. The prior Arch signature verification is recorded in `a23-runtime-rereview-fixes-20261030.md`. The independent reviewer did not replay that Arch package signature verification.
 
 ```sh
 curl -fL -o PKGBUILD https://gitlab.archlinux.org/archlinux/packaging/packages/libxcrypt/-/raw/main/PKGBUILD
