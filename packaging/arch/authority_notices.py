@@ -55,14 +55,14 @@ def normal_ids(metadata, roots):
     return [packages[pid] for pid in seen]
 
 
-def patched_zbus(source, cache, metadata, pin):
+def patched_zbus(source, metadata, pin):
     matches = [p for p in normal_ids(metadata, ("archy-authority",)) if p["name"] == "zbus"]
     if len(matches) != 1 or matches[0]["source"] is not None or matches[0]["version"] != pin["version"]:
         raise ValueError("patched zbus is absent from authority normal graph")
     local = source / "authority/vendor/zbus-5.19.0"
     if Path(matches[0]["manifest_path"]).resolve() != (local / "Cargo.toml").resolve():
         raise ValueError("authority zbus source path mismatch")
-    original = archive_files(cache, "zbus", pin["version"],
+    original = archive_files(source / "packaging/arch/source-archives", "zbus", pin["version"],
                              checked_hash(pin["original_crate_sha256"], "zbus original archive"))
     actual_paths = {p.relative_to(local).as_posix() for p in local.rglob("*") if p.is_file()}
     actual_paths.discard(".cargo-ok")  # Cargo extraction marker, not source
@@ -149,7 +149,7 @@ def generate(source, cache, metadata, rust_version, output_dir):
             raise ValueError(f"missing notice text: {name} {version}")
         crates.append({"name": name, "version": version, "license": package.get("license"),
                        "source": REGISTRY, "source_sha256": source_hash, "texts": texts})
-    zbus, zbus_license = patched_zbus(source, cache, metadata, pin["zbus"])
+    zbus, zbus_license = patched_zbus(source, metadata, pin["zbus"])
     crates.append(zbus)
     chunks.append(("zbus 5.19.0 patched-local: LICENSE", zbus_license))
     rust = inputs["rust_std"]

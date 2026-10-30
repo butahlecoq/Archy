@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,23 @@ class AuthorityAdmissionTests(unittest.TestCase):
         self.assertNotIn("authority", manifest)
         self.assertNotIn("systemd", manifest)
         self.assertNotIn("dbus", manifest.lower())
+
+    def test_clean_registry_cache_without_upstream_zbus(self):
+        cache = self.output / "cache"
+        cache.mkdir()
+        for package in ADMISSION.normal_registry_graph(self.metadata, ("archy-authority",)):
+            filename = f"{package['name']}-{package['version']}.crate"
+            source = CACHE / filename
+            target = cache / filename
+            try:
+                os.link(source, target)
+            except OSError:
+                shutil.copyfile(source, target)
+        self.assertFalse((cache / "zbus-5.19.0.crate").exists())
+        admitted = self.output / "admitted"
+        admitted.mkdir()
+        inventory, _ = ADMISSION.generate(ROOT, cache, self.metadata, "1.99.1", admitted)
+        self.assertEqual(json.loads(inventory.read_text())["crate_count"], 159)
 
     def test_added_registry_dependency_refused(self):
         metadata = copy.deepcopy(self.metadata)
@@ -125,7 +143,7 @@ class AuthorityAdmissionTests(unittest.TestCase):
         altered = copy.deepcopy(pin)
         altered["changed_files"]["src/utils.rs"] = "0" * 64
         with self.assertRaisesRegex(ValueError, "patched zbus source/provenance checksum mismatch"):
-            ADMISSION.patched_zbus(ROOT, CACHE, self.metadata, altered)
+            ADMISSION.patched_zbus(ROOT, self.metadata, altered)
         self.assertEqual(list(self.output.iterdir()), [])
 
     def test_stale_output_refused_without_replacing_either_file(self):
