@@ -115,6 +115,20 @@ test('fixed capabilities and bounded verified status accept published fixtures',
   assert.equal(status.backend_jobs.status, 'unknown');
   assert.equal(status.selected_run.artifacts[0].integrity, 'verified');
 });
+test('proposal summaries remain review suggestions and cannot assert passed checks', () => {
+  const proposal = structuredClone(status);
+  for (const summary of [proposal.runs[0], proposal.selected_run.summary]) {
+    summary.operation = 'propose';
+    summary.variant_count = 1;
+    summary.all_required_checks_passed = false;
+  }
+  assert.equal(model.validStatus(proposal), true);
+  assert.equal(model.checkSummary(proposal.runs[0]), 'review proposal');
+  assert.equal(model.checkSummary(status.runs[0]), 'required checks passed');
+  proposal.runs[0].all_required_checks_passed = true;
+  proposal.selected_run.summary.all_required_checks_passed = true;
+  assert.equal(model.validStatus(proposal), false);
+});
 test('project path is explicit absolute local input and argv preserves spaces', () => {
   assert.equal(model.validManifest('/tmp/My Project/project.yaml'), true);
   for (const bad of ['project.yaml', 'file:///tmp/project.yaml', '/tmp/a\nproject.yaml', '/tmp/a\0b', '/tmp/a'.repeat(1400)]) assert.equal(model.validManifest(bad), false);

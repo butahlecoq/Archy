@@ -30,6 +30,17 @@ class DesktopStatusSchemaTest(unittest.TestCase):
             changed["runs"][0][field] = value
             self.assertFalse(VALIDATOR.is_valid(changed), field)
 
+    def test_proposal_summary_cannot_claim_evaluated_checks(self):
+        changed = copy.deepcopy(ACCEPTED)
+        changed['runs'][0]['operation'] = 'propose'
+        changed['runs'][0]['all_required_checks_passed'] = False
+        self.assertTrue(VALIDATOR.is_valid(changed))
+        changed['runs'][0]['all_required_checks_passed'] = True
+        self.assertFalse(VALIDATOR.is_valid(changed))
+        changed['runs'][0]['all_required_checks_passed'] = False
+        changed['runs'][0]['variant_count'] = 0
+        self.assertFalse(VALIDATOR.is_valid(changed))
+
     def test_render_requires_real_outcome_and_accepts_disclosure(self):
         for value in (None, "invented"):
             changed = copy.deepcopy(RENDER)

@@ -11,6 +11,7 @@ mod export_ifc;
 mod generate;
 mod ifc_verifier;
 mod project_read;
+mod proposal;
 #[cfg(target_os = "linux")]
 mod render;
 #[cfg(target_os = "linux")]
@@ -39,6 +40,7 @@ pub use export_ifc::{
 };
 pub use generate::generate;
 pub use project_read::{BoundProjectRead, BoundReadSnapshot};
+pub use proposal::ProposalReceipt;
 #[cfg(target_os = "linux")]
 pub use render::{RenderInput, RenderReceipt, RenderResult, RenderVariant, render};
 pub use run_integrity::{TrustedRun, verify_history, verify_run};

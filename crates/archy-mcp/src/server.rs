@@ -68,11 +68,7 @@ impl ArchyServer {
             "render_variant" => self.render_variant(parse(args)?),
             "compare_variants" => self.compare_variants(parse(args)?),
             "export_ifc" => self.export_ifc(parse(args)?),
-            "propose_approval" => self.unavailable::<ProposeApprovalArgs>(
-                args,
-                name,
-                "Proposal service is unavailable",
-            ),
+            "propose_approval" => self.propose_approval(parse(args)?),
             _ => unreachable!(),
         };
         Ok(result.into())
@@ -191,6 +187,30 @@ impl ArchyServer {
                 args.variant_id,
                 receipt,
             ))
+        })())
+    }
+    fn propose_approval(&self, args: ProposeApprovalArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            if !valid_run_uuid(&args.source_run) {
+                return Err(ArchyError::schema("source_run", "Expected a run UUID"));
+            }
+            let options = mutation_options(
+                args.idempotency_key,
+                args.expected_project_revision,
+                args.destination,
+            )?;
+            let _guard = self.mutations.lock().map_err(|_| {
+                ArchyError::new(
+                    ErrorCode::InternalError,
+                    "mutation",
+                    "Transaction gate is unavailable",
+                )
+            })?;
+            let receipt =
+                self.project
+                    .propose(args.source_run, args.variant_id, args.reason, options)?;
+            Ok(ProposalData::from_receipt(args.project_id, receipt))
         })())
     }
     fn get_project(&self, args: GetProjectArgs) -> CallToolResult {
@@ -506,27 +526,6 @@ impl ArchyServer {
             })
         })())
     }
-    fn unavailable<T: DeserializeOwned + ProjectId>(
-        &self,
-        args: Value,
-        field: &str,
-        reason: &str,
-    ) -> CallToolResult {
-        let parsed: T = match parse(args) {
-            Ok(v) => v,
-            Err(_) => {
-                return error_tool::<PrerequisiteData>(ArchyError::schema(
-                    field,
-                    "Invalid tool arguments",
-                ));
-            }
-        };
-        let error = self
-            .ensure_id(parsed.project_id())
-            .err()
-            .unwrap_or_else(|| ArchyError::new(ErrorCode::BackendUnavailable, field, reason));
-        error_tool::<PrerequisiteData>(error)
-    }
 }
 fn mutation_options(
     key: String,
@@ -660,18 +659,6 @@ fn packed<T: Serialize>(envelope: T, error: bool) -> CallToolResult {
         CallToolResult::structured(value)
     }
 }
-trait ProjectId {
-    fn project_id(&self) -> &str;
-}
-macro_rules! project_id { ($($t:ty),*) => { $(impl ProjectId for $t { fn project_id(&self) -> &str { &self.project_id } })* }; }
-project_id!(
-    GenerateVariantsArgs,
-    EvaluateVariantArgs,
-    RenderVariantArgs,
-    CompareVariantsArgs,
-    ExportIfcArgs,
-    ProposeApprovalArgs
-);
 impl ServerHandler for ArchyServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())

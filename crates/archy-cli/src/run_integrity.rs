@@ -270,6 +270,20 @@ fn verify_one(
     } else if stored.artifact("profile.json").is_some() {
         return Err(artifact_invalid("historical v1 run has a current profile"));
     }
+    if manifest.operation == "propose" {
+        crate::proposal::verify_proposal_run(history, &stored, parent, &input, &normalized)?;
+        return Ok(TrustedRun {
+            manifest,
+            spec,
+            canonical,
+            source_schema_version,
+            input,
+            variants: Vec::new(),
+            evaluations: Vec::new(),
+            exhaustion: Vec::new(),
+            render_record: None,
+        });
+    }
     if manifest.operation == "export-ifc" {
         return verify_export_run(&stored, manifest, spec, canonical, input, parent);
     }

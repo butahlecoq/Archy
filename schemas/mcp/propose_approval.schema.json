@@ -130,15 +130,47 @@
         ],
         "type": "string"
       },
-      "PrerequisiteData": {
+      "ProposalData": {
         "additionalProperties": false,
         "properties": {
-          "status": {
+          "manifest_sha256": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "proposal_path": {
+            "type": "string"
+          },
+          "proposal_sha256": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_run_id": {
+            "type": "string"
+          },
+          "variant_id": {
             "type": "string"
           }
         },
         "required": [
-          "status"
+          "project_id",
+          "run_id",
+          "revision",
+          "path",
+          "manifest_sha256",
+          "proposal_path",
+          "proposal_sha256",
+          "source_run_id",
+          "variant_id"
         ],
         "type": "object"
       }
@@ -149,7 +181,7 @@
         "additionalProperties": false,
         "properties": {
           "data": {
-            "$ref": "#/$defs/PrerequisiteData"
+            "$ref": "#/$defs/ProposalData"
           },
           "error": {
             "type": "null"

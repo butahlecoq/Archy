@@ -1,4 +1,4 @@
-use archy_cli::{RenderReceipt, RenderResult, RenderVariant, WorkflowReceipt};
+use archy_cli::{ProposalReceipt, RenderReceipt, RenderResult, RenderVariant, WorkflowReceipt};
 use archy_core::project::v2;
 use archy_core::{ArchyError, NormalizedSpec, RunReceipt};
 use archy_report::ComparisonDocument;
@@ -186,6 +186,34 @@ pub struct ExportIfcData {
     pub variant_id: String,
     pub scope: String,
     pub approval_state: String,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProposalData {
+    pub project_id: String,
+    pub run_id: String,
+    pub revision: String,
+    pub path: String,
+    pub manifest_sha256: String,
+    pub proposal_path: String,
+    pub proposal_sha256: String,
+    pub source_run_id: String,
+    pub variant_id: String,
+}
+impl ProposalData {
+    pub fn from_receipt(project_id: String, receipt: ProposalReceipt) -> Self {
+        Self {
+            project_id,
+            run_id: receipt.run_id,
+            revision: receipt.revision.to_string(),
+            path: receipt.path,
+            manifest_sha256: receipt.manifest_sha256,
+            proposal_path: receipt.proposal_path,
+            proposal_sha256: receipt.proposal_sha256,
+            source_run_id: receipt.source_run_id,
+            variant_id: receipt.variant_id,
+        }
+    }
 }
 impl ExportIfcData {
     pub fn from_receipt(
@@ -469,9 +497,9 @@ pub fn definitions() -> Vec<Tool> {
             "Export one selected variant as draft schematic IFC through the fixed supervised service and verified CLI transaction",
             false,
         ),
-        typed::<ProposeApprovalArgs, PrerequisiteData>(
+        typed::<ProposeApprovalArgs, ProposalData>(
             NAMES[8],
-            "Unavailable until proposal integration; never final approval",
+            "Record a bounded untrusted review proposal in accepted project history; never final approval",
             false,
         ),
     ]
