@@ -2,6 +2,7 @@
 pub mod bus_identity;
 pub mod human_bus;
 pub mod journal;
+pub mod project_path;
 pub mod protected_project;
 pub mod snapshot_worker;
 use archy_core::decision_contract::Proposal;

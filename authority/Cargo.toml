@@ -9,7 +9,7 @@ license = "MIT"
 [dependencies]
 archy-core = { path = "../crates/archy-core" }
 archy-cli = { path = "../crates/archy-cli" }
-rustix = { version = "=1.1.4", features = ["fs", "process"] }
+rustix = { workspace = true, features = ["process"] }
 libc = "=0.2.191"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
@@ -34,3 +34,7 @@ path = "src/bin/propose.rs"
 [[bin]]
 name = "archy-human-busd"
 path = "src/bin/human_busd.rs"
+
+[[bin]]
+name = "archy-journal-witness"
+path = "src/bin/journal_witness.rs"
