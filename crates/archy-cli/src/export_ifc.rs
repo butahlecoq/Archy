@@ -136,28 +136,39 @@ fn export_with_reader(
 ) -> Result<RunReceipt, ArchyError> {
     let snapshot = reader.snapshot()?;
     snapshot.verify_head()?;
-    if let (Some(key), Some(selected_run)) =
-        (mutation.idempotency_key.as_deref(), source_run.as_deref())
-    {
+    let mut recorded_source = None;
+    if let Some(key) = mutation.idempotency_key.as_deref() {
         for receipt in snapshot.receipts().rev() {
             let run = snapshot.verify_run(&receipt.run_id)?;
             let manifest = run.manifest();
             if manifest.idempotency_key == key {
                 if manifest.operation != "export-ifc"
-                    || Some(selected_run) != manifest.parent_run_id.as_deref()
                     || manifest.parent_variant_id.as_deref() != Some(variant_id.as_str())
+                    || source_run
+                        .as_deref()
+                        .is_some_and(|selected| Some(selected) != manifest.parent_run_id.as_deref())
                 {
                     return Err(request_conflict());
                 }
+                recorded_source =
+                    Some(manifest.parent_run_id.clone().ok_or_else(|| {
+                        artifact_invalid("recorded IFC export has no source run")
+                    })?);
                 break;
             }
         }
     }
-    let source_id = match &source_run {
-        Some(id) => id.clone(),
+    let source_id = match source_run.or(recorded_source) {
+        Some(id) => id,
         None => {
             let mut found = None;
             for receipt in snapshot.receipts().rev() {
+                if mutation
+                    .expected_project_revision
+                    .is_some_and(|revision| receipt.revision > revision)
+                {
+                    continue;
+                }
                 let run = snapshot.verify_run(&receipt.run_id)?;
                 if matches!(run.manifest().operation.as_str(), "generate" | "edit") {
                     found = Some(receipt.run_id.clone());
@@ -453,6 +464,65 @@ mod tests {
     use archy_core::ProjectStore;
     use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 
+    #[test]
+    fn implicit_export_retry_keeps_source_after_later_generation() {
+        let root = std::env::temp_dir().join(format!("archy-a12-retry-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let first = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: None,
+            variant_id: first.variant_ids[0].clone(),
+            mutation: MutationOptions {
+                idempotency_key: Some("failed-export-retry".into()),
+                expected_project_revision: Some(first.revision),
+                destination: "runs".into(),
+            },
+        };
+        let first_error = export_with(input.clone(), &|_| {
+            Err(ArchyError::new(
+                archy_core::ErrorCode::BackendUnavailable,
+                "worker",
+                "publication unavailable",
+            ))
+        })
+        .unwrap_err();
+        assert_eq!(first_error.code, archy_core::ErrorCode::BackendUnavailable);
+        let later = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 43 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        assert_ne!(first.variant_ids, later.variant_ids);
+        let retry = export_with(input, &|_| panic!("stale retry reached worker")).unwrap_err();
+        assert_eq!(retry.code, archy_core::ErrorCode::RevisionConflict);
+        assert_eq!(retry.message, "stale project revision");
+        assert_eq!(retry.field, "storage");
+        assert!(!retry.retriable);
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .revision()
+                .unwrap(),
+            later.revision
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     fn copy_private_tree(source: &std::path::Path, destination: &std::path::Path) {
         fs::create_dir(destination).unwrap();
         fs::set_permissions(destination, fs::Permissions::from_mode(0o700)).unwrap();
@@ -639,7 +709,22 @@ mod tests {
         assert_eq!(replay, receipt);
         assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
         assert_eq!(
-            export_with(input, &|_| panic!("exact retry reached worker")).unwrap(),
+            export_with(input.clone(), &|_| panic!("exact retry reached worker")).unwrap(),
+            receipt
+        );
+        generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 43 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let mut implicit_retry = input;
+        implicit_retry.source_run = None;
+        assert_eq!(
+            export_with(implicit_retry, &|_| panic!(
+                "implicit replay reached worker"
+            ))
+            .unwrap(),
             receipt
         );
         fs::remove_dir_all(root).unwrap();
