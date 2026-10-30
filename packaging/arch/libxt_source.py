@@ -30,6 +30,18 @@ def run(*argv, cwd=None, env=None):
     subprocess.run(argv, cwd=cwd, env=env, check=True)
 
 
+def check_linkage(library):
+    dynamic = subprocess.check_output(['readelf', '-d', str(library)], text=True)
+    search_path = re.search(r'\((RPATH|RUNPATH)\)', dynamic)
+    if search_path:
+        raise ValueError(f'unexpected libXt ELF {search_path.group(1)}')
+    sonames = re.findall(r'\(SONAME\).*?\[(.*?)\]', dynamic)
+    needed = set(re.findall(r'\(NEEDED\).*?\[(.*?)\]', dynamic))
+    if sonames != ['libXt.so.6'] or needed != NEEDED:
+        raise ValueError(f'unexpected libXt ELF linkage: SONAME={sonames}, NEEDED={sorted(needed)}')
+    return sonames[0], needed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tarball', required=True, type=Path)
@@ -63,18 +75,14 @@ def main():
     run('make', '-j2', cwd=build, env=env)
     run('make', f'DESTDIR={stage}', 'install', cwd=build, env=env)
     library = stage / 'usr/lib/libXt.so.6.0.0'
-    dynamic = subprocess.check_output(['readelf', '-d', str(library)], text=True)
-    sonames = re.findall(r'\(SONAME\).*?\[(.*?)\]', dynamic)
-    needed = set(re.findall(r'\(NEEDED\).*?\[(.*?)\]', dynamic))
-    if sonames != ['libXt.so.6'] or needed != NEEDED:
-        raise ValueError(f'unexpected libXt ELF linkage: SONAME={sonames}, NEEDED={sorted(needed)}')
+    soname, needed = check_linkage(library)
     if (stage / 'usr/lib/libXt.so.6').resolve() != library or not library.is_file():
         raise ValueError('libXt SONAME link missing')
     result = {
         'source_sha256': SOURCE_SHA256,
         'copying_sha256': COPYING_SHA256,
         'candidate_sha256': digest(library),
-        'soname': sonames[0],
+        'soname': soname,
         'needed': sorted(needed),
         'build_environment': 'host_probe' if args.host_probe else 'pkg_config',
         'status': 'source_candidate_only',
