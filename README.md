@@ -1,6 +1,6 @@
 # Archy
 
-Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate`, `compare`, and `render` commands. Render uses the fixed installed service gate. The CLI does not yet expose IFC export. A18 remains open.
+Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate`, `compare`, `render` and `export-ifc` commands. Render and IFC export use supervised worker boundaries. IFC export publishes schematic `DRAFT` artifacts only after verification. A18 remains open.
 
 The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 

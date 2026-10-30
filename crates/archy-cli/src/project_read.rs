@@ -76,7 +76,7 @@ impl BoundProjectRead {
             source_format,
         })
     }
-    fn check_binding(&self) -> Result<(), ArchyError> {
+    pub(crate) fn check_binding(&self) -> Result<(), ArchyError> {
         let root_matches = self
             .store
             .matches_root_path(&self.root_path)
@@ -111,6 +111,12 @@ impl BoundProjectRead {
             history: self.store.read_history()?,
         })
     }
+    pub(crate) fn lock(&self) -> Result<archy_core::LockedProject<'_>, ArchyError> {
+        self.check_binding()?;
+        let locked = self.store.lock()?;
+        self.check_binding()?;
+        Ok(locked)
+    }
     pub(crate) fn with_verified_locked_run<T>(
         &self,
         run_id: &str,
@@ -135,7 +141,7 @@ impl BoundProjectRead {
     pub fn identity(&self) -> &str {
         &self.identity
     }
-    fn transact(
+    pub(crate) fn transact(
         &self,
         action: impl FnOnce(
             &archy_core::LockedProject<'_>,

@@ -1,6 +1,6 @@
 use archy_cli::{
-    DesktopStatusInput, desktop_capabilities, desktop_capabilities_schema, desktop_open_schema,
-    desktop_status, desktop_status_schema,
+    DesktopStatusInput, design_manifest_schema, desktop_capabilities, desktop_capabilities_schema,
+    desktop_open_schema, desktop_status, desktop_status_schema,
 };
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -51,6 +51,7 @@ fn main() {
             "desktop-capabilities": desktop_capabilities_schema(),
             "desktop-status": desktop_status_schema(),
             "desktop-open": desktop_open_schema(),
+            "design-manifest": design_manifest_schema(),
         },
         "capabilities": desktop_capabilities(),
         "status": status,

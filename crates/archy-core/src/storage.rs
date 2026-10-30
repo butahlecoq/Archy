@@ -762,6 +762,7 @@ impl LockedProject<'_> {
         previous_sha256: Option<String>,
         next: u64,
         check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+        validate: Option<&dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>>,
     ) -> Result<Option<RunReceipt>, ArchyError> {
         let mut dest = self
             .store
@@ -831,6 +832,16 @@ impl LockedProject<'_> {
                 receipt: receipt.clone(),
             };
             self.read_record_run(&record)?;
+            if let Some(validate) = validate {
+                let mut candidate_records = records.to_vec();
+                candidate_records.push(record.clone());
+                let candidate = AcceptedHistory {
+                    store: self.store,
+                    records: candidate_records,
+                    head_sha256: None,
+                };
+                validate(&candidate, &receipt.run_id)?;
+            }
             let archy = open_dir(&self.store.root, ".archy")?;
             let staging_parent = open_dir(&archy, "staging")?;
             maybe_fault(FaultPoint::RecoveryStagingParentSync)
@@ -848,6 +859,9 @@ impl LockedProject<'_> {
                 check().map_err(|error| {
                     uncertain("binding changed before orphan revision publication", error)
                 })?;
+            }
+            if validate.is_some() {
+                self.read_record_run(&record)?;
             }
             publish_revision(&self.store.root, &record, Interrupt::None)?;
             return Ok(Some(receipt));
@@ -904,7 +918,7 @@ impl LockedProject<'_> {
         read_bounded(&mut file, limit)
     }
     pub fn begin<'a>(&'a self, request: RunRequest) -> Result<BeginResult<'a>, ArchyError> {
-        self.begin_inner(request, None)
+        self.begin_inner(request, None, None)
     }
     /// Checks an external binding before publishing a recovered orphan revision.
     /// A concurrent rename between this check and publication remains possible.
@@ -913,12 +927,23 @@ impl LockedProject<'_> {
         request: RunRequest,
         check: &dyn Fn() -> Result<(), ArchyError>,
     ) -> Result<BeginResult<'a>, ArchyError> {
-        self.begin_inner(request, Some(check))
+        self.begin_inner(request, Some(check), None)
+    }
+    /// Validate a hash-checked orphan as the next run before publishing its revision.
+    /// The candidate history is available only during this call under the project lock.
+    pub fn begin_checked_recovery<'a>(
+        &'a self,
+        request: RunRequest,
+        check: &dyn Fn() -> Result<(), ArchyError>,
+        validate: &dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>,
+    ) -> Result<BeginResult<'a>, ArchyError> {
+        self.begin_inner(request, Some(check), Some(validate))
     }
     fn begin_inner<'a>(
         &'a self,
         request: RunRequest,
         check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+        validate: Option<&dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>>,
     ) -> Result<BeginResult<'a>, ArchyError> {
         self.require_owner()?;
         if request.schema_version != RUN_REQUEST_SCHEMA_VERSION {
@@ -976,6 +1001,7 @@ impl LockedProject<'_> {
             previous_sha256.clone(),
             next,
             check,
+            validate,
         )? {
             return Ok(BeginResult::Replay(receipt));
         }
@@ -1083,6 +1109,23 @@ impl PendingRun<'_> {
             }
         }
         self.outcomes.push(outcome);
+        Ok(())
+    }
+    /// Discard a staged run before any artifacts are written, for a failed worker attempt.
+    pub fn discard_empty(self) -> Result<(), ArchyError> {
+        self.locked.require_owner()?;
+        if !self.artifacts.is_empty() || !self.outcomes.is_empty() {
+            return Err(err(ErrorCode::InternalError, "staged run is not empty"));
+        }
+        fs::unlinkat(
+            &self.staging_parent,
+            self.run_id.as_str(),
+            fs::AtFlags::REMOVEDIR,
+        )
+        .map_err(|e| ioerr("discard empty staged run", e))?;
+        self.staging_parent
+            .sync_all()
+            .map_err(|e| ioerr("sync discarded staged run", e))?;
         Ok(())
     }
     pub fn commit(self, metadata: RunMetadata) -> Result<RunReceipt, ArchyError> {
@@ -1275,6 +1318,54 @@ mod interruption_tests {
             parent_variant_id: None,
             algorithm_version: "v1".into(),
         }
+    }
+    #[test]
+    fn validated_orphan_is_rechecked_after_recovery_boundary() {
+        let (root, store) = fixture();
+        let locked = store.lock().unwrap();
+        let mut pending = locked
+            .begin(request("checked", 0))
+            .unwrap()
+            .pending()
+            .unwrap();
+        let run_id = pending.run_id().to_owned();
+        pending
+            .write("input.json", b"source", "application/json", "test")
+            .unwrap();
+        assert!(
+            pending
+                .commit_inner(metadata(), Interrupt::AfterRunPublication, None)
+                .is_err()
+        );
+        let artifact = root.join("runs").join(&run_id).join("input.json");
+        RECOVERY_BOUNDARY.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new({
+                let artifact = artifact.clone();
+                move || std::fs::write(artifact, b"changed").unwrap()
+            }));
+        });
+        let validate = |history: &AcceptedHistory<'_>, candidate: &str| {
+            assert_eq!(
+                history.read_run(candidate)?.artifact("input.json"),
+                Some(b"source".as_slice())
+            );
+            Ok(())
+        };
+        let error = locked
+            .begin_checked_recovery(request("checked", 0), &|| Ok(()), &validate)
+            .err()
+            .unwrap();
+        assert_eq!(error.code, ErrorCode::ArtifactInvalid);
+        assert_eq!(locked.revision().unwrap(), 0);
+        std::fs::write(&artifact, b"source").unwrap();
+        let receipt = locked
+            .begin_checked_recovery(request("checked", 0), &|| Ok(()), &validate)
+            .unwrap()
+            .receipt()
+            .unwrap();
+        assert_eq!(receipt.run_id, run_id);
+        assert_eq!(locked.revision().unwrap(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn orphan_recovery_rechecks_real_binding_before_revision_publication() {

@@ -730,6 +730,74 @@ mod tests {
     }
 
     #[test]
+    fn ifc_selects_original_generation_after_verified_render() {
+        let root = std::env::temp_dir().join(format!("archy-render-ifc-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        let source = include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json");
+        fs::write(&project, source).unwrap();
+        let generated = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let evaluated = evaluate(EvaluateInput {
+            project: project.clone(),
+            source_run: Some(generated.run_id.clone()),
+            selection: VariantSelection::All,
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let rendered = render_with_worker(
+            RenderInput {
+                project: project.clone(),
+                source_run: Some(evaluated.run_id),
+                selection: VariantSelection::All,
+                mutation: MutationOptions::default(),
+            },
+            |request, _| Ok(fixture_capture(request, None)),
+        )
+        .unwrap();
+        let variant_id = crate::verify_run(&project, &generated.run_id)
+            .unwrap()
+            .variants()[0]
+            .id
+            .clone();
+        let calls = Cell::new(0);
+        let error = crate::export_ifc::export_with(
+            crate::ExportIfcInput {
+                project: project.clone(),
+                source_run: None,
+                variant_id,
+                mutation: MutationOptions::default(),
+            },
+            &|request| {
+                calls.set(calls.get() + 1);
+                let wire: serde_json::Value =
+                    serde_json::from_slice(&request.to_bytes().unwrap()).unwrap();
+                assert_eq!(wire["run_id"], generated.run_id);
+                assert_eq!(wire["source_digest"], sha256_hex(source));
+                Err(ArchyError::new(
+                    ErrorCode::BackendUnavailable,
+                    "worker",
+                    "test worker unavailable",
+                ))
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::BackendUnavailable);
+        assert_eq!(calls.get(), 1);
+        let store = ProjectStore::open(&project).unwrap();
+        assert_eq!(store.lock().unwrap().revision().unwrap(), rendered.revision);
+        assert_eq!(
+            fs::read_dir(root.join(".archy/staging")).unwrap().count(),
+            0
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn binding_rejection_at_render_publication_boundaries_preserves_retry() {
         // Render checks at entry and before commit; storage checks before the run
         // rename and after run publication are calls three and four.

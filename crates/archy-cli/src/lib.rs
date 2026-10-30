@@ -7,7 +7,9 @@ mod desktop_capabilities;
 mod desktop_open;
 mod desktop_status;
 mod evaluate;
+mod export_ifc;
 mod generate;
+mod ifc_verifier;
 mod project_read;
 #[cfg(target_os = "linux")]
 mod render;
@@ -32,6 +34,9 @@ pub use desktop_status::{
     DesktopStatus, DesktopStatusInput, desktop_status, desktop_status_schema,
 };
 pub use evaluate::evaluate;
+pub use export_ifc::{
+    DESIGN_MANIFEST_VERSION, DesignManifest, ExportIfcInput, design_manifest_schema, export_ifc,
+};
 pub use generate::generate;
 pub use project_read::{BoundProjectRead, BoundReadSnapshot};
 #[cfg(target_os = "linux")]

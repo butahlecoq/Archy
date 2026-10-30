@@ -18,6 +18,23 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Export one accepted variant as draft schematic IFC proxies.
+    ExportIfc {
+        #[arg(long)]
+        project: PathBuf,
+        #[arg(long)]
+        variant: String,
+        #[arg(long)]
+        run: Option<String>,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+        #[arg(long)]
+        expected_project_revision: Option<u64>,
+        #[arg(long, default_value = "runs")]
+        destination: String,
+        #[arg(long)]
+        json: bool,
+    },
     #[command(about = "Read bounded desktop contracts and selected project status")]
     Desktop {
         #[command(subcommand)]
@@ -191,10 +208,33 @@ fn main() -> std::process::ExitCode {
             | Command::Validate { json: true, .. }
             | Command::Generate { json: true, .. }
             | Command::Evaluate { json: true, .. }
+            | Command::ExportIfc { json: true, .. }
             | Command::Render { json: true, .. }
     );
     let desktop = matches!(&cli.command, Command::Desktop { .. });
     let result = match cli.command {
+        Command::ExportIfc {
+            project,
+            variant,
+            run,
+            idempotency_key,
+            expected_project_revision,
+            destination,
+            ..
+        } => archy_cli::export_ifc(archy_cli::ExportIfcInput {
+            project,
+            source_run: run,
+            variant_id: variant,
+            mutation: MutationOptions {
+                idempotency_key,
+                expected_project_revision,
+                destination,
+            },
+        })
+        .and_then(|receipt| {
+            serde_json::to_value(receipt)
+                .map_err(|e| ArchyError::new(ErrorCode::InternalError, "$", e.to_string()))
+        }),
         Command::Desktop { command } => match command {
             DesktopCommand::Capabilities { .. } => {
                 serde_json::to_value(archy_cli::desktop_capabilities())
