@@ -59,6 +59,8 @@ pub enum DesktopRunOperation {
     Evaluate,
     Render,
     Propose,
+    #[serde(rename = "export-ifc")]
+    ExportIfc,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -163,6 +165,7 @@ fn summary(
         "evaluate" => DesktopRunOperation::Evaluate,
         "render" => DesktopRunOperation::Render,
         "propose" => DesktopRunOperation::Propose,
+        "export-ifc" => DesktopRunOperation::ExportIfc,
         _ => return Err(artifact_invalid("unsupported run operation")),
     };
     Ok(DesktopRunSummary {

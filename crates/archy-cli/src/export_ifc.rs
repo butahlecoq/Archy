@@ -1357,6 +1357,78 @@ mod tests {
         }
     }
 
+    #[test]
+    fn accepted_draft_export_is_visible_in_desktop_status() {
+        let Ok(python) = std::env::var("ARCHY_IFC_TEST_PYTHON") else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("archy-a12-desktop-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let source = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let job = root.join("worker");
+        fs::create_dir(&job).unwrap();
+        let exported = export_with(
+            ExportIfcInput {
+                project: project.clone(),
+                source_run: Some(source.run_id),
+                variant_id: source.variant_ids[0].clone(),
+                mutation: MutationOptions::default(),
+            },
+            &|request| native(request, &job, &python, None),
+        )
+        .unwrap();
+        let design: DesignManifest = serde_json::from_slice(
+            &fs::read(
+                root.join("runs")
+                    .join(&exported.run_id)
+                    .join("design-manifest.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(design.approval_state, "DRAFT");
+        let status = crate::desktop_status(crate::DesktopStatusInput {
+            project,
+            run: Some(exported.run_id.clone()),
+            limit: 20,
+            cursor: None,
+        })
+        .unwrap();
+        assert_eq!(status.runs[0].run_id, exported.run_id);
+        assert_eq!(
+            serde_json::to_value(status.runs[0].operation).unwrap(),
+            "export-ifc"
+        );
+        assert_eq!(status.runs[0].variant_count, 1);
+        assert_eq!(
+            status.runs[0].all_required_checks_passed,
+            design.required_checks_passed
+        );
+        assert!(status.runs[0].render_outcome.is_none());
+        let selected = status.selected_run.unwrap();
+        assert_eq!(selected.summary, status.runs[0]);
+        assert!(
+            selected
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.id == "design-manifest.json"
+                    && artifact.integrity
+                        == crate::desktop_status::DesktopArtifactIntegrity::Verified)
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     fn assert_native_orphan_retry(
         project: &std::path::Path,
         source: &[u8],
