@@ -41,6 +41,13 @@ class DesktopStatusSchemaTest(unittest.TestCase):
         changed['runs'][0]['variant_count'] = 0
         self.assertFalse(VALIDATOR.is_valid(changed))
 
+    def test_ifc_export_is_a_typed_run_without_render_disclosure(self):
+        changed = copy.deepcopy(ACCEPTED)
+        changed['runs'][0]['operation'] = 'export-ifc'
+        self.assertTrue(VALIDATOR.is_valid(changed))
+        changed['runs'][0]['render_outcome'] = 'verified'
+        self.assertFalse(VALIDATOR.is_valid(changed))
+
     def test_render_requires_real_outcome_and_accepts_disclosure(self):
         for value in (None, "invented"):
             changed = copy.deepcopy(RENDER)

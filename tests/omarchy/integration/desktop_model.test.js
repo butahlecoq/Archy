@@ -129,6 +129,17 @@ test('proposal summaries remain review suggestions and cannot assert passed chec
   proposal.selected_run.summary.all_required_checks_passed = true;
   assert.equal(model.validStatus(proposal), false);
 });
+test('accepted IFC export remains a draft in the desktop probe', () => {
+  const exported = structuredClone(status);
+  for (const summary of [exported.runs[0], exported.selected_run.summary]) {
+    summary.operation = 'export-ifc';
+    summary.variant_count = 1;
+  }
+  const probe = model.newProbe(1, 'status', exported.runs[0].run_id);
+  assert.equal(model.append(probe, 'stdout', JSON.stringify(exported)), true);
+  assert.equal(model.complete(probe, 0, 0, 1).status?.runs[0].operation, 'export-ifc');
+  assert.equal(model.checkSummary(exported.runs[0]), 'draft schematic IFC · required checks passed');
+});
 test('project path is explicit absolute local input and argv preserves spaces', () => {
   assert.equal(model.validManifest('/tmp/My Project/project.yaml'), true);
   for (const bad of ['project.yaml', 'file:///tmp/project.yaml', '/tmp/a\nproject.yaml', '/tmp/a\0b', '/tmp/a'.repeat(1400)]) assert.equal(model.validManifest(bad), false);

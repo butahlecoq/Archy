@@ -140,7 +140,8 @@
         "edit",
         "evaluate",
         "render",
-        "propose"
+        "propose",
+        "export-ifc"
       ],
       "type": "string"
     },

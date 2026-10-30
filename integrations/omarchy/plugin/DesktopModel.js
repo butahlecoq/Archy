@@ -36,7 +36,7 @@ function validSummary(r) {
   if (render) keys.push('render_outcome');
   if (render && r.preview_symbols !== undefined) keys.push('preview_symbols');
   return obj(r,keys)
-    && validRunId(r.run_id) && uint(r.revision) && ['generate','edit','evaluate','render','propose'].indexOf(r.operation) >= 0
+    && validRunId(r.run_id) && uint(r.revision) && ['generate','edit','evaluate','render','propose','export-ifc'].indexOf(r.operation) >= 0
     && (!render || ['verified','partial','failed'].indexOf(r.render_outcome) >= 0)
     && uint(r.variant_count) && r.variant_count <= MAX_VARIANTS
     && uint(r.artifact_count) && r.artifact_count <= MAX_ARTIFACTS
@@ -45,7 +45,9 @@ function validSummary(r) {
     && (r.operation !== 'propose' || (r.variant_count === 1 && !r.all_required_checks_passed));
 }
 function checkSummary(r) {
-  return r.operation === 'propose' ? 'review proposal' : 'required checks ' + (r.all_required_checks_passed ? 'passed' : 'unmet');
+  if (r.operation === 'propose') return 'review proposal';
+  var checks = 'required checks ' + (r.all_required_checks_passed ? 'passed' : 'unmet');
+  return r.operation === 'export-ifc' ? 'draft schematic IFC · ' + checks : checks;
 }
 function validPreviewSymbols(symbols, variantCount) {
   if (!Array.isArray(symbols) || symbols.length > variantCount) return false;
