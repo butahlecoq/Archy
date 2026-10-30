@@ -53,4 +53,8 @@ The checker compares bytes from Git objects, so the checkout worktree can remain
 
 ### Bounded change handoff
 
-Plan: enumerate Meson's library inputs, resolve project-local quoted headers, record each leading notice and source hash, and save the relevant upstream full license text. No runtime or packaging dependencies were added. Validation: the checker reported 26 matching inputs against the recorded tag, commit, and tree, and `git diff --cached --check` passed. A separate technical and legal review is still pending; the inventory is evidence for that review, not its conclusion.
+Plan: enumerate Meson's library inputs, resolve project-local quoted headers, record each leading notice and source hash, and save the relevant upstream full license text. No runtime or packaging dependencies were added. Validation: the checker reported 26 matching inputs against the recorded tag, commit, and tree, and `git diff --cached --check` passed.
+
+Independent technical review of `df633d90b6060591264db80c4b644460e287fce5` passed the cited history comparisons, the 14-input compiler dependency probe, and the 26-input inventory check. The reviewer could not independently repeat the full `git log --follow -G` scan because the available clone was shallow and the upstream API was rate limited. The scan result above remains the original researcher's observation.
+
+Legal review remains pending. The specific `list.h` notice remains unversioned, the exact Arch build's compiler dependencies remain unobserved, and source-to-binary correspondence has not been established.
