@@ -57,6 +57,27 @@ class NativeTests(unittest.TestCase):
             with self.assertRaisesRegex(verify.ArtifactError, "site placement"):
                 verify.inspect(path, item)
 
+    def test_site_and_building_require_explicit_placement_at_origin(self):
+        from archy_ifc_worker import hierarchy, protocol, verify
+        item = request()
+        v = item["variant"]
+        v["shape"] = "rectangle"
+        v["parameters"] = {"shape": "rectangle", "origin_xy_m": [0., 0.],
+                           "width_m": 10., "depth_m": 20.}
+        v["footprint_xy_m"] = [[0., 0.], [10., 0.], [10., 20.], [0., 20.], [0., 0.]]
+        v["id"] = item["variant_id"] = protocol.canonical_id(v)
+        protocol.validate_request(item)
+        for kind, label in (("IfcSite", "site"), ("IfcBuilding", "building")):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temp:
+                model = hierarchy.build(item)
+                path = Path(temp) / "model.ifc"
+                model.write(str(path))
+                self.assertEqual(verify.inspect(path, item)["status"], "ok")
+                model.by_type(kind)[0].ObjectPlacement = None
+                model.write(str(path))
+                with self.assertRaisesRegex(verify.ArtifactError, label + " placement"):
+                    verify.inspect(path, item)
+
     def test_fixed_module_cli_writes_reopen_verified_artifacts(self):
         item = request()
         with tempfile.TemporaryDirectory() as temp:

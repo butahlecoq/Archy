@@ -89,6 +89,8 @@ def inspect(path, request):
                     for row in range(3) for col in range(3)),
                 "wrong " + label + " placement")
 
+    require(site.ObjectPlacement is not None, "missing site placement")
+    require(building.ObjectPlacement is not None, "missing building placement")
     check_placement(site, (0, 0, 0), "site")
     check_placement(building, (ox, oy, 0), "building")
     psets = ifcopenshell.util.element.get_psets(building)

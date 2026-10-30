@@ -441,6 +441,22 @@ test('rejects offsetting site and building placements with unchanged mass geomet
   await assert.rejects(inspectBuffer(model, item, source(item)), /site placement/);
 });
 
+test('framed reader requires explicit site and building placements', () => {
+  for (const file of ['rectangle.ifc', 'l_shape.ifc']) {
+    const item = fixture(file), original = read(file);
+    assert.equal(bridge(original, item).report.status, 'ok');
+    for (const [entity, ref] of [['IFCSITE', '#23'], ['IFCBUILDING', '#28']]) {
+      const line = original.toString('utf8').split('\n').find(value => value.includes(`=${entity}(`));
+      const modified = line.replace(`,${ref},$,`, ',$,$,');
+      assert.notEqual(modified, line);
+      const result = bridge(changed(original, line, modified), item);
+      assert.equal(result.status, 1, `${file} ${entity}: ${JSON.stringify(result.report)}`);
+      assert.equal(result.report.code, 'ARTIFACT_INVALID');
+      assert.match(result.report.message, /invalid IFC reference/);
+    }
+  }
+});
+
 test('rejects a changed canonical L inner boundary with unchanged area and bounds', async () => {
   const item = structuredClone(fixture('l_shape.ifc'));
   item.footprint_xy_m[3][0] = 19;
