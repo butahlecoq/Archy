@@ -169,8 +169,27 @@ pub(crate) fn export_with(
         input_sha256: source_digest.clone(),
         source_run: Some(source_id.clone()),
     };
+    let validate_orphan = |history: &archy_core::AcceptedHistory<'_>, run_id: &str| {
+        let trusted = crate::run_integrity::verify_history(history, run_id)?;
+        if trusted.manifest().operation != "export-ifc"
+            || trusted.manifest().parent_run_id.as_deref() != Some(source_id.as_str())
+            || trusted.manifest().parent_variant_id.as_deref() != Some(input.variant_id.as_str())
+            || trusted.input() != source.input()
+            || trusted.variants().len() != 1
+            || trusted.variants()[0].id != input.variant_id
+        {
+            return Err(artifact_invalid(
+                "recovered IFC run differs from selected source",
+            ));
+        }
+        Ok(())
+    };
     if recorded.is_some() {
-        return match locked.begin_checked(run_request, &|| reader.check_binding())? {
+        return match locked.begin_checked_recovery(
+            run_request,
+            &|| reader.check_binding(),
+            &validate_orphan,
+        )? {
             archy_core::BeginResult::Replay(receipt) => {
                 verify_locked(&locked, &receipt.run_id)?;
                 reader.check_binding()?;
@@ -197,7 +216,11 @@ pub(crate) fn export_with(
         "output/ifc",
         Vec::new(),
     )?;
-    let mut pending = match locked.begin_checked(run_request, &|| reader.check_binding())? {
+    let mut pending = match locked.begin_checked_recovery(
+        run_request,
+        &|| reader.check_binding(),
+        &validate_orphan,
+    )? {
         archy_core::BeginResult::Pending(pending) => pending,
         archy_core::BeginResult::Replay(receipt) => {
             verify_locked(&locked, &receipt.run_id)?;
@@ -399,6 +422,184 @@ mod tests {
                 fs::copy(entry.path(), dest).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn malformed_orphan_never_consumes_revision_or_retry_key() {
+        use archy_core::{Artifact, MutationContext, ProjectStore, RunManifest, digest_request};
+        let root = std::env::temp_dir().join(format!("archy-a12-orphan-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        let source = include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json");
+        fs::write(&project, source).unwrap();
+        let generation = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let variant = generation.variant_ids[0].clone();
+        let key = "forged-orphan-approval";
+        let request = RunRequest {
+            schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
+            context: MutationContext {
+                idempotency_key: key.into(),
+                expected_project_revision: generation.revision,
+                destination: "runs".into(),
+            },
+            operation: "export-ifc".into(),
+            request_bytes: serde_json::to_vec(&serde_json::json!({
+                "source_run": generation.run_id, "variant_id": variant
+            }))
+            .unwrap(),
+            input_sha256: sha256_hex(source),
+            source_run: Some(generation.run_id.clone()),
+        };
+        let orphan_id = uuid::Uuid::new_v4().to_string();
+        let orphan = root.join("runs").join(&orphan_id);
+        copy_private_tree(&root.join("runs").join(&generation.run_id), &orphan);
+        let mut manifest: RunManifest =
+            serde_json::from_slice(&fs::read(orphan.join("manifest.json")).unwrap()).unwrap();
+        let forged = br#"{"approval_state":"APPROVED","certified_for_construction":true}"#;
+        fs::write(orphan.join("design-manifest.json"), forged).unwrap();
+        manifest.artifacts.push(Artifact {
+            path: "design-manifest.json".into(),
+            sha256: sha256_hex(forged),
+            media_type: "application/json".into(),
+            producer: "forged-worker".into(),
+            byte_len: forged.len() as u64,
+        });
+        manifest.run_id = orphan_id.clone();
+        manifest.idempotency_key = key.into();
+        manifest.request_sha256 = digest_request(&request).unwrap();
+        manifest.request_schema_version = RUN_REQUEST_SCHEMA_VERSION.into();
+        manifest.expected_project_revision = generation.revision;
+        manifest.operation = "export-ifc".into();
+        manifest.parent_run_id = Some(generation.run_id.clone());
+        manifest.parent_variant_id = Some(variant.clone());
+        manifest.algorithm_version = DESIGN_MANIFEST_VERSION.into();
+        fs::write(
+            orphan.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        let store = ProjectStore::open(&project).unwrap();
+        let before = store.lock().unwrap().receipts().unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(generation.run_id),
+            variant_id: variant,
+            mutation: MutationOptions {
+                idempotency_key: Some(key.into()),
+                expected_project_revision: Some(generation.revision),
+                destination: "runs".into(),
+            },
+        };
+        let rejected =
+            export_with(input.clone(), &|_| panic!("forged orphan reached worker")).unwrap_err();
+        assert_eq!(rejected.code, archy_core::ErrorCode::ArtifactInvalid);
+        assert_eq!(store.lock().unwrap().receipts().unwrap(), before);
+        fs::remove_dir_all(&orphan).unwrap();
+        let called = std::cell::Cell::new(false);
+        let retry = export_with(input, &|_| {
+            called.set(true);
+            Err(ArchyError::new(
+                archy_core::ErrorCode::BackendUnavailable,
+                "worker",
+                "retry reached worker",
+            ))
+        })
+        .unwrap_err();
+        assert!(called.get());
+        assert_eq!(retry.code, archy_core::ErrorCode::BackendUnavailable);
+        assert_eq!(store.lock().unwrap().receipts().unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_valid_export_orphan_replays_exact_key() {
+        let Ok(python) = std::env::var("ARCHY_IFC_TEST_PYTHON") else {
+            return;
+        };
+        let root =
+            std::env::temp_dir().join(format!("archy-a12-valid-orphan-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let generated = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(generated.run_id),
+            variant_id: generated.variant_ids[0].clone(),
+            mutation: MutationOptions {
+                idempotency_key: Some("valid-orphan".into()),
+                expected_project_revision: Some(generated.revision),
+                destination: "runs".into(),
+            },
+        };
+        let job = root.join("worker");
+        fs::create_dir(&job).unwrap();
+        let receipt = export_with(input.clone(), &|request| {
+            native(request, &job, &python, None)
+        })
+        .unwrap();
+        let run_dir = root.join("runs").join(&receipt.run_id);
+        let original_manifest = fs::read(run_dir.join("manifest.json")).unwrap();
+        let original_design = fs::read(run_dir.join("design-manifest.json")).unwrap();
+        let revision_file = root.join(format!(".archy/revisions/{:020}.json", receipt.revision));
+        fs::remove_file(revision_file).unwrap();
+        let store = ProjectStore::open(&project).unwrap();
+        assert_eq!(
+            store.lock().unwrap().revision().unwrap(),
+            generated.revision
+        );
+        let accepted = store.lock().unwrap().receipts().unwrap();
+        let mut design: serde_json::Value = serde_json::from_slice(&original_design).unwrap();
+        design["approval_state"] = "APPROVED".into();
+        let forged_design = serde_json::to_vec(&design).unwrap();
+        fs::write(run_dir.join("design-manifest.json"), &forged_design).unwrap();
+        let mut manifest: archy_core::RunManifest =
+            serde_json::from_slice(&original_manifest).unwrap();
+        let claim = manifest
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.path == "design-manifest.json")
+            .unwrap();
+        claim.sha256 = sha256_hex(&forged_design);
+        claim.byte_len = forged_design.len() as u64;
+        fs::write(
+            run_dir.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        let rejected =
+            export_with(input.clone(), &|_| panic!("forged orphan reached worker")).unwrap_err();
+        assert_eq!(rejected.code, archy_core::ErrorCode::ArtifactInvalid);
+        assert_eq!(
+            store.lock().unwrap().revision().unwrap(),
+            generated.revision
+        );
+        assert_eq!(store.lock().unwrap().receipts().unwrap(), accepted);
+        fs::write(run_dir.join("design-manifest.json"), original_design).unwrap();
+        fs::write(run_dir.join("manifest.json"), original_manifest).unwrap();
+        let replay =
+            export_with(input.clone(), &|_| panic!("orphan replay reached worker")).unwrap();
+        assert_eq!(replay, receipt);
+        assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        assert_eq!(
+            export_with(input, &|_| panic!("exact retry reached worker")).unwrap(),
+            receipt
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
