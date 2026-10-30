@@ -42,3 +42,13 @@ is the authority bus service, which needs one ProcessFD from the bus. Target
 compatibility and separate security review remain required. The later file
 hashes are frozen in `docs/plans/a14-a16-production-availability-source.sha256`;
 the earlier receive-bound patch and hash manifest remain historical evidence.
+
+The human-bus availability follow-on keeps the 64 KiB accepted-frame allocation
+limit while discarding a complete oversized frame in 4 KiB reads. Its header
+length must fit the D-Bus 128 MiB protocol ceiling; each partial header or
+frame has a two-second receive deadline under the default `async-io` runtime.
+Discarded ancillary FDs are closed without dispatch, and a short delay follows
+each discarded frame. Invalid framing, ancillary truncation, timeout, or a
+length above the protocol ceiling still closes the connection. The previous
+patch and manifests remain historical; the new exact source state is recorded
+in the availability follow-on handoff.

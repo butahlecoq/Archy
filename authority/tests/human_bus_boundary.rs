@@ -7,8 +7,10 @@ use archy_core::decision_contract::{
     ConstraintEvidence, PROPOSAL_SCHEMA_VERSION, Proposal, ReviewEvidence,
 };
 use std::fs;
+use std::io::{Read, Write};
 use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -20,6 +22,68 @@ use zbus::names::BusName;
 use zbus::zvariant::OwnedObjectPath;
 
 const SESSION_PATH: &str = "/org/freedesktop/login1/session/mock";
+
+struct PrivateBus(i32);
+
+impl Drop for PrivateBus {
+    fn drop(&mut self) {
+        unsafe { libc::kill(self.0, libc::SIGTERM) };
+    }
+}
+
+fn raw_private_bus_peer(address: &str, uid: u32) -> UnixStream {
+    let path = address
+        .strip_prefix("unix:path=")
+        .unwrap()
+        .split(',')
+        .next()
+        .unwrap();
+    let mut stream = UnixStream::connect(path).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    let uid_hex: String = uid
+        .to_string()
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    stream
+        .write_all(format!("\0AUTH EXTERNAL {uid_hex}\r\n").as_bytes())
+        .unwrap();
+    let mut response = Vec::new();
+    loop {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        response.push(byte[0]);
+        assert!(response.len() <= 128, "unbounded auth response");
+        if byte[0] == b'\n' {
+            break;
+        }
+    }
+    assert!(response.starts_with(b"OK "), "raw private-bus auth failed");
+    stream.write_all(b"BEGIN\r\n").unwrap();
+    let hello = zbus::message::Message::method_call("/org/freedesktop/DBus", "Hello")
+        .unwrap()
+        .destination("org.freedesktop.DBus")
+        .unwrap()
+        .interface("org.freedesktop.DBus")
+        .unwrap()
+        .build(&())
+        .unwrap();
+    stream.write_all(hello.data().bytes()).unwrap();
+    let mut header = [0u8; 16];
+    stream.read_exact(&mut header).unwrap();
+    assert_eq!(header[0], b'l');
+    assert_eq!(header[1], 2, "Hello must receive method return");
+    let fields = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+    let body = u32::from_le_bytes(header[4..8].try_into().unwrap()) as usize;
+    let aligned = (16 + fields + 7) & !7;
+    let total = aligned + body;
+    assert!(total <= 4096, "unexpectedly large Hello response");
+    let mut rest = vec![0; total - 16];
+    stream.read_exact(&mut rest).unwrap();
+    stream
+}
 
 struct MockManager {
     lookups: Arc<AtomicUsize>,
@@ -151,8 +215,9 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
         format!(r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
 <busconfig>
   <type>session</type>
-  <listen>unix:tmpdir={}</listen>
+  <listen>unix:path={}/bus.sock</listen>
   <limit name="max_message_size">2097152</limit>
+  <limit name="max_message_unix_fds">16</limit>
   <limit name="max_incoming_bytes">4194304</limit>
   <limit name="max_outgoing_bytes">4194304</limit>
   <policy context="default">
@@ -182,6 +247,7 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
     let mut lines = lines.lines();
     let address = lines.next().unwrap().to_owned();
     let bus_pid: i32 = lines.next().unwrap().parse().unwrap();
+    let _private_bus = PrivateBus(bus_pid);
     let uid = unsafe { libc::geteuid() };
     let project = ProtectedProject::initialize(
         &base,
@@ -522,6 +588,42 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             first_proxy.call("Review", &proposal_digest).await.unwrap();
         assert_eq!(recovered.0.as_bytes(), expected_snapshot.bytes());
         assert_eq!(recovered.1, expected_snapshot.digest());
+        let mut partial = raw_private_bus_peer(&address, uid);
+        let slow_call = zbus::message::Message::method_call("/org/archy/Authority1", "Review")
+            .unwrap()
+            .destination("org.archy.Authority1")
+            .unwrap()
+            .interface("org.archy.Authority1")
+            .unwrap()
+            .build(&"a".repeat(70 * 1024))
+            .unwrap();
+        let slow_bytes = slow_call.data().bytes();
+        partial.write_all(&slow_bytes[..32]).unwrap();
+        async_io::Timer::after(Duration::from_millis(2500)).await;
+        let after_partial: (String, String) =
+            first_proxy.call("Review", &proposal_digest).await.unwrap();
+        assert_eq!(after_partial.1, expected_snapshot.digest());
+        assert!(!service.is_closed(), "partial raw sender closed service");
+        partial.write_all(&slow_bytes[32..]).unwrap();
+        let after_complete: (String, String) =
+            first_proxy.call("Review", &proposal_digest).await.unwrap();
+        assert_eq!(after_complete.1, expected_snapshot.digest());
+        assert!(!service.is_closed(), "completed slow call closed service");
+        drop(partial);
+        let mut malformed = raw_private_bus_peer(&address, uid);
+        malformed.write_all(&[b'X'; 16]).unwrap();
+        let mut byte = [0];
+        loop {
+            match malformed.read(&mut byte) {
+                Ok(0) => break,
+                Ok(_) => continue,
+                Err(error) => panic!("bus did not reject malformed raw frame: {error}"),
+            }
+        }
+        let after_malformed: (String, String) =
+            first_proxy.call("Review", &proposal_digest).await.unwrap();
+        assert_eq!(after_malformed.1, expected_snapshot.digest());
+        assert!(!service.is_closed(), "malformed raw sender closed service");
         let before = lookups.load(Ordering::SeqCst);
         let oversized = Builder::address(address.as_str())
             .unwrap()
@@ -544,89 +646,41 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             "valid transport-sized call must reach handler: {near_limit:?}"
         );
         assert_eq!(lookups.load(Ordering::SeqCst), before);
-        let rejected: zbus::Result<(String, String)> =
-            proxy.call("Review", &("a".repeat(70 * 1024))).await;
+        let service_name = service.unique_name().unwrap().to_string();
+        for _ in 0..3 {
+            let rejected: zbus::Result<(String, String)> =
+                proxy.call("Review", &("a".repeat(70 * 1024))).await;
+            assert!(rejected.is_err(), "oversize call must not succeed");
+            assert_eq!(lookups.load(Ordering::SeqCst), before);
+            assert!(!service.is_closed(), "oversize call closed shared service");
+            assert_eq!(service.unique_name().unwrap().as_str(), service_name);
+        }
+        let fd_file = fs::File::open("/dev/null").unwrap();
+        let fd = zbus::zvariant::Fd::from(fd_file.as_fd());
+        let with_fd: zbus::Result<(String, String)> =
+            proxy.call("Review", &("a".repeat(70 * 1024), fd)).await;
+        assert!(with_fd.is_err(), "oversize call with SCM_RIGHTS must deny");
         assert!(
-            matches!(rejected, Err(ref error) if !matches!(error, zbus::Error::MethodError(..))),
-            "service transport must reject before dispatch: {rejected:?}"
+            !service.is_closed(),
+            "SCM_RIGHTS oversize closed shared service"
         );
         assert_eq!(lookups.load(Ordering::SeqCst), before);
-        assert!(
-            service.is_closed(),
-            "oversize frame must close service connection"
-        );
-        drop(service);
-        let mut recovered_service = Builder::address(address.as_str())
-            .unwrap()
-            .max_message_size(64 * 1024)
-            .max_queued(4)
-            .method_timeout(Duration::from_secs(1))
-            .name("org.archy.Authority1")
-            .unwrap()
-            .serve_at(
-                "/org/archy/Authority1",
-                HumanBus::new(
-                    project.clone(),
-                    Identities {
-                        agent: uid.wrapping_add(1),
-                        broker: uid.wrapping_add(2),
-                        human: uid,
-                    },
-                    PathBuf::from(env!("CARGO_BIN_EXE_archy-human-busd")),
-                ),
-            )
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-        for _ in 0..3 {
-            let oversized = Builder::address(address.as_str())
+        for _ in 0..20 {
+            let burst = zbus::message::Message::method_call("/org/archy/Authority1", "Review")
                 .unwrap()
-                .method_timeout(Duration::from_secs(2))
-                .build()
-                .await
+                .destination("org.archy.Authority1")
+                .unwrap()
+                .interface("org.archy.Authority1")
+                .unwrap()
+                .with_flags(zbus::message::Flags::NoReplyExpected)
+                .unwrap()
+                .build(&"a".repeat(70 * 1024))
                 .unwrap();
-            let oversized_proxy = zbus::Proxy::new(
-                &oversized,
-                "org.archy.Authority1",
-                "/org/archy/Authority1",
-                "org.archy.Authority1",
-            )
-            .await
-            .unwrap();
-            let rejected: zbus::Result<(String, String)> = oversized_proxy
-                .call("Review", &("a".repeat(70 * 1024)))
-                .await;
-            assert!(rejected.is_err());
-            assert!(
-                recovered_service.is_closed(),
-                "oversized frame closes one service connection"
-            );
-            drop(recovered_service);
-            recovered_service = Builder::address(address.as_str())
-                .unwrap()
-                .max_message_size(64 * 1024)
-                .max_queued(4)
-                .method_timeout(Duration::from_secs(1))
-                .name("org.archy.Authority1")
-                .unwrap()
-                .serve_at(
-                    "/org/archy/Authority1",
-                    HumanBus::new(
-                        project.clone(),
-                        Identities {
-                            agent: uid.wrapping_add(1),
-                            broker: uid.wrapping_add(2),
-                            human: uid,
-                        },
-                        PathBuf::from(env!("CARGO_BIN_EXE_archy-human-busd")),
-                    ),
-                )
-                .unwrap()
-                .build()
-                .await
-                .unwrap();
+            oversized.send(&burst).await.unwrap();
         }
+        let after_burst: (String, String) = proxy.call("Review", &proposal_digest).await.unwrap();
+        assert_eq!(after_burst.1, expected_snapshot.digest());
+        assert!(!service.is_closed(), "oversize burst closed shared service");
         let recovered_proxy = zbus::Proxy::new(
             &first,
             "org.archy.Authority1",
@@ -640,7 +694,7 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
             recovered_proxy.call("Review", &proposal_digest).await;
         assert!(
             stale_session.is_err(),
-            "new connection must recheck session"
+            "same connection must recheck session"
         );
         active.store(true, Ordering::SeqCst);
         let fresh: (String, String) = recovered_proxy
@@ -656,8 +710,7 @@ fn private_real_bus_review_requires_local_session_and_never_confirms() {
                 .is_err()
         );
         drop(logind);
-        drop(recovered_service);
+        drop(service);
     });
     fs::remove_dir_all(&base).unwrap();
-    unsafe { libc::kill(bus_pid, libc::SIGTERM) };
 }

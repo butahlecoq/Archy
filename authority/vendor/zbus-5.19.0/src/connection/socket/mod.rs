@@ -18,24 +18,26 @@ mod vsock;
 use async_io::Async;
 #[cfg(feature = "async-io")]
 use std::sync::Arc;
-use std::{io, mem};
+use std::{
+    io, mem,
+    time::{Duration, Instant},
+};
 use tracing::trace;
 
 use crate::{
-    Message,
     conn::AuthMechanism,
     fdo::ConnectionCredentials,
     message::{
-        PrimaryHeader,
         header::{MAX_MESSAGE_SIZE, MIN_MESSAGE_SIZE},
+        PrimaryHeader,
     },
-    padding_for_8_bytes,
+    padding_for_8_bytes, Message,
 };
 #[cfg(unix)]
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use zvariant::{
-    Endian,
     serialized::{self, Context},
+    Endian,
 };
 
 #[cfg(unix)]
@@ -43,6 +45,40 @@ type RecvmsgResult = io::Result<(usize, Vec<OwnedFd>)>;
 
 #[cfg(not(unix))]
 type RecvmsgResult = io::Result<usize>;
+
+const FRAME_READ_TIMEOUT: Duration = Duration::from_secs(2);
+const DISCARD_CHUNK: usize = 4096;
+
+async fn recvmsg_until<R: ReadHalf + ?Sized>(
+    socket: &mut R,
+    buf: &mut [u8],
+    deadline: Instant,
+) -> RecvmsgResult {
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "D-Bus frame receive deadline exceeded",
+            )
+        })?;
+    #[cfg(feature = "async-io")]
+    {
+        futures_lite::future::or(socket.recvmsg(buf), async move {
+            async_io::Timer::after(remaining).await;
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "D-Bus frame receive deadline exceeded",
+            ))
+        })
+        .await
+    }
+    #[cfg(not(feature = "async-io"))]
+    {
+        let _ = remaining;
+        socket.recvmsg(buf).await
+    }
+}
 
 /// Trait representing some transport layer over which the DBus protocol can be used.
 ///
@@ -97,28 +133,132 @@ pub trait ReadHalf: std::fmt::Debug + Send + Sync + 'static {
         #[cfg(unix)] already_received_fds: &mut Vec<OwnedFd>,
         max_message_size: usize,
     ) -> crate::Result<Message> {
-        #[cfg(unix)]
-        let mut fds = vec![];
-        #[cfg(unix)]
-        if already_received_fds.len() > crate::utils::FDS_MAX {
-            return Err(crate::Error::ExcessData);
-        }
-        let mut bytes = if already_received_bytes.len() < MIN_MESSAGE_SIZE {
-            let mut bytes = vec![];
+        'next_message: loop {
+            #[cfg(unix)]
+            let mut fds = vec![];
+            #[cfg(unix)]
+            if already_received_fds.len() > crate::utils::FDS_MAX {
+                return Err(crate::Error::ExcessData);
+            }
+            let mut bytes = if already_received_bytes.len() < MIN_MESSAGE_SIZE {
+                let mut bytes = vec![];
+                if !already_received_bytes.is_empty() {
+                    mem::swap(already_received_bytes, &mut bytes);
+                }
+                let mut pos = bytes.len();
+                bytes.resize(MIN_MESSAGE_SIZE, 0);
+                // We don't have enough data to make a proper message header yet.
+                // Some partial read may be in raw_in_buffer, so we try to complete it
+                // until we have MIN_MESSAGE_SIZE bytes
+                //
+                // Given that MIN_MESSAGE_SIZE is 16, this codepath is actually extremely unlikely
+                // to be taken more than once
+                let mut header_deadline = (pos != 0).then(|| Instant::now() + FRAME_READ_TIMEOUT);
+                while pos < MIN_MESSAGE_SIZE {
+                    let res = match header_deadline {
+                        Some(deadline) => recvmsg_until(self, &mut bytes[pos..], deadline).await?,
+                        None => self.recvmsg(&mut bytes[pos..]).await?,
+                    };
+                    let len = {
+                        #[cfg(unix)]
+                        {
+                            if fds.len().saturating_add(res.1.len()) > crate::utils::FDS_MAX {
+                                return Err(crate::Error::ExcessData);
+                            }
+                            fds.extend(res.1);
+                            res.0
+                        }
+                        #[cfg(not(unix))]
+                        {
+                            res
+                        }
+                    };
+                    pos += len;
+                    if header_deadline.is_none() && len != 0 {
+                        header_deadline = Some(Instant::now() + FRAME_READ_TIMEOUT);
+                    }
+                    if len == 0 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "failed to receive message",
+                        )
+                        .into());
+                    }
+                }
+
+                bytes
+            } else {
+                already_received_bytes.drain(..MIN_MESSAGE_SIZE).collect()
+            };
+
+            let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
+            let header_len = MIN_MESSAGE_SIZE
+                .checked_add(fields_len as usize)
+                .ok_or(crate::Error::ExcessData)?;
+            let body_padding = padding_for_8_bytes(header_len);
+            let body_len = primary_header.body_len() as usize;
+            let total_len = header_len
+                .checked_add(body_padding)
+                .and_then(|n| n.checked_add(body_len))
+                .ok_or(crate::Error::ExcessData)?;
+            if total_len > max_message_size.min(MAX_MESSAGE_SIZE) {
+                // A valid primary header supplies the exact remaining byte count. The
+                // protocol ceiling bounds the work; malformed or impossible lengths
+                // still close the stream because its next frame boundary is unknown.
+                if total_len > MAX_MESSAGE_SIZE || primary_header.protocol_version() != 1 {
+                    return Err(crate::Error::ExcessData);
+                }
+                #[cfg(unix)]
+                already_received_fds.clear();
+                let buffered = (total_len - bytes.len()).min(already_received_bytes.len());
+                already_received_bytes.drain(..buffered);
+                let mut remaining = total_len - bytes.len() - buffered;
+                let deadline = Instant::now() + FRAME_READ_TIMEOUT;
+                let mut discard = [0u8; DISCARD_CHUNK];
+                let mut chunks = 0usize;
+                while remaining != 0 {
+                    let len = remaining.min(discard.len());
+                    let received = recvmsg_until(self, &mut discard[..len], deadline).await?;
+                    #[cfg(unix)]
+                    let read = received.0;
+                    #[cfg(not(unix))]
+                    let read = received;
+                    if read == 0 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "partial oversized D-Bus frame",
+                        )
+                        .into());
+                    }
+                    // Any SCM_RIGHTS values from a rejected frame are closed at the
+                    // end of this iteration. Accepted frames retain the 16-FD cap.
+                    remaining -= read;
+                    chunks += 1;
+                    if chunks % 16 == 0 {
+                        futures_lite::future::yield_now().await;
+                    }
+                }
+                #[cfg(feature = "async-io")]
+                async_io::Timer::after(Duration::from_millis(5)).await;
+                continue 'next_message;
+            }
+
+            // By this point we have a full primary header, so we know the exact length of the complete
+            // message.
             if !already_received_bytes.is_empty() {
-                mem::swap(already_received_bytes, &mut bytes);
+                // still have some bytes buffered.
+                let pending = total_len - bytes.len();
+                let to_take = std::cmp::min(pending, already_received_bytes.len());
+                bytes.extend(already_received_bytes.drain(..to_take));
             }
             let mut pos = bytes.len();
-            bytes.resize(MIN_MESSAGE_SIZE, 0);
-            // We don't have enough data to make a proper message header yet.
-            // Some partial read may be in raw_in_buffer, so we try to complete it
-            // until we have MIN_MESSAGE_SIZE bytes
-            //
-            // Given that MIN_MESSAGE_SIZE is 16, this codepath is actually extremely unlikely
-            // to be taken more than once
-            while pos < MIN_MESSAGE_SIZE {
-                let res = self.recvmsg(&mut bytes[pos..]).await?;
-                let len = {
+            bytes.resize(total_len, 0);
+            let deadline = Instant::now() + FRAME_READ_TIMEOUT;
+
+            // Read the rest, if any
+            while pos < total_len {
+                let res = recvmsg_until(self, &mut bytes[pos..], deadline).await?;
+                let read = {
                     #[cfg(unix)]
                     {
                         if fds.len().saturating_add(res.1.len()) > crate::utils::FDS_MAX {
@@ -132,114 +272,59 @@ pub trait ReadHalf: std::fmt::Debug + Send + Sync + 'static {
                         res
                     }
                 };
-                pos += len;
-                if len == 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "failed to receive message",
-                    )
-                    .into());
+                pos += read;
+                if read == 0 {
+                    return Err(crate::Error::InputOutput(
+                        std::io::Error::new(
+                            std::io::ErrorKind::UnexpectedEof,
+                            "failed to receive message",
+                        )
+                        .into(),
+                    ));
                 }
             }
 
-            bytes
-        } else {
-            already_received_bytes.drain(..MIN_MESSAGE_SIZE).collect()
-        };
+            // If we reach here, the message is complete; return it
+            let endian = Endian::from(primary_header.endian_sig());
 
-        let (primary_header, fields_len) = PrimaryHeader::read(&bytes)?;
-        let header_len = MIN_MESSAGE_SIZE
-            .checked_add(fields_len as usize)
-            .ok_or(crate::Error::ExcessData)?;
-        let body_padding = padding_for_8_bytes(header_len);
-        let body_len = primary_header.body_len() as usize;
-        let total_len = header_len
-            .checked_add(body_padding)
-            .and_then(|n| n.checked_add(body_len))
-            .ok_or(crate::Error::ExcessData)?;
-        if total_len > max_message_size.min(MAX_MESSAGE_SIZE) {
-            return Err(crate::Error::ExcessData);
-        }
-
-        // By this point we have a full primary header, so we know the exact length of the complete
-        // message.
-        if !already_received_bytes.is_empty() {
-            // still have some bytes buffered.
-            let pending = total_len - bytes.len();
-            let to_take = std::cmp::min(pending, already_received_bytes.len());
-            bytes.extend(already_received_bytes.drain(..to_take));
-        }
-        let mut pos = bytes.len();
-        bytes.resize(total_len, 0);
-
-        // Read the rest, if any
-        while pos < total_len {
-            let res = self.recvmsg(&mut bytes[pos..]).await?;
-            let read = {
-                #[cfg(unix)]
-                {
-                    if fds.len().saturating_add(res.1.len()) > crate::utils::FDS_MAX {
-                        return Err(crate::Error::ExcessData);
-                    }
-                    fds.extend(res.1);
-                    res.0
-                }
-                #[cfg(not(unix))]
-                {
-                    res
-                }
-            };
-            pos += read;
-            if read == 0 {
-                return Err(crate::Error::InputOutput(
-                    std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "failed to receive message",
-                    )
-                    .into(),
-                ));
+            #[cfg(unix)]
+            if already_received_fds.len().saturating_add(fds.len()) > crate::utils::FDS_MAX {
+                return Err(crate::Error::ExcessData);
             }
-        }
 
-        // If we reach here, the message is complete; return it
-        let endian = Endian::from(primary_header.endian_sig());
+            #[cfg(unix)]
+            if !already_received_fds.is_empty() {
+                use crate::message::header::PRIMARY_HEADER_SIZE;
 
-        #[cfg(unix)]
-        if already_received_fds.len().saturating_add(fds.len()) > crate::utils::FDS_MAX {
-            return Err(crate::Error::ExcessData);
-        }
-
-        #[cfg(unix)]
-        if !already_received_fds.is_empty() {
-            use crate::message::header::PRIMARY_HEADER_SIZE;
-
-            let ctxt = Context::new_dbus(endian, PRIMARY_HEADER_SIZE);
-            let encoded_fields =
-                serialized::Data::new(&bytes[PRIMARY_HEADER_SIZE..header_len], ctxt);
-            let fields: crate::message::Fields<'_> = encoded_fields.deserialize()?.0;
-            let num_required_fds = match fields.unix_fds {
-                Some(num_fds) => num_fds as usize,
-                _ => 0,
-            };
-            let num_pending = num_required_fds
-                .checked_sub(fds.len())
-                .ok_or_else(|| crate::Error::ExcessData)?;
-            // If we had previously received FDs, `num_pending` has to be > 0
-            if num_pending == 0 {
-                return Err(crate::Error::MissingParameter("Missing file descriptors"));
+                let ctxt = Context::new_dbus(endian, PRIMARY_HEADER_SIZE);
+                let encoded_fields =
+                    serialized::Data::new(&bytes[PRIMARY_HEADER_SIZE..header_len], ctxt);
+                let fields: crate::message::Fields<'_> = encoded_fields.deserialize()?.0;
+                let num_required_fds = match fields.unix_fds {
+                    Some(num_fds) => num_fds as usize,
+                    _ => 0,
+                };
+                let num_pending = num_required_fds
+                    .checked_sub(fds.len())
+                    .ok_or_else(|| crate::Error::ExcessData)?;
+                // If we had previously received FDs, `num_pending` has to be > 0
+                if num_pending == 0 {
+                    return Err(crate::Error::MissingParameter("Missing file descriptors"));
+                }
+                // All previously received FDs must go first in the list.
+                let mut already_received: Vec<_> =
+                    already_received_fds.drain(..num_pending).collect();
+                mem::swap(&mut already_received, &mut fds);
+                fds.extend(already_received);
             }
-            // All previously received FDs must go first in the list.
-            let mut already_received: Vec<_> = already_received_fds.drain(..num_pending).collect();
-            mem::swap(&mut already_received, &mut fds);
-            fds.extend(already_received);
-        }
 
-        let ctxt = Context::new_dbus(endian, 0);
-        #[cfg(unix)]
-        let bytes = serialized::Data::new_fds(bytes, ctxt, fds);
-        #[cfg(not(unix))]
-        let bytes = serialized::Data::new(bytes, ctxt);
-        Message::from_raw_parts(bytes, seq)
+            let ctxt = Context::new_dbus(endian, 0);
+            #[cfg(unix)]
+            let bytes = serialized::Data::new_fds(bytes, ctxt, fds);
+            #[cfg(not(unix))]
+            let bytes = serialized::Data::new(bytes, ctxt);
+            return Message::from_raw_parts(bytes, seq);
+        }
     }
 
     /// Attempt to receive bytes from the socket.
