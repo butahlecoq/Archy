@@ -24,3 +24,6 @@ rand_chacha = "=0.10.0"
 rand_core = "=0.10.0"
 rmcp = { version = "=3.8.0", default-features = false, features = ["server", "macros", "transport-io"] }
 tokio = { version = "=1.54.1", default-features = false, features = ["rt", "io-std", "io-util", "sync", "time", "macros"] }
+
+[patch.crates-io]
+zbus = { path = "authority/vendor/zbus-5.19.0" }

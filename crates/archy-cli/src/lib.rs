@@ -30,7 +30,7 @@ pub use desktop_status::{
 pub use evaluate::evaluate;
 pub use generate::generate;
 pub use project_read::{BoundProjectRead, BoundReadSnapshot};
-pub use run_integrity::{TrustedRun, verify_run};
+pub use run_integrity::{TrustedRun, verify_history, verify_run};
 
 use archy_core::project::v2;
 use archy_core::{
