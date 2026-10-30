@@ -57,10 +57,16 @@ def start():
     server = subprocess.Popen([str(BINARY), 'serve', str(STATE), str(SOCKET)],
                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     for _ in range(100):
-        if SOCKET.exists():
-            return server
         if server.poll() is not None:
             raise AssertionError(server.stderr.read().decode())
+        if SOCKET.exists():
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+                    probe.settimeout(.1)
+                    probe.connect(str(SOCKET))
+                    return server
+            except (ConnectionRefusedError, FileNotFoundError, socket.timeout):
+                pass
         time.sleep(.02)
     raise AssertionError('socket did not appear')
 
@@ -68,6 +74,18 @@ def start():
 def stop(server):
     server.send_signal(signal.SIGKILL)
     server.wait(timeout=5)
+
+
+def refused_restart(reason):
+    result = subprocess.run([str(BINARY), 'serve', str(STATE), str(SOCKET)],
+                            capture_output=True, timeout=5)
+    assert result.returncode != 0 and reason.encode() in result.stderr, result.stderr
+
+
+def sync_state():
+    fd = os.open(STATE, os.O_RDONLY | os.O_DIRECTORY)
+    os.fsync(fd)
+    os.close(fd)
 
 
 def main():
@@ -162,6 +180,23 @@ def main():
     assert request(BROKER, 'S') == 'STALE 0 1'
     assert request(BROKER, 'E') == 'EXTENDED 1'
     assert request(BROKER, 'E') == 'EXACT 1'
+    stop(server)
+    head = STATE / 'head'
+    pending = STATE / '.head-pending'
+    head_one = head.read_bytes()
+    head.write_bytes(b'00000000000000000000\n')
+    sync_state()
+    first_bytes = first.read_bytes()
+    first.unlink()
+    refused_restart('witness state ahead of journal')
+    first.write_bytes(first_bytes)
+    os.chown(first, BROKER, BROKER)
+    first.chmod(0o600)
+    server = start()
+    assert head.read_bytes() == head_one and request(BROKER, 'S') == 'EXACT 1'
+    stop(server)
+    server = start()
+    assert request(BROKER, 'S') == 'EXACT 1'  # Repeated recovery is idempotent.
     first_bytes = first.read_bytes()
     first.unlink()
     removed_status = request(BROKER, 'S')
@@ -181,6 +216,40 @@ def main():
     second, _ = synced_record(2, digest, 'second', 'candidate-three')
     assert request(BROKER, 'E') == 'EXTENDED 2'
     stop(server)
+    head_two = head.read_bytes()
+    head.write_bytes(head_one)
+    pending.write_bytes(head_two)
+    pending.chmod(0o600)
+    sync_state()
+    state_two = STATE / 'state-00000000000000000002'
+    state_two_bytes = state_two.read_bytes()
+    state_two.write_bytes(b'0' * 64 + b'\n')
+    refused_restart('witness state history diverged')
+    state_two.write_bytes(state_two_bytes)
+    extra = STATE / 'unexpected'
+    extra.write_bytes(b'')
+    refused_restart('unknown witness entry')
+    extra.unlink()
+    pending.write_bytes(head_one)
+    refused_restart('invalid pending witness head')
+    pending.write_bytes(head_two)
+    second_bytes = second.read_bytes()
+    second.unlink()
+    refused_restart('witness state ahead of journal')
+    second.write_bytes(second_bytes)
+    os.chown(second, BROKER, BROKER)
+    second.chmod(0o600)
+    source_bytes = PROJECT.read_bytes()
+    PROJECT.write_bytes(source_bytes + b' ')
+    refused_restart('bound project source changed')
+    PROJECT.write_bytes(source_bytes)
+    server = start()
+    assert not pending.exists() and head.read_bytes() == head_two
+    assert request(BROKER, 'S') == 'EXACT 2'
+    stop(server)
+    head.write_bytes(b'00000000000000000000\n')
+    refused_restart('witness head and state files disagree')
+    head.write_bytes(head_two)
     server = start()
     assert request(BROKER, 'S') == 'EXACT 2'
     last_state = STATE / 'state-00000000000000000002'
@@ -218,7 +287,7 @@ def main():
     stop(server)
     print('PASS: separate UIDs, root parent, ancestor/lock/symlink, bind=' +
           ('tested' if bind.returncode == 0 else 'unavailable') +
-          ', unextended tail, rollback/replacement, restart, project inode/source, corrupt/missing state, unauthorized peer/write')
+          ', unextended tail, rollback/replacement, simulated crash-state recovery, stale/corrupt/extra rejection, restart, project inode/source, corrupt/missing state, unauthorized peer/write')
 
 
 if __name__ == '__main__':

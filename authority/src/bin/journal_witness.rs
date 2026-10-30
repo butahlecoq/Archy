@@ -176,25 +176,49 @@ fn read_binding(dir_path: &Path) -> io::Result<Binding> {
     Ok(binding)
 }
 
-fn read_state(dir_path: &Path, binding: &Binding) -> io::Result<(usize, [u8; 32])> {
-    let head_path = dir_path.join("head");
-    let head_meta = fs::symlink_metadata(&head_path)?;
-    if !head_meta.is_file()
-        || head_meta.uid() != 0
-        || head_meta.mode() & 0o7777 != 0o600
-        || head_meta.nlink() != 1
-        || head_meta.len() != 21
+struct StateFiles {
+    head: usize,
+    hashes: Vec<[u8; 32]>,
+    pending: bool,
+}
+
+fn checked_head(path: &Path) -> io::Result<usize> {
+    let meta = fs::symlink_metadata(path)?;
+    if !meta.is_file()
+        || meta.uid() != 0
+        || meta.mode() & 0o7777 != 0o600
+        || meta.nlink() != 1
+        || meta.len() != 21
     {
         return Err(denied("invalid witness head"));
     }
-    let head = fs::read(head_path)?;
+    let bytes = fs::read(path)?;
+    if bytes.len() != 21 || bytes[20] != b'\n' || !bytes[..20].iter().all(u8::is_ascii_digit) {
+        return Err(denied("invalid witness head"));
+    }
+    let seq = std::str::from_utf8(&bytes[..20])
+        .map_err(|_| denied("invalid witness head"))?
+        .parse::<usize>()
+        .map_err(|_| denied("invalid witness head"))?;
+    if bytes != format!("{seq:020}\n").as_bytes() {
+        return Err(denied("invalid witness head"));
+    }
+    Ok(seq)
+}
+
+fn scan_state(dir_path: &Path, binding: &Binding) -> io::Result<StateFiles> {
+    let head_path = dir_path.join("head");
+    let head = checked_head(&head_path)?;
     let mut names = Vec::new();
+    let mut pending = false;
     for entry in fs::read_dir(dir_path)? {
         let name = entry?
             .file_name()
             .into_string()
             .map_err(|_| denied("invalid witness entry"))?;
-        if name != "binding.json" && name != "head" {
+        if name == ".head-pending" {
+            pending = true;
+        } else if name != "binding.json" && name != "head" {
             if !name.starts_with("state-") || name.len() != 26 {
                 return Err(denied("unknown witness entry"));
             }
@@ -205,15 +229,12 @@ fn read_state(dir_path: &Path, binding: &Binding) -> io::Result<(usize, [u8; 32]
     if names.is_empty() || names.len() > 1025 {
         return Err(denied("missing or oversized witness state"));
     }
-    if head != format!("{:020}\n", names.len() - 1).as_bytes() {
-        return Err(denied("witness head and state files disagree"));
-    }
     let binding_bytes = serde_json::to_vec(binding).map_err(io::Error::other)?;
     let mut seed = Sha256::new();
     seed.update(DOMAIN);
     seed.update(&binding_bytes);
     let genesis: [u8; 32] = seed.finalize().into();
-    let mut latest = genesis;
+    let mut hashes = Vec::with_capacity(names.len());
     for (seq, name) in names.iter().enumerate() {
         if *name != state_name(seq) {
             return Err(denied("witness state gap"));
@@ -232,14 +253,81 @@ fn read_state(dir_path: &Path, binding: &Binding) -> io::Result<(usize, [u8; 32]
         if bytes.len() != 65 || bytes[64] != b'\n' {
             return Err(denied("invalid witness state bytes"));
         }
-        latest = hex_decode(
+        let latest = hex_decode(
             std::str::from_utf8(&bytes[..64]).map_err(|_| denied("invalid witness state bytes"))?,
         )?;
         if seq == 0 && latest != genesis {
             return Err(denied("witness genesis changed"));
         }
+        hashes.push(latest);
     }
-    Ok((names.len() - 1, latest))
+    if pending && checked_head(&dir_path.join(".head-pending"))? != names.len() - 1 {
+        return Err(denied("invalid pending witness head"));
+    }
+    Ok(StateFiles {
+        head,
+        hashes,
+        pending,
+    })
+}
+
+fn read_state(dir_path: &Path, binding: &Binding) -> io::Result<(usize, [u8; 32])> {
+    let state = scan_state(dir_path, binding)?;
+    if state.pending || state.head != state.hashes.len() - 1 {
+        return Err(denied("witness head and state files disagree"));
+    }
+    Ok((state.head, state.hashes[state.head]))
+}
+
+fn recover_state(dir_path: &Path, dir: &File, binding: &Binding) -> io::Result<()> {
+    // Startup may see one durable state ahead of head, with or without the
+    // pending head. Settle only that write sequence under both existing locks.
+    dir.sync_all()?;
+    check_root_path(
+        binding
+            .journal_path
+            .parent()
+            .ok_or_else(|| denied("missing journal parent"))?,
+    )?;
+    binding_check(binding)?;
+    let store = ProjectStore::open(&binding.project_path).map_err(io::Error::other)?;
+    let _project_lock = store.lock().map_err(io::Error::other)?;
+    binding_check(binding)?;
+    let journal = Journal::open(&binding.journal_path, binding.broker_uid)?;
+    journal.with_locked_hashes(|records| {
+        binding_check(binding)?;
+        let state = scan_state(dir_path, binding)?;
+        let last = state.hashes.len() - 1;
+        if state.head != last && state.head.checked_add(1) != Some(last) {
+            return Err(denied("witness head and state files disagree"));
+        }
+        if state.pending && state.head == last {
+            return Err(denied("unexpected pending witness head"));
+        }
+        if records.len() < last {
+            return Err(denied("witness state ahead of journal"));
+        }
+        for (seq, (_, record_hash)) in records.iter().take(last).enumerate() {
+            if extend(state.hashes[seq], record_hash)? != state.hashes[seq + 1] {
+                return Err(denied("witness state history diverged"));
+            }
+        }
+        binding_check(binding)?;
+        if state.head != last {
+            if state.pending {
+                fs::rename(dir_path.join(".head-pending"), dir_path.join("head"))?;
+                dir.sync_all()?;
+            } else {
+                write_head(dir, dir_path, last)?;
+            }
+        }
+        let (seq, hash) = read_state(dir_path, binding)?;
+        if seq != last || hash != state.hashes[last] {
+            return Err(denied("uncertain witness recovery"));
+        }
+        binding_check(binding)?;
+        Ok(())
+    })
 }
 
 fn initialize(
@@ -396,7 +484,7 @@ fn serve(dir_path: &Path, socket_path: &Path) -> io::Result<()> {
     let dir = check_state_dir(dir_path)?;
     lock(&dir)?;
     let binding = read_binding(dir_path)?;
-    read_state(dir_path, &binding)?;
+    recover_state(dir_path, &dir, &binding)?;
     check_root_path(
         socket_path
             .parent()
