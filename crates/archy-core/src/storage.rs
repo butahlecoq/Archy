@@ -341,6 +341,21 @@ impl AcceptedHistory<'_> {
     pub fn receipts(&self) -> impl DoubleEndedIterator<Item = &RunReceipt> {
         self.records.iter().map(|r| &r.receipt)
     }
+    pub fn previous_head_for_run(&self, run_id: &str) -> Option<&str> {
+        self.records
+            .iter()
+            .find(|r| r.receipt.run_id == run_id)?
+            .previous_sha256
+            .as_deref()
+    }
+    pub fn revision_for_run(&self, run_id: &str) -> Option<u64> {
+        Some(
+            self.records
+                .iter()
+                .find(|r| r.receipt.run_id == run_id)?
+                .revision,
+        )
+    }
     pub fn read_run(&self, run_id: &str) -> Result<VerifiedRun, ArchyError> {
         let record = self
             .records

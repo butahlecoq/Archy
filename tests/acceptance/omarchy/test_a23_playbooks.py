@@ -83,7 +83,7 @@ class PlaybookContracts(unittest.TestCase):
             if name in mutations:
                 self.assertTrue({"destination", "idempotency_key", "expected_project_revision"} <= set(schema["required"]))
         server = (ROOT / "crates/archy-mcp/src/server.rs").read_text()
-        self.assertIn('"propose_approval" => self.unavailable', server)
+        self.assertIn('"propose_approval" => self.propose_approval', server)
         self.assertIn('"export_ifc" => self.export_ifc', server)
         export = json.loads((ROOT / "schemas/mcp/export_ifc.schema.json").read_text())
         self.assertTrue({"project_id", "source_run", "variant_id", "idempotency_key",
@@ -103,7 +103,8 @@ class PlaybookContracts(unittest.TestCase):
                 self.assertIn(term, text)
             self.assertIn("fixed service gate and independent verifier", text.lower())
             self.assertIn("does not grant human approval", text)
-            self.assertIn("`propose_approval` remains unavailable", text)
+            self.assertIn("`propose_approval` records an untrusted proposal", text)
+            self.assertIn("does not grant human approval", text)
             self.assertIn("same key and request", text)
             self.assertNotIn("`export_ifc` and `propose_approval` remain unavailable", text)
 

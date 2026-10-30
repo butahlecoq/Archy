@@ -220,6 +220,15 @@ impl BoundProjectRead {
             )
         })
     }
+    pub fn propose(
+        &self,
+        source_run: String,
+        variant_id: String,
+        reason: String,
+        mutation: MutationOptions,
+    ) -> Result<crate::ProposalReceipt, ArchyError> {
+        crate::proposal::propose(self, source_run, variant_id, reason, mutation)
+    }
     #[cfg(target_os = "linux")]
     pub fn render(
         &self,
