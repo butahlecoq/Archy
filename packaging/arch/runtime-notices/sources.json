@@ -1,0 +1,22 @@
+{
+  "bubblewrap-COPYING": {
+    "url": "https://raw.githubusercontent.com/containers/bubblewrap/v0.13.1/COPYING",
+    "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
+  },
+  "ifcopenshell-COPYING": {
+    "url": "https://raw.githubusercontent.com/IfcOpenShell/IfcOpenShell/2744f8426bdef98a486406628a121298a5479690/COPYING",
+    "sha256": "1b3782ccad7b8614100cda30d3faf42fc39f2e97932908c543005053b654ca68"
+  },
+  "ifcopenshell-COPYING.LESSER": {
+    "url": "https://raw.githubusercontent.com/IfcOpenShell/IfcOpenShell/2744f8426bdef98a486406628a121298a5479690/COPYING.LESSER",
+    "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+  },
+  "ifc-mvd-LICENSE": {
+    "url": "https://raw.githubusercontent.com/opensourceBIM/python-mvdxml/83c12fa494b9d6a5a370d8525dc1f76aa5c89d8d/LICENSE",
+    "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+  },
+  "ifc-simple-spf-LICENSE": {
+    "url": "https://raw.githubusercontent.com/IfcOpenShell/step-file-parser/9400d243d880dace57490949d74ab1932ce99a09/LICENSE",
+    "sha256": "102900208eef27b766380135906d431dba87edaa7ec6aa72e6ebd3dd67f3a97b"
+  }
+}
