@@ -342,9 +342,12 @@ fn export_with_reader(
     };
     let outputs = match runner(&request) {
         Ok(outputs) => outputs,
-        Err(error) => {
+        Err(mut error) => {
             pending.discard_empty()?;
-            return Err(error);
+            if error.code == archy_core::ErrorCode::BackendTimeout {
+                error.retriable = true;
+            }
+            return Err(retry_identity(error, &retry_context));
         }
     };
     reader.check_binding()?;
@@ -518,6 +521,99 @@ mod tests {
     use crate::{GenerateInput, GenerationMode, generate};
     use archy_core::ProjectStore;
     use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+
+    #[test]
+    fn cancelled_ifc_worker_returns_generated_retry_identity_without_publication() {
+        let root = std::env::temp_dir().join(format!("archy-ifc-cancel-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let source = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let accepted_manifest = fs::read(root.join(&source.path).join("manifest.json")).unwrap();
+        let accepted_input = fs::read(root.join(&source.path).join("input.json")).unwrap();
+        let revision_path = root.join(format!(".archy/revisions/{:020}.json", source.revision));
+        let accepted_revision = fs::read(&revision_path).unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(source.run_id.clone()),
+            variant_id: source.variant_ids[0].clone(),
+            mutation: MutationOptions::default(),
+        };
+        let cancelled = |_: &IfcRequest| {
+            Err(ArchyError::new(
+                archy_core::ErrorCode::BackendTimeout,
+                "service",
+                "worker cancelled",
+            ))
+        };
+        let error = export_with(input.clone(), &cancelled).unwrap_err();
+        assert_eq!(error.code, archy_core::ErrorCode::BackendTimeout);
+        assert!(error.retriable, "{error:?}");
+        let key = error
+            .message
+            .split("idempotency_key=")
+            .nth(1)
+            .and_then(|tail| tail.split_whitespace().next())
+            .expect("cancelled operation must return its generated key");
+        assert!(uuid::Uuid::parse_str(key).is_ok());
+        assert!(
+            error
+                .message
+                .contains(&format!("expected_project_revision={}", source.revision))
+        );
+        assert_eq!(
+            fs::read(root.join(&source.path).join("manifest.json")).unwrap(),
+            accepted_manifest
+        );
+        assert_eq!(
+            fs::read(root.join(&source.path).join("input.json")).unwrap(),
+            accepted_input
+        );
+        assert_eq!(fs::read(&revision_path).unwrap(), accepted_revision);
+        assert_eq!(
+            fs::read_dir(root.join(".archy/staging")).unwrap().count(),
+            0
+        );
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .revision()
+                .unwrap(),
+            source.revision
+        );
+
+        let mut retry = input;
+        retry.mutation.idempotency_key = Some(key.into());
+        retry.mutation.expected_project_revision = Some(source.revision);
+        let retried = export_with(retry, &cancelled).unwrap_err();
+        assert_eq!(retried.code, archy_core::ErrorCode::BackendTimeout);
+        assert!(retried.message.contains(&format!("idempotency_key={key}")));
+        assert_eq!(
+            fs::read_dir(root.join(".archy/staging")).unwrap().count(),
+            0
+        );
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .revision()
+                .unwrap(),
+            source.revision
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn implicit_export_retry_keeps_source_after_later_generation() {
