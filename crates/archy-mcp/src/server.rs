@@ -67,11 +67,7 @@ impl ArchyServer {
             "evaluate_variant" => self.evaluate_variant(parse(args)?),
             "render_variant" => self.render_variant(parse(args)?),
             "compare_variants" => self.compare_variants(parse(args)?),
-            "export_ifc" => self.unavailable::<ExportIfcArgs>(
-                args,
-                name,
-                "Verified IFC export service is unavailable",
-            ),
+            "export_ifc" => self.export_ifc(parse(args)?),
             "propose_approval" => self.unavailable::<ProposeApprovalArgs>(
                 args,
                 name,
@@ -164,6 +160,37 @@ impl ArchyServer {
                 .project
                 .render(args.source_run, args.variant_id, options)?;
             Ok(RenderData::from_receipt(args.project_id, receipt))
+        })())
+    }
+    fn export_ifc(&self, args: ExportIfcArgs) -> CallToolResult {
+        result_tool((|| {
+            self.ensure_id(&args.project_id)?;
+            if !valid_run_uuid(&args.source_run) {
+                return Err(ArchyError::schema("source_run", "Expected a run UUID"));
+            }
+            let options = mutation_options(
+                args.idempotency_key,
+                args.expected_project_revision,
+                args.destination,
+            )?;
+            let _guard = self.mutations.lock().map_err(|_| {
+                ArchyError::new(
+                    ErrorCode::InternalError,
+                    "mutation",
+                    "Transaction gate is unavailable",
+                )
+            })?;
+            let receipt = self.project.export_ifc(
+                args.source_run.clone(),
+                args.variant_id.clone(),
+                options,
+            )?;
+            Ok(ExportIfcData::from_receipt(
+                args.project_id,
+                args.source_run,
+                args.variant_id,
+                receipt,
+            ))
         })())
     }
     fn get_project(&self, args: GetProjectArgs) -> CallToolResult {

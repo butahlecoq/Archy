@@ -106,15 +106,47 @@
         ],
         "type": "string"
       },
-      "PrerequisiteData": {
+      "ExportIfcData": {
         "additionalProperties": false,
         "properties": {
-          "status": {
+          "approval_state": {
+            "type": "string"
+          },
+          "manifest_sha256": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "source_run_id": {
+            "type": "string"
+          },
+          "variant_id": {
             "type": "string"
           }
         },
         "required": [
-          "status"
+          "project_id",
+          "run_id",
+          "revision",
+          "path",
+          "manifest_sha256",
+          "source_run_id",
+          "variant_id",
+          "scope",
+          "approval_state"
         ],
         "type": "object"
       }
@@ -125,7 +157,7 @@
         "additionalProperties": false,
         "properties": {
           "data": {
-            "$ref": "#/$defs/PrerequisiteData"
+            "$ref": "#/$defs/ExportIfcData"
           },
           "error": {
             "type": "null"
