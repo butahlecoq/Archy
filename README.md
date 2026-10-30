@@ -1,6 +1,6 @@
 # Archy
 
-Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate` and `compare` commands. Blender and IFC workers exist as separate components, but no production supervised `render` or `export-ifc` CLI command is available yet. The one-command demo stops at that boundary and A18 remains open.
+Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate`, `compare`, `render` and `export-ifc` commands. The latter two invoke supervised Blender and IFC workers and publish run artifacts. The one-command demo still stops after comparison and A18 remains open.
 
 The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 
@@ -16,7 +16,7 @@ cargo build --locked -p archy-cli
 python3 scripts/demo.py --archy "$CARGO_TARGET_DIR/debug/archy"
 ```
 
-The script prints and retains its fresh project path. To choose the location, add `--project-dir /path/to/absent-directory`; existing paths are refused. It runs real `init`, `validate`, seeded `generate`, `evaluate --all`, and `compare` JSON/Markdown. Accepted runs stay under `runs/`; comparison copies are `comparison.json` and `comparison.md`. It exits **2** after comparison, with the project intact: this CLI lacks `render`, and the driver has no reviewed backend receipt or artifact contract. `--export-variant ID` records selection intent but does not export. This script never records human approval. See [CLI and demo limits](docs/cli.md) and [A18 integration evidence](docs/plans/a18-demo-integration-handoff.md).
+The script prints and retains its fresh project path. To choose the location, add `--project-dir /path/to/absent-directory`; existing paths are refused. It runs real `init`, `validate`, seeded `generate`, `evaluate --all`, and `compare` JSON/Markdown. Accepted runs stay under `runs/`; comparison copies are `comparison.json` and `comparison.md`. It exits **2** after comparison, with the project intact: the driver does not invoke the wired `render` or `export-ifc` commands, and its stop message still describes their CLI contract as unavailable. `--export-variant ID` records selection intent but does not export. This script never records human approval. See [CLI and demo limits](docs/cli.md) and [A18 integration evidence](docs/plans/a18-demo-integration-handoff.md).
 
 Install pinned Rust 1.99.1 with rustfmt/clippy, then:
 

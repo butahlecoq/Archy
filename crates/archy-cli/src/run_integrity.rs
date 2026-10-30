@@ -40,6 +40,7 @@ pub struct TrustedRun {
     manifest: RunManifest,
     spec: NormalizedSpec,
     canonical: Option<v2::NormalizedSpec>,
+    source_schema_version: Option<&'static str>,
     input: Vec<u8>,
     variants: Vec<Variant>,
     evaluations: Vec<EvaluationReport>,
@@ -55,6 +56,9 @@ impl TrustedRun {
     }
     pub fn canonical(&self) -> Option<&v2::NormalizedSpec> {
         self.canonical.as_ref()
+    }
+    pub fn source_schema_version(&self) -> Option<&'static str> {
+        self.source_schema_version
     }
     pub fn input(&self) -> &[u8] {
         &self.input
@@ -266,6 +270,9 @@ fn verify_one(
     } else if stored.artifact("profile.json").is_some() {
         return Err(artifact_invalid("historical v1 run has a current profile"));
     }
+    if manifest.operation == "export-ifc" {
+        return verify_export_run(&stored, manifest, spec, canonical, input, parent);
+    }
     let supported = match manifest.operation.as_str() {
         "generate" => matches!(
             manifest.algorithm_version.as_str(),
@@ -318,9 +325,9 @@ fn verify_one(
     if manifest.operation == "render" {
         return verify_render_run(
             stored,
-            manifest,
             spec,
             canonical,
+            source_schema_version,
             input,
             parent.expect("checked parent"),
             history
@@ -547,6 +554,7 @@ fn verify_one(
         manifest,
         spec,
         canonical,
+        source_schema_version,
         input,
         variants,
         evaluations,
@@ -558,14 +566,15 @@ fn verify_one(
 #[cfg(target_os = "linux")]
 fn verify_render_run(
     stored: archy_core::VerifiedRun,
-    manifest: RunManifest,
     spec: NormalizedSpec,
     canonical: Option<v2::NormalizedSpec>,
+    source_schema_version: Option<&'static str>,
     input: Vec<u8>,
     parent: &TrustedRun,
     receipt_path: &str,
 ) -> Result<TrustedRun, ArchyError> {
     use crate::render::{RENDER_VERSION, RenderRecord, RenderResult};
+    let manifest = stored.manifest().clone();
     if manifest.seed.is_some()
         || manifest.count.is_some()
         || manifest.parent_variant_id.is_some()
@@ -836,10 +845,182 @@ fn verify_render_run(
         manifest,
         spec,
         canonical,
+        source_schema_version,
         input,
         variants,
         evaluations,
         exhaustion: Vec::new(),
         render_record: Some(record),
+    })
+}
+
+fn verify_export_run(
+    stored: &archy_core::VerifiedRun,
+    manifest: RunManifest,
+    spec: NormalizedSpec,
+    canonical: Option<v2::NormalizedSpec>,
+    input: Vec<u8>,
+    parent: Option<&TrustedRun>,
+) -> Result<TrustedRun, ArchyError> {
+    let prior = parent.ok_or_else(|| artifact_invalid("missing verified IFC source"))?;
+    if canonical != prior.canonical
+        || manifest.source_format != prior.manifest.source_format
+        || !matches!(prior.manifest.operation.as_str(), "generate" | "edit")
+        || manifest.parent_run_id.as_deref() != Some(&prior.manifest.run_id)
+        || prior.input != input
+        || prior.spec != spec
+        || manifest.algorithm_version != crate::DESIGN_MANIFEST_VERSION
+        || manifest.seed.is_some()
+        || manifest.count.is_some()
+    {
+        return Err(artifact_invalid("invalid IFC source binding"));
+    }
+    let variant_id = manifest
+        .parent_variant_id
+        .as_deref()
+        .ok_or_else(|| artifact_invalid("missing IFC variant"))?;
+    let variant = prior
+        .variants
+        .iter()
+        .find(|v| v.id == variant_id)
+        .ok_or_else(|| artifact_invalid("IFC variant absent from source"))?;
+    let evaluation = if canonical.is_some() {
+        evaluate_variant_v2(&spec, variant)?
+    } else {
+        archy_eval::evaluate_variant(&spec, variant)?
+    };
+    let variant_path = format!("variants/{variant_id}.json");
+    let evaluation_path = format!("evaluations/{variant_id}.json");
+    let variant_bytes = serde_json::to_vec(variant).map_err(|e| artifact_invalid(e.to_string()))?;
+    let evaluation_bytes =
+        serde_json::to_vec(&evaluation).map_err(|e| artifact_invalid(e.to_string()))?;
+    if stored.artifact(&variant_path) != Some(variant_bytes.as_slice())
+        || stored.artifact(&evaluation_path) != Some(evaluation_bytes.as_slice())
+        || manifest.outcomes.len() != 1
+        || manifest.outcomes[0].variant_id != variant_id
+        || manifest.outcomes[0].variant_artifact.as_deref() != Some(&variant_path)
+        || manifest.outcomes[0].evaluation_artifact.as_deref() != Some(&evaluation_path)
+        || manifest.outcomes[0].error_artifact.is_some()
+    {
+        return Err(artifact_invalid("IFC variant or checks differ from source"));
+    }
+    let design_bytes = stored
+        .artifact("design-manifest.json")
+        .ok_or_else(|| artifact_invalid("missing design manifest"))?;
+    let design: crate::DesignManifest = serde_json::from_slice(design_bytes)
+        .map_err(|e| artifact_invalid(format!("invalid design manifest: {e}")))?;
+    let model = stored
+        .artifact("ifc/model.ifc")
+        .ok_or_else(|| artifact_invalid("missing IFC model"))?;
+    let validation = stored
+        .artifact("ifc/validation.json")
+        .ok_or_else(|| artifact_invalid("missing IFC validation"))?;
+    let response = stored
+        .artifact("ifc/response.json")
+        .ok_or_else(|| artifact_invalid("missing IFC response"))?;
+    let response_json: serde_json::Value =
+        serde_json::from_slice(response).map_err(|e| artifact_invalid(e.to_string()))?;
+    let validation_json: serde_json::Value =
+        serde_json::from_slice(validation).map_err(|e| artifact_invalid(e.to_string()))?;
+    let request_id = response_json["request_id"]
+        .as_str()
+        .ok_or_else(|| artifact_invalid("missing worker request ID"))?;
+    let request = archy_adapters::IfcRequest::new(
+        &spec,
+        variant,
+        request_id,
+        &prior.manifest.run_id,
+        &sha256_hex(&input),
+        "output/ifc",
+        Vec::new(),
+    )?;
+    let decoded = archy_adapters::decode_ifc_response(response, &request)?;
+    let archy_adapters::IfcResponse::Ok(success) = decoded else {
+        return Err(artifact_invalid("IFC response is not successful"));
+    };
+    for (path, bytes) in [("model.ifc", model), ("validation.json", validation)] {
+        let claim = success
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.path == path)
+            .ok_or_else(|| artifact_invalid("missing IFC artifact claim"))?;
+        if claim.sha256 != sha256_hex(bytes) || claim.size_bytes != bytes.len() as u64 {
+            return Err(artifact_invalid(
+                "IFC artifact claim differs from stored bytes",
+            ));
+        }
+    }
+    if response_json["validation"] != validation_json
+        || design.schema_version != crate::DESIGN_MANIFEST_VERSION
+        || design.scope != "SCHEMATIC_MASSING_ONLY"
+        || design.approval_state != "DRAFT"
+        || design.limitations != crate::export_ifc::DESIGN_LIMITATIONS
+        || design.project_id != spec.project_id
+        || design.source_run_id != prior.manifest.run_id
+        || design.export_run_id != manifest.run_id
+        || design.variant_id != variant_id
+        || design.source_input_sha256 != sha256_hex(&input)
+        || design.source_normalized_sha256
+            != manifest.normalized_sha256.as_deref().unwrap_or_default()
+        || design.variant_sha256 != sha256_hex(&variant_bytes)
+        || design.evaluation_sha256 != sha256_hex(&evaluation_bytes)
+        || design.required_checks_passed != evaluation.required_checks_passed
+        || design.evaluation != evaluation
+        || design.worker_response_sha256 != sha256_hex(response)
+        || design.model_sha256 != sha256_hex(model)
+        || design.validation_sha256 != sha256_hex(validation)
+        || design.worker_version != response_json["worker_version"].as_str().unwrap_or_default()
+        || design.backend_version
+            != response_json["backend_version"]
+                .as_str()
+                .unwrap_or_default()
+        || design.python_version != response_json["python_version"].as_str().unwrap_or_default()
+    {
+        return Err(artifact_invalid(
+            "IFC design manifest differs from verified bytes",
+        ));
+    }
+    let expected: BTreeSet<String> = [
+        if manifest.source_format.as_deref() == Some("json") {
+            "input.json"
+        } else {
+            "input.yaml"
+        },
+        "normalized.json",
+        "design-manifest.json",
+        "ifc/model.ifc",
+        "ifc/validation.json",
+        "ifc/response.json",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .chain([variant_path, evaluation_path])
+    .collect();
+    let mut expected = expected;
+    if canonical.is_some() {
+        expected.insert("profile.json".into());
+    }
+    if stored.artifacts().keys().cloned().collect::<BTreeSet<_>>() != expected {
+        return Err(artifact_invalid("IFC artifact inventory differs"));
+    }
+    crate::ifc_verifier::verify(
+        model,
+        &input,
+        &spec,
+        canonical.as_ref(),
+        manifest.source_format.as_deref().unwrap_or_default(),
+        variant,
+        &prior.manifest.run_id,
+    )?;
+    Ok(TrustedRun {
+        manifest,
+        spec,
+        canonical,
+        source_schema_version: prior.source_schema_version,
+        input,
+        variants: vec![variant.clone()],
+        evaluations: vec![evaluation],
+        exhaustion: Vec::new(),
+        render_record: None,
     })
 }

@@ -2,12 +2,15 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const web = require('web-ifc');
+const { checkStepScope } = require('./step-scope.cjs');
 
 const COORDINATE_TOLERANCE_M = 1e-6;
 const MAX_IFC_BYTES = 8 * 1024 * 1024;
-const PACKAGE = path.join(__dirname, 'node_modules', 'web-ifc');
+const PACKAGE = path.dirname(require.resolve('web-ifc'));
 const NODE_JS_SHA256 = '592491e48f22ba5dd2f1d33a6485469bed63ac1b5f48547a80b146536556ff6f';
 const NODE_WASM_SHA256 = '36b10f4f9fada12bb89ed664f9e61eae1c82b2ce5f04ee4175205149516498f5';
+const GUID_NAMESPACE = Buffer.from('1dc7a2501d205e4bbc8db3d1c1b2f9b5', 'hex');
+const IFC_BASE64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
 
 function requireCondition(value, message) {
   if (!value) throw new Error(message);
@@ -40,6 +43,86 @@ function close(actual, expected, budget, message) {
 function sameSet(actual, expected, message) {
   requireCondition(actual.length === expected.length && new Set(actual).size === actual.length &&
     actual.every(value => expected.includes(value)), message);
+}
+
+// Metadata slots on every entity in the allowed STEP graph. Other scalar slots
+// (coordinates, quantities, IDs and source-bound names) are checked below.
+const NULL_METADATA = new Map([
+  [web.IFCPROJECT, ['OwnerHistory', 'Description', 'ObjectType', 'LongName', 'Phase']],
+  [web.IFCSITE, ['OwnerHistory', 'Description', 'ObjectType', 'Representation', 'LongName', 'CompositionType',
+    'RefLatitude', 'RefLongitude', 'RefElevation', 'LandTitleNumber', 'SiteAddress']],
+  [web.IFCBUILDING, ['OwnerHistory', 'Description', 'ObjectType', 'Representation', 'LongName', 'CompositionType',
+    'ElevationOfRefHeight', 'ElevationOfTerrain', 'BuildingAddress']],
+  [web.IFCBUILDINGSTOREY, ['OwnerHistory', 'Description', 'ObjectType', 'Representation', 'LongName', 'CompositionType']],
+  [web.IFCBUILDINGELEMENTPROXY, ['OwnerHistory', 'Tag']],
+  [web.IFCRELAGGREGATES, ['OwnerHistory', 'Name', 'Description']],
+  [web.IFCRELCONTAINEDINSPATIALSTRUCTURE, ['OwnerHistory', 'Name', 'Description']],
+  [web.IFCRELDEFINESBYPROPERTIES, ['OwnerHistory', 'Name', 'Description']],
+  [web.IFCPRODUCTDEFINITIONSHAPE, ['Name', 'Description']],
+  [web.IFCPROPERTYSET, ['OwnerHistory', 'Description']],
+  [web.IFCELEMENTQUANTITY, ['OwnerHistory', 'Description']],
+  [web.IFCPROPERTYSINGLEVALUE, ['Description', 'Unit']],
+  [web.IFCQUANTITYAREA, ['Description']],
+  [web.IFCQUANTITYVOLUME, ['Description']],
+  [web.IFCSIUNIT, ['Prefix']],
+  [web.IFCGEOMETRICREPRESENTATIONCONTEXT, ['ContextIdentifier', 'TrueNorth']],
+  [web.IFCGEOMETRICREPRESENTATIONSUBCONTEXT, ['Precision', 'TrueNorth', 'TargetScale', 'UserDefinedTargetView']],
+  [web.IFCINDEXEDPOLYCURVE, ['Segments', 'SelfIntersect']],
+]);
+
+function checkNullMetadata(api, model) {
+  for (const [type, fields] of NULL_METADATA) {
+    for (const id of ids(api, model, type)) {
+      const entity = api.GetLine(model, id);
+      for (const field of fields) {
+        requireCondition(entity[field] === null, `unsupported ${field} on IFC entity ${id}`);
+      }
+    }
+  }
+}
+
+function expectedRootGuid(api, model, root, expected) {
+  const typeNames = new Map([
+    [web.IFCPROJECT, 'IfcProject'], [web.IFCSITE, 'IfcSite'], [web.IFCBUILDING, 'IfcBuilding'],
+    [web.IFCBUILDINGSTOREY, 'IfcBuildingStorey'], [web.IFCBUILDINGELEMENTPROXY, 'IfcBuildingElementProxy'],
+    [web.IFCPROPERTYSET, 'IfcPropertySet'], [web.IFCELEMENTQUANTITY, 'IfcElementQuantity'],
+    [web.IFCRELAGGREGATES, 'IfcRelAggregates'],
+    [web.IFCRELCONTAINEDINSPATIALSTRUCTURE, 'IfcRelContainedInSpatialStructure'],
+    [web.IFCRELDEFINESBYPROPERTIES, 'IfcRelDefinesByProperties'],
+  ]);
+  const endpoint = id => {
+    const entity = api.GetLine(model, id);
+    const name = scalar(entity.Name);
+    requireCondition(typeNames.has(entity.type) && typeof name === 'string' && name.length > 0,
+      'unnamed IFC relationship endpoint');
+    return `${typeNames.get(entity.type)}:${name}`;
+  };
+  const endpoints = refs => refs.map(item => endpoint(reference(item))).sort().join(',');
+  const className = typeNames.get(root.type);
+  requireCondition(className, 'unsupported IFC root role');
+  let scope = expected.project_id;
+  let role;
+  if (root.type === web.IFCRELAGGREGATES) {
+    const parent = reference(root.RelatingObject);
+    role = `${endpoint(parent)}>${endpoints(root.RelatedObjects)}`;
+    if (api.GetLine(model, parent).type !== web.IFCPROJECT) scope += `|${expected.variant_id}`;
+  } else if (root.type === web.IFCRELCONTAINEDINSPATIALSTRUCTURE) {
+    scope += `|${expected.variant_id}`;
+    role = `${endpoint(reference(root.RelatingStructure))}>${endpoints(root.RelatedElements)}`;
+  } else if (root.type === web.IFCRELDEFINESBYPROPERTIES) {
+    scope += `|${expected.variant_id}`;
+    role = `${endpoint(reference(root.RelatingPropertyDefinition))}>${endpoints(root.RelatedObjects)}`;
+  } else {
+    if (root.type !== web.IFCPROJECT && root.type !== web.IFCSITE) scope += `|${expected.variant_id}`;
+    role = endpoint(root.expressID);
+  }
+  const hash = crypto.createHash('sha1').update(GUID_NAMESPACE).update(`${scope}|${className}|${role}`, 'utf8').digest();
+  const uuid = Buffer.from(hash.subarray(0, 16));
+  uuid[6] = (uuid[6] & 0x0f) | 0x50;
+  uuid[8] = (uuid[8] & 0x3f) | 0x80;
+  const standard = Buffer.concat([Buffer.alloc(2), uuid]).toString('base64').slice(2, 24);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  return [...standard].map(char => IFC_BASE64[alphabet.indexOf(char)]).join('');
 }
 
 function transformVertex(vertex, matrix) {
@@ -161,38 +244,128 @@ function expectedBudget(expected) {
 }
 
 function verifySource(bytes, expected) {
-  requireCondition(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 64 * 1024, 'invalid or oversized source bytes');
-  requireCondition(/^source\/[a-z_]+\.json$/.test(expected.source_file), 'invalid source file identity');
+  requireCondition(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= 1024 * 1024, 'invalid or oversized source bytes');
+  const projectSource = expected.source_mode === 'accepted_project_json_v1';
+  const normalizedSource = ['accepted_project_normalized_v1', 'accepted_project_normalized_v2'].includes(expected.source_mode);
+  requireCondition(projectSource ? expected.source_file === 'input.json' :
+    normalizedSource ? ['input.json', 'input.yaml'].includes(expected.source_file) :
+    /^source\/[a-z_]+\.json$/.test(expected.source_file), 'invalid source file identity');
   let source;
-  try {
-    source = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    throw new Error('invalid source JSON');
+  if (!normalizedSource) {
+    try {
+      source = JSON.parse(bytes.toString('utf8'));
+    } catch {
+      throw new Error('invalid source JSON');
+    }
   }
-  requireCondition(source && source.schema_version === 'ifc-reader-source-v1' &&
-    Buffer.from(JSON.stringify(source) + '\n').equals(bytes), 'noncanonical source bytes');
-  for (const field of ['project_id', 'variant_id', 'shape', 'origin_xy_m', 'width_m', 'depth_m',
-    'notch_width_m', 'notch_depth_m', 'footprint_xy_m', 'footprint_area_m2', 'approximate_gfa_m2',
-    'mass_volume_m3', 'storeys', 'floor_to_floor_m', 'height_m', 'north_angle_deg']) {
-    requireCondition(JSON.stringify(source[field]) === JSON.stringify(expected[field]), `source/expected mismatch: ${field}`);
+  if (projectSource) {
+    requireCondition(source && source.schema_version === '0.1.0' && source.project_id === expected.project_id &&
+      source.brief?.storeys === expected.storeys && source.brief?.floor_to_floor_m === expected.floor_to_floor_m &&
+      source.site?.north_deg === expected.north_angle_deg, 'project source/expected mismatch');
+  } else if (!normalizedSource) {
+    requireCondition(source && source.schema_version === 'ifc-reader-source-v1' &&
+      Buffer.from(JSON.stringify(source) + '\n').equals(bytes), 'noncanonical source bytes');
+    for (const field of ['project_id', 'variant_id', 'shape', 'origin_xy_m', 'width_m', 'depth_m',
+      'notch_width_m', 'notch_depth_m', 'footprint_xy_m', 'footprint_area_m2', 'approximate_gfa_m2',
+      'mass_volume_m3', 'storeys', 'floor_to_floor_m', 'height_m', 'north_angle_deg']) {
+      requireCondition(JSON.stringify(source[field]) === JSON.stringify(expected[field]), `source/expected mismatch: ${field}`);
+    }
   }
   const digest = crypto.createHash('sha256').update(bytes).digest('hex');
   requireCondition(expected.source_digest === digest, 'source digest does not match actual bytes');
   return digest;
 }
 
+function projectSourceReferences(sourceArtifacts, expected) {
+  if (!Array.isArray(sourceArtifacts)) return false;
+  if (['accepted_project_json_v1', 'accepted_project_normalized_v1',
+    'accepted_project_normalized_v2'].includes(expected.source_mode)) return sourceArtifacts.length === 0;
+  return sourceArtifacts.length === 1 && sourceArtifacts[0].path === expected.source_file &&
+    sourceArtifacts[0].sha256 === expected.source_digest;
+}
+
 function inspectGraph(api, model, expected, budget) {
   requireCondition(api.GetModelSchema(model) === 'IFC4', 'wrong IFC schema');
+  checkNullMetadata(api, model);
   const projectIds = ids(api, model, web.IFCPROJECT), siteIds = ids(api, model, web.IFCSITE);
   const buildingIds = ids(api, model, web.IFCBUILDING), storeyIds = ids(api, model, web.IFCBUILDINGSTOREY);
   const proxyIds = ids(api, model, web.IFCBUILDINGELEMENTPROXY);
+  for (const [name, kind] of [['wall', web.IFCWALL], ['wall standard case', web.IFCWALLSTANDARDCASE],
+    ['slab', web.IFCSLAB], ['space', web.IFCSPACE]]) exactCount(ids(api, model, kind), 0, name);
   for (const [name, values, count] of [['project', projectIds, 1], ['site', siteIds, 1], ['building', buildingIds, 1],
     ['storey', storeyIds, expected.storeys], ['proxy', proxyIds, expected.storeys]]) exactCount(values, count, name);
   const project = api.GetLine(model, projectIds[0]);
+  const site = api.GetLine(model, siteIds[0]);
+  const building = api.GetLine(model, buildingIds[0]);
+  requireCondition(scalar(project.Name) === `${expected.project_id}:project` &&
+    scalar(site.Name) === `${expected.project_id}:site` &&
+    scalar(building.Name) === `${expected.project_id}:${expected.variant_id}:building`,
+  'wrong project/site/building identity');
+  requireCondition(['Description', 'ObjectType', 'LongName', 'Phase'].every(key => project[key] === null) &&
+    ['Description', 'ObjectType', 'Representation', 'RefLatitude', 'RefLongitude', 'RefElevation', 'LandTitleNumber', 'SiteAddress', 'LongName', 'CompositionType'].every(key => site[key] === null) &&
+    ['Description', 'ObjectType', 'Representation', 'ElevationOfRefHeight', 'ElevationOfTerrain', 'BuildingAddress', 'LongName', 'CompositionType'].every(key => building[key] === null),
+  'unsupported project/site/building semantic field');
+  const contextIds = ids(api, model, web.IFCGEOMETRICREPRESENTATIONCONTEXT);
+  const subcontextIds = ids(api, model, web.IFCGEOMETRICREPRESENTATIONSUBCONTEXT);
+  exactCount(contextIds, 1, 'model representation context');
+  exactCount(subcontextIds, 1, 'body representation subcontext');
+  sameSet(project.RepresentationContexts.map(reference), contextIds, 'project representation contexts mismatch');
+  const context = api.GetLine(model, contextIds[0]);
+  const subcontext = api.GetLine(model, subcontextIds[0]);
+  requireCondition(scalar(context.ContextType) === 'Model' && scalar(context.CoordinateSpaceDimension) === 3 &&
+    scalar(subcontext.ContextIdentifier) === 'Body' && scalar(subcontext.ContextType) === 'Model' &&
+    scalar(subcontext.TargetView) === 'MODEL_VIEW' && reference(subcontext.ParentContext) === contextIds[0],
+  'wrong active representation context');
+  requireCondition(context.ContextIdentifier === null && context.TrueNorth === null &&
+    scalar(context.Precision) === 1e-5 && subcontext.TargetScale === null &&
+    subcontext.UserDefinedTargetView === null && subcontext.Precision === null &&
+    subcontext.TrueNorth === null, 'unsupported model/body context option');
+  const world = api.GetLine(model, reference(context.WorldCoordinateSystem));
+  requireCondition(world.type === web.IFCAXIS2PLACEMENT3D, 'wrong world coordinate system');
+  for (const [id, type, key, want] of [
+    [reference(world.Location), web.IFCCARTESIANPOINT, 'Coordinates', [0, 0, 0]],
+    [reference(world.Axis), web.IFCDIRECTION, 'DirectionRatios', [0, 0, 1]],
+    [reference(world.RefDirection), web.IFCDIRECTION, 'DirectionRatios', [1, 0, 0]],
+  ]) {
+    const item = api.GetLine(model, id);
+    const values = item[key]?.map(scalar);
+    requireCondition(item.type === type && values?.length === 3, 'wrong world coordinate orientation');
+    values.forEach((value, axis) => close(value, want[axis], budget.coordinate_m, 'wrong world coordinate orientation'));
+  }
+  const shapeIds = ids(api, model, web.IFCPRODUCTDEFINITIONSHAPE);
+  const representationIds = ids(api, model, web.IFCSHAPEREPRESENTATION);
+  const solidIds = ids(api, model, web.IFCEXTRUDEDAREASOLID);
+  const profileIds = ids(api, model, web.IFCARBITRARYCLOSEDPROFILEDEF);
+  exactCount(shapeIds, expected.storeys, 'product shape');
+  exactCount(representationIds, expected.storeys, 'body representation');
+  exactCount(solidIds, expected.storeys, 'extruded solid');
+  exactCount(profileIds, 1, 'canonical profile');
+  exactCount(ids(api, model, web.IFCINDEXEDPOLYCURVE), 1, 'profile curve');
+  exactCount(ids(api, model, web.IFCCARTESIANPOINTLIST2D), 1, 'profile point list');
+  const profile = api.GetLine(model, profileIds[0]);
+  const curve = api.GetLine(model, reference(profile.OuterCurve));
+  requireCondition(scalar(profile.ProfileType) === 'AREA' &&
+    scalar(profile.ProfileName) === 'ArchyCanonicalFootprint' &&
+    curve.type === web.IFCINDEXEDPOLYCURVE && curve.Segments === null && curve.SelfIntersect === null,
+  'wrong schematic footprint profile');
+  sameSet(proxyIds.map(id => reference(api.GetLine(model, id).Representation)), shapeIds, 'proxy shape membership mismatch');
+  sameSet(shapeIds.flatMap(id => api.GetLine(model, id).Representations.map(reference)),
+    representationIds, 'body representation membership mismatch');
+  sameSet(representationIds.flatMap(id => {
+    const representation = api.GetLine(model, id);
+    requireCondition(reference(representation.ContextOfItems) === subcontextIds[0] &&
+      scalar(representation.RepresentationIdentifier) === 'Body' &&
+      scalar(representation.RepresentationType) === 'SweptSolid', 'wrong body representation context/type');
+    return representation.Items.map(reference);
+  }), solidIds, 'body solid membership mismatch');
+  requireCondition(solidIds.every(id => reference(api.GetLine(model, id).SweptArea) === profileIds[0]),
+    'wrong canonical solid profile');
+  exactCount(ids(api, model, web.IFCUNITASSIGNMENT), 1, 'unit assignment');
   requireCondition(reference(project.UnitsInContext) === ids(api, model, web.IFCUNITASSIGNMENT)[0], 'project has no active unit assignment');
   const assignment = api.GetLine(model, reference(project.UnitsInContext));
   const assigned = assignment.Units.map(reference);
   exactCount(assigned, 3, 'active unit');
+  sameSet(assigned, ids(api, model, web.IFCSIUNIT), 'SI unit membership mismatch');
   const units = new Map();
   for (const id of assigned) {
     const unit = api.GetLine(model, id);
@@ -226,6 +399,8 @@ function inspectGraph(api, model, expected, budget) {
   const rootGuids = roots.map(root => scalar(root.GlobalId));
   requireCondition(rootGuids.every(guid => typeof guid === 'string' && /^[0-9A-Za-z_$]{22}$/.test(guid)) &&
     new Set(rootGuids).size === rootGuids.length, 'invalid or duplicate root GUID');
+  requireCondition(roots.every(root => scalar(root.GlobalId) === expectedRootGuid(api, model, root, expected)),
+    'wrong source-bound root GUID');
   const propertySets = ids(api, model, web.IFCPROPERTYSET), quantities = ids(api, model, web.IFCELEMENTQUANTITY);
   exactCount(propertySets, 1, 'provenance property set');
   exactCount(quantities, 1, 'quantity set');
@@ -234,11 +409,20 @@ function inspectGraph(api, model, expected, budget) {
   sameSet(definitions.map(item => reference(item.RelatingPropertyDefinition)), [propertySets[0], quantities[0]], 'property definitions mismatch');
   requireCondition(definitions.every(item => item.RelatedObjects.length === 1 && reference(item.RelatedObjects[0]) === buildingIds[0]), 'property set not attached to building');
   const pset = api.GetLine(model, propertySets[0]);
-  requireCondition(scalar(pset.Name) === 'Archy_SchematicMassing', 'missing schematic provenance');
-  const properties = new Map(pset.HasProperties.map(ref => {
-    const item = api.GetLine(model, reference(ref));
+  requireCondition(scalar(pset.Name) === 'Archy_SchematicMassing' && pset.Description === null,
+    'missing or conflicting schematic provenance');
+  const propertyIds = pset.HasProperties.map(reference);
+  sameSet(propertyIds, ids(api, model, web.IFCPROPERTYSINGLEVALUE), 'provenance property membership mismatch');
+  const propertyNames = ['ProjectId', 'VariantId', 'RunId', 'CanonicalInputSha256', 'ExportedAtUTC',
+    'SourceArtifacts', 'WorkerVersion', 'LibraryVersion', 'VariantSchemaVersion', 'Coordinates',
+    'MethodVersion', 'ToleranceVersion', 'Schematic', 'ApprovalState', 'NorthAngleDegrees'];
+  const properties = new Map(propertyIds.map(id => {
+    const item = api.GetLine(model, id);
+    requireCondition(item.Description === null && item.Unit === null, 'unsupported provenance property option');
     return [scalar(item.Name), scalar(item.NominalValue)];
   }));
+  sameSet([...properties.keys()], propertyNames, 'provenance property names mismatch');
+  exactCount(propertyIds, propertyNames.length, 'provenance property');
   for (const [name, value] of [['ProjectId', expected.project_id], ['VariantId', expected.variant_id],
     ['RunId', expected.run_id], ['CanonicalInputSha256', expected.source_digest], ['ApprovalState', 'DRAFT'],
     ['Schematic', true], ['NorthAngleDegrees', expected.north_angle_deg]]) {
@@ -250,26 +434,45 @@ function inspectGraph(api, model, expected, budget) {
   } catch {
     throw new Error('invalid IFC source artifact references');
   }
-  requireCondition(Array.isArray(sourceArtifacts) && sourceArtifacts.length === 1 &&
-    sourceArtifacts[0].path === expected.source_file &&
-    sourceArtifacts[0].sha256 === expected.source_digest, 'wrong IFC source artifact reference');
+  requireCondition(projectSourceReferences(sourceArtifacts, expected), 'wrong IFC source artifact reference');
   requireCondition(properties.get('MethodVersion') === 'task02-analytic-massing-v1' &&
     properties.get('ToleranceVersion') === 'polygon-coordinate-parity-v1', 'wrong method/tolerance provenance');
+  requireCondition(properties.get('WorkerVersion') === 'ifc-worker-v1' &&
+    properties.get('LibraryVersion') === '0.9.0.post1' &&
+    properties.get('VariantSchemaVersion') === '0.1.0' &&
+    properties.get('Coordinates') === 'metres; right-handed XY, +Z; north is metadata',
+  'wrong worker/coordinate provenance');
+  requireCondition(typeof properties.get('ExportedAtUTC') === 'string' &&
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:\+00:00|Z)$/.test(properties.get('ExportedAtUTC')) &&
+    Number.isFinite(Date.parse(properties.get('ExportedAtUTC'))), 'invalid export timestamp');
   const qset = api.GetLine(model, quantities[0]);
-  requireCondition(scalar(qset.Name) === 'Archy_SchematicQuantities', 'wrong quantity set');
-  const quantityMap = new Map(qset.Quantities.map(ref => {
-    const item = api.GetLine(model, reference(ref));
+  requireCondition(scalar(qset.Name) === 'Archy_SchematicQuantities' &&
+    scalar(qset.MethodOfMeasurement) === 'task02-analytic-massing-v1; approximate, not net or certified' &&
+    qset.Description === null,
+  'wrong quantity set or measurement method');
+  const quantityIds = qset.Quantities.map(reference);
+  sameSet(quantityIds, [...ids(api, model, web.IFCQUANTITYAREA), ...ids(api, model, web.IFCQUANTITYVOLUME)], 'quantity membership mismatch');
+  const quantityMap = new Map(quantityIds.map(id => {
+    const item = api.GetLine(model, id);
     return [scalar(item.Name), item];
   }));
-  exactCount([...quantityMap], 3, 'quantity');
+  sameSet([...quantityMap.keys()], ['FootprintArea', 'ApproximateGFA', 'MassVolume'], 'quantity names mismatch');
+  exactCount(quantityIds, 3, 'quantity');
+  exactCount(ids(api, model, web.IFCQUANTITYAREA), 2, 'area quantity');
+  exactCount(ids(api, model, web.IFCQUANTITYVOLUME), 1, 'volume quantity');
   for (const [name, kind, want, tolerance] of [
     ['FootprintArea', 'AREAUNIT', expected.footprint_area_m2, budget.footprint_area_m2],
     ['ApproximateGFA', 'AREAUNIT', expected.approximate_gfa_m2, budget.footprint_area_m2 * expected.storeys],
     ['MassVolume', 'VOLUMEUNIT', expected.mass_volume_m3, budget.footprint_area_m2 * expected.height_m],
   ]) {
     const item = quantityMap.get(name);
-    requireCondition(item && reference(item.Unit) === units.get(kind).id, `wrong quantity unit ${name}`);
+    requireCondition(item && item.type === (kind === 'AREAUNIT' ? web.IFCQUANTITYAREA : web.IFCQUANTITYVOLUME) &&
+      reference(item.Unit) === units.get(kind).id && item.Description === null, `wrong quantity type/unit ${name}`);
     close(scalar(item.AreaValue || item.VolumeValue), want, tolerance, `wrong quantity ${name}`);
+  }
+  for (const [name, formula] of [['FootprintArea', 'canonical footprint shoelace; m2'],
+    ['ApproximateGFA', 'footprint area * storeys; m2'], ['MassVolume', 'footprint area * total height; m3']]) {
+    requireCondition(scalar(quantityMap.get(name).Formula) === formula, `wrong quantity formula ${name}`);
   }
   const origin = expected.origin_xy_m;
   const placement = (entity, want, label) => {
@@ -287,14 +490,19 @@ function inspectGraph(api, model, expected, budget) {
     const proxy = api.GetLine(model, proxyIds[index]);
     requireCondition(scalar(storey.Name) === `${expected.project_id}:${expected.variant_id}:storey:${String(index).padStart(3, '0')}`, 'wrong storey identity');
     requireCondition(scalar(proxy.Name) === `${expected.project_id}:${expected.variant_id}:mass:${String(index).padStart(3, '0')}`, 'wrong proxy identity');
+    requireCondition(['Description', 'ObjectType', 'Representation', 'LongName', 'CompositionType'].every(key => storey[key] === null),
+      'unsupported storey semantic field');
     sameSet(proxiesByStorey.get(storeyIds[index]) || [], [proxyIds[index]], 'proxy/storey containment mismatch');
     requireCondition(scalar(proxy.PredefinedType) === 'USERDEFINED' && scalar(proxy.ObjectType) === 'ArchySchematicStoreyMass', 'wrong schematic proxy type');
+    requireCondition(scalar(proxy.Description) === 'Schematic extruded storey mass; DRAFT; no detailed construction semantics' &&
+      proxy.Tag === null, 'wrong schematic proxy description');
     close(scalar(storey.Elevation), index * expected.floor_to_floor_m, budget.coordinate_m, 'wrong storey elevation');
     placement(storey, [origin[0], origin[1], index * expected.floor_to_floor_m], 'storey');
     placement(proxy, [origin[0], origin[1], index * expected.floor_to_floor_m], 'proxy');
     ordered.push(proxyIds[index]);
   }
-  return { proxyIds: ordered, rootGuids: rootGuids.sort(), activeUnits: Object.fromEntries([...units].map(([kind, item]) => [kind, item.name])) };
+  return { proxyIds: ordered, rootGuids: rootGuids.sort(), exportedAtUTC: properties.get('ExportedAtUTC'),
+    activeUnits: Object.fromEntries([...units].map(([kind, item]) => [kind, item.name])) };
 }
 
 function inspectMeshes(api, model, proxyIds, expected, budget) {
@@ -348,6 +556,7 @@ function inspectMeshes(api, model, proxyIds, expected, budget) {
 
 async function inspectBuffer(bytes, expected, sourceBytes) {
   requireCondition(Buffer.isBuffer(bytes) && bytes.length > 0 && bytes.length <= MAX_IFC_BYTES, 'invalid or oversized IFC bytes');
+  const { headerTimestamp } = checkStepScope(bytes);
   requireCondition(expected && expected.schema_version === undefined && Number.isInteger(expected.storeys) && expected.storeys >= 1 && expected.storeys <= 100, 'invalid expected fixture');
   const sourceDigest = verifySource(sourceBytes, expected);
   const budget = expectedBudget(expected);
@@ -360,6 +569,7 @@ async function inspectBuffer(bytes, expected, sourceBytes) {
     model = api.OpenModel(new Uint8Array(bytes), { ALLOW_INCOMPATIBLE_SCHEMA_ALIASES: false,
       COORDINATE_TO_ORIGIN: false, MEMORY_LIMIT: 128 * 1024 * 1024 });
     const graph = inspectGraph(api, model, expected, budget);
+    requireCondition(headerTimestamp === graph.exportedAtUTC, 'STEP HEADER timestamp differs from export provenance');
     const proxies = inspectMeshes(api, model, graph.proxyIds, expected, budget);
     return { status: 'ok', engine: 'web-ifc', engine_version: '0.0.78', node_version: process.versions.node,
       schema: 'IFC4', transform_policy: 'web-ifc placed column-major Y-up to IFC XYZ; once',

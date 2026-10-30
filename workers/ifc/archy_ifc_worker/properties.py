@@ -24,6 +24,8 @@ def attach(model, request, building, proxies, area):
     }
     pset = ifcopenshell.api.pset.add_pset(model, product=building, name="Archy_SchematicMassing")
     ifcopenshell.api.pset.edit_pset(model, pset=pset, properties=values)
+    model.header.file_name.name = "model.ifc"
+    model.header.file_name.time_stamp = values["ExportedAtUTC"]
     # The single named set is attached to the building; proxies inherit context by containment.
     square = next(u for u in model.by_type("IfcSIUnit") if u.UnitType == "AREAUNIT")
     cubic = next(u for u in model.by_type("IfcSIUnit") if u.UnitType == "VOLUMEUNIT")

@@ -1085,6 +1085,23 @@ impl PendingRun<'_> {
         self.outcomes.push(outcome);
         Ok(())
     }
+    /// Discard a staged run before any artifacts are written, for a failed worker attempt.
+    pub fn discard_empty(self) -> Result<(), ArchyError> {
+        self.locked.require_owner()?;
+        if !self.artifacts.is_empty() || !self.outcomes.is_empty() {
+            return Err(err(ErrorCode::InternalError, "staged run is not empty"));
+        }
+        fs::unlinkat(
+            &self.staging_parent,
+            self.run_id.as_str(),
+            fs::AtFlags::REMOVEDIR,
+        )
+        .map_err(|e| ioerr("discard empty staged run", e))?;
+        self.staging_parent
+            .sync_all()
+            .map_err(|e| ioerr("sync discarded staged run", e))?;
+        Ok(())
+    }
     pub fn commit(self, metadata: RunMetadata) -> Result<RunReceipt, ArchyError> {
         self.commit_inner(metadata, Interrupt::None, None)
     }

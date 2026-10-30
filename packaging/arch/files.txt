@@ -1,6 +1,9 @@
 # source relative to snapshot root, destination relative to pkgdir, mode
 @binary	usr/bin/archy	0755
 @gate-binary	usr/lib/archy/archy-service-gate	0755
+tests/backend/ifc-reader/reader.cjs	usr/lib/archy/ifc-verifier/reader.cjs	0644
+tests/backend/ifc-reader/step-scope.cjs	usr/lib/archy/ifc-verifier/step-scope.cjs	0644
+tests/backend/ifc-reader/verify-stdin.cjs	usr/lib/archy/ifc-verifier/verify-stdin.cjs	0644
 LICENSE	usr/share/licenses/archy/LICENSE	0644
 @notices	usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt	0644
 @notice-inventory	usr/share/archy/third-party-notices.json	0644
@@ -8,6 +11,7 @@ packaging/arch/compatibility.json	usr/share/archy/compatibility.json	0644
 schemas/backend.schema.json	usr/share/archy/schemas/backend.schema.json	0644
 schemas/desktop-capabilities.schema.json	usr/share/archy/schemas/desktop-capabilities.schema.json	0644
 schemas/desktop-status.schema.json	usr/share/archy/schemas/desktop-status.schema.json	0644
+schemas/design-manifest.schema.json	usr/share/archy/schemas/design-manifest.schema.json	0644
 schemas/doctor.schema.json	usr/share/archy/schemas/doctor.schema.json	0644
 schemas/error.schema.json	usr/share/archy/schemas/error.schema.json	0644
 schemas/evaluation.schema.json	usr/share/archy/schemas/evaluation.schema.json	0644
