@@ -6,8 +6,8 @@ use archy_adapters::{
     CaptureOutcome, CapturedOutputs, IfcRequest, ServiceRequest, ServiceSession, capture_ifc,
 };
 use archy_core::{
-    ArchyError, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunReceipt, RunRequest, VariantOutcome,
-    sha256_hex,
+    ArchyError, MutationContext, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunReceipt, RunRequest,
+    VariantOutcome, sha256_hex,
 };
 use archy_eval::{evaluate_variant, evaluate_variant_v2};
 use schemars::JsonSchema;
@@ -98,6 +98,57 @@ fn run_worker(request: &IfcRequest) -> Result<CapturedOutputs, ArchyError> {
     }
 }
 
+fn append_identity(mut error: ArchyError, context: &MutationContext) -> ArchyError {
+    error.message.push_str(&format!(
+        "; idempotency_key={} and expected_project_revision={}",
+        context.idempotency_key, context.expected_project_revision
+    ));
+    error
+}
+
+fn retry_identity(error: ArchyError, context: &MutationContext) -> ArchyError {
+    if error.retriable {
+        append_identity(error, context)
+    } else {
+        error
+    }
+}
+
+fn published_error(
+    mut error: ArchyError,
+    context: &MutationContext,
+    receipt: &RunReceipt,
+) -> ArchyError {
+    if matches!(
+        error.code,
+        archy_core::ErrorCode::BackendUnavailable
+            | archy_core::ErrorCode::BackendTimeout
+            | archy_core::ErrorCode::RevisionConflict
+    ) {
+        error.retriable = true;
+    }
+    error.message.push_str(&format!(
+        "; IFC run {} was published at revision {} but post-publication checks failed",
+        receipt.run_id, receipt.revision
+    ));
+    append_identity(error, context)
+}
+
+fn retry_before_key_lookup(mut error: ArchyError, mutation: &MutationOptions) -> ArchyError {
+    // No key lookup has completed here, so do not assert publication.
+    if matches!(
+        error.code,
+        archy_core::ErrorCode::BackendUnavailable | archy_core::ErrorCode::BackendTimeout
+    ) && let (Some(key), Some(revision)) = (
+        &mutation.idempotency_key,
+        mutation.expected_project_revision,
+    ) {
+        error.retriable = true;
+        error.message.push_str(&format!("; authoritative key lookup was not completed; retry with idempotency_key={key} and expected_project_revision={revision}"));
+    }
+    error
+}
+
 pub fn export_ifc(input: ExportIfcInput) -> Result<RunReceipt, ArchyError> {
     export_with(input, &run_worker)
 }
@@ -106,7 +157,8 @@ pub(crate) fn export_with(
     input: ExportIfcInput,
     runner: &dyn Fn(&IfcRequest) -> Result<CapturedOutputs, ArchyError>,
 ) -> Result<RunReceipt, ArchyError> {
-    let reader = BoundProjectRead::open(&input.project)?;
+    let reader = BoundProjectRead::open(&input.project)
+        .map_err(|error| retry_before_key_lookup(error, &input.mutation))?;
     export_with_reader(
         &reader,
         input.source_run,
@@ -134,12 +186,13 @@ fn export_with_reader(
     mutation: MutationOptions,
     runner: &dyn Fn(&IfcRequest) -> Result<CapturedOutputs, ArchyError>,
 ) -> Result<RunReceipt, ArchyError> {
-    let snapshot = reader.snapshot()?;
-    snapshot.verify_head()?;
+    let early_error = |error| retry_before_key_lookup(error, &mutation);
+    let snapshot = reader.snapshot().map_err(early_error)?;
+    snapshot.verify_head().map_err(early_error)?;
     let mut recorded_source = None;
     if let Some(key) = mutation.idempotency_key.as_deref() {
         for receipt in snapshot.receipts().rev() {
-            let run = snapshot.verify_run(&receipt.run_id)?;
+            let run = snapshot.verify_run(&receipt.run_id).map_err(early_error)?;
             let manifest = run.manifest();
             if manifest.idempotency_key == key {
                 if manifest.operation != "export-ifc"
@@ -169,7 +222,7 @@ fn export_with_reader(
                 {
                     continue;
                 }
-                let run = snapshot.verify_run(&receipt.run_id)?;
+                let run = snapshot.verify_run(&receipt.run_id).map_err(early_error)?;
                 if matches!(run.manifest().operation.as_str(), "generate" | "edit") {
                     found = Some(receipt.run_id.clone());
                     break;
@@ -178,7 +231,7 @@ fn export_with_reader(
             found.ok_or_else(|| ArchyError::schema("run", "No accepted generation or edit run"))?
         }
     };
-    let source = snapshot.verify_run(&source_id)?;
+    let source = snapshot.verify_run(&source_id).map_err(early_error)?;
     if !matches!(source.manifest().operation.as_str(), "generate" | "edit") {
         return Err(artifact_invalid("IFC source must be generation or edit"));
     }
@@ -215,6 +268,7 @@ fn export_with_reader(
     }) {
         return Err(request_conflict());
     }
+    let retry_context = context.clone();
     let run_request = RunRequest {
         schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
         context,
@@ -239,14 +293,16 @@ fn export_with_reader(
         Ok(())
     };
     if recorded.is_some() {
-        return match locked.begin_checked_recovery(
-            run_request,
-            &|| reader.check_binding(),
-            &validate_orphan,
-        )? {
+        return match locked
+            .begin_checked_recovery(run_request, &|| reader.check_binding(), &validate_orphan)
+            .map_err(|error| retry_identity(error, &retry_context))?
+        {
             archy_core::BeginResult::Replay(receipt) => {
-                verify_locked(&locked, &receipt.run_id)?;
-                reader.check_binding()?;
+                verify_locked(&locked, &receipt.run_id)
+                    .map_err(|error| published_error(error, &retry_context, &receipt))?;
+                reader
+                    .check_binding()
+                    .map_err(|error| published_error(error, &retry_context, &receipt))?;
                 Ok(receipt)
             }
             archy_core::BeginResult::Pending(_) => {
@@ -270,15 +326,17 @@ fn export_with_reader(
         "output/ifc",
         Vec::new(),
     )?;
-    let mut pending = match locked.begin_checked_recovery(
-        run_request,
-        &|| reader.check_binding(),
-        &validate_orphan,
-    )? {
+    let mut pending = match locked
+        .begin_checked_recovery(run_request, &|| reader.check_binding(), &validate_orphan)
+        .map_err(|error| retry_identity(error, &retry_context))?
+    {
         archy_core::BeginResult::Pending(pending) => pending,
         archy_core::BeginResult::Replay(receipt) => {
-            verify_locked(&locked, &receipt.run_id)?;
-            reader.check_binding()?;
+            verify_locked(&locked, &receipt.run_id)
+                .map_err(|error| published_error(error, &retry_context, &receipt))?;
+            reader
+                .check_binding()
+                .map_err(|error| published_error(error, &retry_context, &receipt))?;
             return Ok(receipt);
         }
     };
@@ -443,17 +501,14 @@ fn export_with_reader(
         parent_variant_id: Some(variant.id.clone()),
         algorithm_version: DESIGN_MANIFEST_VERSION.into(),
     };
-    let receipt = pending.commit_checked(metadata, &|| reader.check_binding())?;
-    verify_locked(&locked, &receipt.run_id)?;
-    reader.check_binding().map_err(|_| {
-        let mut error = ArchyError::new(
-            archy_core::ErrorCode::RevisionConflict,
-            "project",
-            "Configured project changed during IFC export; commit may have occurred on the pinned root; retry the same idempotency key after restoring the project binding",
-        );
-        error.retriable = true;
-        error
-    })?;
+    let receipt = pending
+        .commit_checked(metadata, &|| reader.check_binding())
+        .map_err(|error| retry_identity(error, &retry_context))?;
+    verify_locked(&locked, &receipt.run_id)
+        .map_err(|error| published_error(error, &retry_context, &receipt))?;
+    reader
+        .check_binding()
+        .map_err(|error| published_error(error, &retry_context, &receipt))?;
     Ok(receipt)
 }
 
@@ -535,6 +590,162 @@ mod tests {
                 fs::copy(entry.path(), dest).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn nonretriable_published_error_keeps_default_retry_identity() {
+        let context = MutationContext {
+            idempotency_key: uuid::Uuid::new_v4().to_string(),
+            expected_project_revision: 17,
+            destination: "runs".into(),
+        };
+        let receipt = RunReceipt {
+            run_id: uuid::Uuid::new_v4().to_string(),
+            revision: 18,
+            manifest_sha256: "a".repeat(64),
+            path: "runs/published".into(),
+        };
+        let error = published_error(
+            ArchyError::new(
+                archy_core::ErrorCode::InternalError,
+                "storage",
+                "read failed",
+            ),
+            &context,
+            &receipt,
+        );
+        assert_eq!(error.code, archy_core::ErrorCode::InternalError);
+        assert!(!error.retriable);
+        assert!(error.message.contains(&receipt.run_id));
+        assert!(error.message.contains("revision 18"));
+        assert!(
+            error
+                .message
+                .contains(&format!("idempotency_key={}", context.idempotency_key))
+        );
+        assert!(error.message.contains("expected_project_revision=17"));
+    }
+
+    #[test]
+    fn pinned_reader_preserves_retry_identity_during_a15_key_scan() {
+        let root =
+            std::env::temp_dir().join(format!("archy-ifc-pinned-retry-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let generated = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let reader = BoundProjectRead::open(&project).unwrap();
+        let options = MutationOptions {
+            idempotency_key: Some("pinned-retry".into()),
+            expected_project_revision: Some(generated.revision),
+            destination: "runs".into(),
+        };
+        for code in [
+            archy_core::ErrorCode::BackendUnavailable,
+            archy_core::ErrorCode::BackendTimeout,
+        ] {
+            // The accepted-head check succeeds; fail at A15's next history scan.
+            crate::run_integrity::TEST_FAIL_HISTORY_AFTER.with(|slot| slot.set(Some((1, code))));
+            let error = export_with_reader(
+                &reader,
+                Some(generated.run_id.clone()),
+                generated.variant_ids[0].clone(),
+                options.clone(),
+                &|_| panic!("worker must not run"),
+            )
+            .unwrap_err();
+            assert_eq!(error.code, code);
+            assert!(error.retriable, "{error:?}");
+            assert!(error.message.contains("idempotency_key=pinned-retry"));
+            assert!(
+                error
+                    .message
+                    .contains(&format!("expected_project_revision={}", generated.revision))
+            );
+            assert!(
+                error
+                    .message
+                    .contains("authoritative key lookup was not completed")
+            );
+            assert!(!error.message.contains("was published"));
+            assert_eq!(
+                ProjectStore::open(&project)
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .revision()
+                    .unwrap(),
+                generated.revision
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn supplied_identity_survives_head_runtime_failure_before_key_lookup() {
+        let root =
+            std::env::temp_dir().join(format!("archy-ifc-head-retry-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let generated = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let input = ExportIfcInput {
+            project,
+            source_run: Some(generated.run_id),
+            variant_id: generated.variant_ids[0].clone(),
+            mutation: MutationOptions {
+                idempotency_key: Some("retry-fixture".into()),
+                expected_project_revision: Some(generated.revision),
+                destination: "runs".into(),
+            },
+        };
+        for code in [
+            archy_core::ErrorCode::BackendUnavailable,
+            archy_core::ErrorCode::BackendTimeout,
+        ] {
+            crate::project_read::TEST_FAIL_HEAD_VERIFICATION.with(|slot| slot.set(Some(code)));
+            let error = export_with(input.clone(), &|_| panic!("worker must not run")).unwrap_err();
+            assert_eq!(error.code, code);
+            assert!(error.retriable, "{error:?}");
+            assert!(error.message.contains("idempotency_key=retry-fixture"));
+            assert!(
+                error
+                    .message
+                    .contains(&format!("expected_project_revision={}", generated.revision))
+            );
+            assert!(!error.message.contains("was published"));
+        }
+        let mut missing_revision = input.clone();
+        missing_revision.mutation.expected_project_revision = None;
+        crate::project_read::TEST_FAIL_HEAD_VERIFICATION
+            .with(|slot| slot.set(Some(archy_core::ErrorCode::BackendUnavailable)));
+        let error = export_with(missing_revision, &|_| panic!("worker must not run")).unwrap_err();
+        assert!(!error.retriable);
+        assert!(!error.message.contains("retry with idempotency_key"));
+        crate::project_read::TEST_FAIL_HEAD_VERIFICATION
+            .with(|slot| slot.set(Some(archy_core::ErrorCode::ArtifactInvalid)));
+        let error = export_with(input, &|_| panic!("worker must not run")).unwrap_err();
+        assert_eq!(error.code, archy_core::ErrorCode::ArtifactInvalid);
+        assert!(!error.retriable);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -626,6 +837,111 @@ mod tests {
         assert!(called.get());
         assert_eq!(retry.code, archy_core::ErrorCode::BackendUnavailable);
         assert_eq!(store.lock().unwrap().receipts().unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires separately provisioned native IFC and pinned JS reader fixtures"]
+    fn post_publication_runtime_failure_preserves_retry_identity() {
+        let python = std::env::var("ARCHY_IFC_TEST_PYTHON").expect("native Python fixture");
+        let root =
+            std::env::temp_dir().join(format!("archy-ifc-uncertain-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let generated = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(generated.run_id),
+            variant_id: generated.variant_ids[0].clone(),
+            mutation: MutationOptions::default(),
+        };
+        let job = root.join("worker");
+        fs::create_dir(&job).unwrap();
+        let error = export_with(input.clone(), &|request| {
+            let outputs = native(request, &job, &python, None)?;
+            crate::run_integrity::TEST_FAIL_LOCKED_VERIFICATION.with(|slot| {
+                *slot.borrow_mut() = Some((String::new(), archy_core::ErrorCode::InternalError));
+            });
+            Ok(outputs)
+        })
+        .unwrap_err();
+        let store = ProjectStore::open(&project).unwrap();
+        let locked = store.lock().unwrap();
+        assert_eq!(locked.revision().unwrap(), generated.revision + 1);
+        let receipt = locked.receipts().unwrap().last().unwrap().clone();
+        let key = locked
+            .read_run(&receipt.run_id)
+            .unwrap()
+            .manifest()
+            .idempotency_key
+            .clone();
+        drop(locked);
+        assert_eq!(error.code, archy_core::ErrorCode::InternalError);
+        assert!(
+            !error.retriable,
+            "internal failure must remain nonretriable: {error:?}"
+        );
+        assert!(
+            error.message.contains(&key),
+            "generated key absent: {error:?}"
+        );
+        assert!(
+            error.message.contains(&generated.revision.to_string()),
+            "expected revision absent: {error:?}"
+        );
+        let mut retry = input.clone();
+        retry.mutation.idempotency_key = Some(key.clone());
+        retry.mutation.expected_project_revision = Some(generated.revision);
+        for code in [
+            archy_core::ErrorCode::BackendUnavailable,
+            archy_core::ErrorCode::BackendTimeout,
+        ] {
+            crate::project_read::TEST_FAIL_HEAD_VERIFICATION.with(|slot| slot.set(Some(code)));
+            let failure =
+                export_with(retry.clone(), &|_| panic!("published retry ran worker")).unwrap_err();
+            assert_eq!(failure.code, code);
+            assert!(failure.retriable);
+            assert!(failure.message.contains(&key));
+            assert!(failure.message.contains(&generated.revision.to_string()));
+            assert!(!failure.message.contains("was published"));
+            assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        }
+        assert_eq!(
+            export_with(retry.clone(), &|_| panic!("published retry ran worker")).unwrap(),
+            receipt
+        );
+
+        fs::remove_file(root.join(format!(".archy/revisions/{:020}.json", receipt.revision)))
+            .unwrap();
+        crate::run_integrity::TEST_FAIL_LOCKED_VERIFICATION.with(|slot| {
+            *slot.borrow_mut() = Some((
+                receipt.run_id.clone(),
+                archy_core::ErrorCode::BackendUnavailable,
+            ));
+        });
+        let error =
+            export_with(retry.clone(), &|_| panic!("orphan recovery ran worker")).unwrap_err();
+        assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        assert!(
+            error.retriable,
+            "recovered error must preserve retryability: {error:?}"
+        );
+        assert!(error.message.contains(&key));
+        assert!(error.message.contains(&generated.revision.to_string()));
+        assert_eq!(
+            export_with(retry, &|_| panic!("recovered retry ran worker")).unwrap(),
+            receipt
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -777,6 +1093,152 @@ mod tests {
                 .revision()
                 .unwrap(),
             generation.revision
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn historical_source_open_runtime_failure_keeps_supplied_retry_identity() {
+        let root = std::env::temp_dir().join(format!("archy-a12-v1-head-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        let source =
+            include_bytes!("../../../tests/fixtures/briefs/legacy-adversarial-preferences.json");
+        fs::write(&project, source).unwrap();
+        let text = std::str::from_utf8(source).unwrap();
+        assert!(archy_core::parse_project_current(text, archy_core::InputFormat::Json).is_err());
+        assert!(archy_core::parse_project_v1(text, archy_core::InputFormat::Json).is_ok());
+        let capture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/legacy-preference-run");
+        copy_private_tree(&capture.join(".archy"), &root.join(".archy"));
+        copy_private_tree(&capture.join("archived-runs"), &root.join("runs"));
+        let generation: crate::WorkflowReceipt =
+            serde_json::from_slice(&fs::read(capture.join("receipt.json")).unwrap()).unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(generation.run_id.clone()),
+            variant_id: generation.variant_ids[0].clone(),
+            mutation: MutationOptions {
+                idempotency_key: Some("historical-retry".into()),
+                expected_project_revision: Some(generation.revision),
+                destination: "runs".into(),
+            },
+        };
+        for code in [
+            archy_core::ErrorCode::BackendUnavailable,
+            archy_core::ErrorCode::BackendTimeout,
+        ] {
+            crate::run_integrity::TEST_FAIL_HISTORY_VERIFICATION.with(|slot| slot.set(Some(code)));
+            let error = export_with(input.clone(), &|_| panic!("worker must not run")).unwrap_err();
+            assert_eq!(error.code, code);
+            assert!(error.retriable, "{error:?}");
+            assert!(error.message.contains("idempotency_key=historical-retry"));
+            assert!(error.message.contains(&format!(
+                "expected_project_revision={}",
+                generation.revision
+            )));
+            assert!(error.message.contains("key lookup was not completed"));
+            assert!(!error.message.contains("was published"));
+            assert_eq!(
+                ProjectStore::open(&project)
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .revision()
+                    .unwrap(),
+                generation.revision
+            );
+        }
+        crate::run_integrity::TEST_FAIL_HISTORY_VERIFICATION
+            .with(|slot| slot.set(Some(archy_core::ErrorCode::ArtifactInvalid)));
+        let error = export_with(input.clone(), &|_| panic!("worker must not run")).unwrap_err();
+        assert_eq!(error.code, archy_core::ErrorCode::ArtifactInvalid);
+        assert!(!error.retriable);
+        let called = std::cell::Cell::new(false);
+        let error = export_with(input, &|_| {
+            called.set(true);
+            Err(ArchyError::new(
+                archy_core::ErrorCode::BackendUnavailable,
+                "worker",
+                "fixture worker unavailable",
+            ))
+        })
+        .unwrap_err();
+        assert!(called.get());
+        assert_eq!(error.code, archy_core::ErrorCode::BackendUnavailable);
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .revision()
+                .unwrap(),
+            generation.revision
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires separately provisioned native IFC and pinned JS reader fixtures"]
+    fn native_historical_published_head_runtime_retry() {
+        let python = std::env::var("ARCHY_IFC_TEST_PYTHON").expect("native Python fixture");
+        let root =
+            std::env::temp_dir().join(format!("archy-v1-published-retry-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/legacy-adversarial-preferences.json"),
+        )
+        .unwrap();
+        let capture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/legacy-preference-run");
+        copy_private_tree(&capture.join(".archy"), &root.join(".archy"));
+        copy_private_tree(&capture.join("archived-runs"), &root.join("runs"));
+        let generation: crate::WorkflowReceipt =
+            serde_json::from_slice(&fs::read(capture.join("receipt.json")).unwrap()).unwrap();
+        let input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(generation.run_id),
+            variant_id: generation.variant_ids[0].clone(),
+            mutation: MutationOptions {
+                idempotency_key: Some("historic-native-retry".into()),
+                expected_project_revision: Some(generation.revision),
+                destination: "runs".into(),
+            },
+        };
+        let job = root.join("native");
+        fs::create_dir(&job).unwrap();
+        let receipt = export_with(input.clone(), &|request| {
+            native(request, &job, &python, None)
+        })
+        .unwrap();
+        let store = ProjectStore::open(&project).unwrap();
+        assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        for code in [
+            archy_core::ErrorCode::BackendUnavailable,
+            archy_core::ErrorCode::BackendTimeout,
+        ] {
+            crate::run_integrity::TEST_FAIL_HISTORY_VERIFICATION.with(|slot| slot.set(Some(code)));
+            let error =
+                export_with(input.clone(), &|_| panic!("replay must not run worker")).unwrap_err();
+            assert_eq!(error.code, code);
+            assert!(error.retriable);
+            assert!(
+                error
+                    .message
+                    .contains("idempotency_key=historic-native-retry")
+            );
+            assert!(error.message.contains(&format!(
+                "expected_project_revision={}",
+                generation.revision
+            )));
+            assert!(error.message.contains("key lookup was not completed"));
+            assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        }
+        assert_eq!(
+            export_with(input, &|_| panic!("replay must not run worker")).unwrap(),
+            receipt
         );
         fs::remove_dir_all(root).unwrap();
     }

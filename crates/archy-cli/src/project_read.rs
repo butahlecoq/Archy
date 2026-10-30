@@ -307,6 +307,14 @@ impl BoundReadSnapshot<'_> {
         &self.owner.identity
     }
     pub fn verify_head(&self) -> Result<(), ArchyError> {
+        #[cfg(test)]
+        if let Some(code) = TEST_FAIL_HEAD_VERIFICATION.with(|slot| slot.take()) {
+            return Err(ArchyError::new(
+                code,
+                "ifc_verifier",
+                "injected head audit failure",
+            ));
+        }
         if let Some(receipt) = self.history.receipts().last() {
             self.verify_run(&receipt.run_id)?;
         }
@@ -329,4 +337,10 @@ impl BoundReadSnapshot<'_> {
             .map(<[u8]>::to_vec)
             .ok_or_else(|| artifact_invalid("artifact is absent from accepted run"))
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_FAIL_HEAD_VERIFICATION: std::cell::Cell<Option<archy_core::ErrorCode>> =
+        const { std::cell::Cell::new(None) };
 }

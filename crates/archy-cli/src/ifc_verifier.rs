@@ -2,11 +2,12 @@ use crate::artifact_invalid;
 use archy_core::project::v2;
 use archy_core::{ArchyError, ErrorCode, NormalizedSpec, ShapeParameters, Variant, sha256_hex};
 use std::{
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
+    os::fd::AsFd,
     os::unix::fs::MetadataExt,
     os::unix::process::CommandExt,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +19,10 @@ const WEB_IFC_JS_SHA: &str = "592491e48f22ba5dd2f1d33a6485469bed63ac1b5f48547a80
 const WEB_IFC_WASM_SHA: &str = "36b10f4f9fada12bb89ed664f9e61eae1c82b2ce5f04ee4175205149516498f5";
 const WEB_IFC_PACKAGE_SHA: &str =
     "cbe190c48abd4f353ab2b08075cd1784ca9ad95f80b06b3f7b77491d40439376";
+const RUNTIME_NODE: &str = "/usr/lib/archy/runtime/node/bin/node";
+const RUNTIME_BWRAP: &str = "/usr/lib/archy/runtime/bin/bwrap";
+const RUNTIME_VERIFIER: &str = "/usr/lib/archy/runtime/ifc-verifier";
+const RUNTIME_GATE: &str = "/usr/lib/archy/archy-service-gate";
 const LIMIT: usize = 8 * 1024 * 1024;
 
 fn unavailable(message: &str) -> ArchyError {
@@ -50,6 +55,179 @@ fn trusted_directory(path: &Path) -> Result<(), ArchyError> {
         return Err(unavailable("fixed IFC verifier directory is not trusted"));
     }
     Ok(())
+}
+
+fn stop_runtime_audit(mut child: Child) {
+    let _ = child.kill();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while Instant::now() < deadline {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    // An uninterruptible kernel wait must not hold the project lock forever.
+    thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
+
+fn runtime_audit_timeout() -> ArchyError {
+    ArchyError::new(
+        ErrorCode::BackendTimeout,
+        "ifc_verifier",
+        "fixed IFC runtime inventory audit timed out",
+    )
+}
+
+fn wait_for_runtime_audit(mut child: Child, timeout: Duration) -> Result<(), ArchyError> {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) if started.elapsed() >= timeout => return Err(runtime_audit_timeout()),
+            Ok(Some(status)) if status.success() => return Ok(()),
+            Ok(Some(_)) => return Err(unavailable("fixed IFC runtime inventory audit failed")),
+            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(20)),
+            result => {
+                stop_runtime_audit(child);
+                return match result {
+                    Ok(None) => Err(runtime_audit_timeout()),
+                    _ => Err(unavailable(
+                        "fixed IFC runtime inventory audit could not be waited",
+                    )),
+                };
+            }
+        }
+    }
+}
+
+fn audit_installed_runtime() -> Result<(), ArchyError> {
+    let gate = Path::new(RUNTIME_GATE);
+    trusted_file(gate, None)?;
+    if std::fs::symlink_metadata(gate)
+        .map_err(|_| unavailable("fixed IFC runtime gate is absent"))?
+        .mode()
+        & 0o111
+        == 0
+    {
+        return Err(unavailable("fixed IFC runtime gate is not executable"));
+    }
+    let child = Command::new(gate)
+        .arg("--audit-runtime=ifc")
+        .env_clear()
+        .env("LC_ALL", "C")
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| unavailable("fixed IFC runtime inventory audit cannot start"))?;
+    wait_for_runtime_audit(child, Duration::from_secs(180))
+}
+
+fn exchange_verifier(
+    mut child: Child,
+    frame: &[u8],
+    timeout: Duration,
+) -> Result<(ExitStatus, Vec<u8>), ArchyError> {
+    use rustix::fs::{OFlags, fcntl_getfl, fcntl_setfl};
+
+    let mut input = child.stdin.take();
+    let mut output = child.stdout.take();
+    let setup = || -> Result<(), ArchyError> {
+        let stdin = input
+            .as_ref()
+            .ok_or_else(|| unavailable("IFC verifier stdin absent"))?;
+        let stdout = output
+            .as_ref()
+            .ok_or_else(|| unavailable("IFC verifier stdout absent"))?;
+        for fd in [stdin.as_fd(), stdout.as_fd()] {
+            let flags = fcntl_getfl(fd).map_err(|_| unavailable("IFC verifier pipe flags"))?;
+            fcntl_setfl(fd, flags | OFlags::NONBLOCK)
+                .map_err(|_| unavailable("IFC verifier nonblocking pipe"))?;
+        }
+        Ok(())
+    };
+    if let Err(error) = setup() {
+        drop(input);
+        drop(output);
+        stop_runtime_audit(child);
+        return Err(error);
+    }
+    let started = Instant::now();
+    let mut written = 0;
+    let mut write_failed = false;
+    let mut bytes = Vec::new();
+    let mut status = None;
+    let result = loop {
+        if started.elapsed() >= timeout {
+            break Err(ArchyError::new(
+                ErrorCode::BackendTimeout,
+                "ifc_verifier",
+                "IFC verifier deadline exceeded",
+            ));
+        }
+        let mut progressed = false;
+        if let Some(stdin) = input.as_mut() {
+            match stdin.write(&frame[written..]) {
+                Ok(0) => {
+                    write_failed = true;
+                    input = None;
+                }
+                Ok(n) => {
+                    progressed = true;
+                    written += n;
+                    if written == frame.len() {
+                        input = None;
+                    }
+                }
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {}
+                Err(_) => {
+                    write_failed = true;
+                    input = None;
+                }
+            }
+        }
+        if let Some(stdout) = output.as_mut() {
+            let mut buffer = [0u8; 8193];
+            match stdout.read(&mut buffer) {
+                Ok(0) => output = None,
+                Ok(n) => {
+                    progressed = true;
+                    bytes.extend_from_slice(&buffer[..n]);
+                    if bytes.len() > 8192 {
+                        break Err(artifact_invalid("IFC verifier protocol failure"));
+                    }
+                }
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::Interrupted) => {}
+                Err(_) => break Err(artifact_invalid("IFC verifier output unreadable")),
+            }
+        }
+        if status.is_none() {
+            match child.try_wait() {
+                Ok(value) => status = value,
+                Err(_) => break Err(unavailable("IFC verifier failed to wait")),
+            }
+        }
+        if let Some(done) = status
+            && input.is_none()
+            && output.is_none()
+        {
+            if write_failed || written != frame.len() {
+                break Err(artifact_invalid("IFC verifier protocol failure"));
+            }
+            break Ok((done, bytes));
+        }
+        if !progressed {
+            thread::sleep(Duration::from_millis(2));
+        }
+    };
+    drop(input);
+    drop(output);
+    if result.is_err() {
+        stop_runtime_audit(child);
+    }
+    result
 }
 
 fn expected(
@@ -134,7 +312,7 @@ pub(crate) fn verify(
             "/../../tests/backend/ifc-reader"
         ))
     } else {
-        Path::new("/usr/lib/archy/ifc-verifier")
+        Path::new(RUNTIME_VERIFIER)
     };
     let test_node = if fixture {
         std::env::var_os("ARCHY_IFC_TEST_NODE")
@@ -145,8 +323,13 @@ pub(crate) fn verify(
         if fixture {
             Path::new("node")
         } else {
-            Path::new("/usr/bin/node")
+            Path::new(RUNTIME_NODE)
         }
+    });
+    let bwrap = Path::new(if fixture {
+        "/usr/bin/bwrap"
+    } else {
+        RUNTIME_BWRAP
     });
     let bridge = root.join("verify-stdin.cjs");
     let reader = root.join("reader.cjs");
@@ -160,14 +343,24 @@ pub(crate) fn verify(
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false);
     if !fixture {
-        for parent in ["/", "/usr", "/usr/bin", "/usr/lib", "/usr/lib/archy"] {
+        for parent in [
+            "/",
+            "/usr",
+            "/usr/lib",
+            "/usr/lib/archy",
+            "/usr/lib/archy/runtime",
+            "/usr/lib/archy/runtime/bin",
+            "/usr/lib/archy/runtime/node",
+            "/usr/lib/archy/runtime/node/bin",
+        ] {
             trusted_directory(Path::new(parent))?;
         }
+        audit_installed_runtime()?;
         trusted_directory(root)?;
         trusted_directory(&root.join("node_modules"))?;
         trusted_directory(&root.join("node_modules/web-ifc"))?;
         trusted_file(node, None)?;
-        trusted_file(Path::new("/usr/bin/bwrap"), None)?;
+        trusted_file(bwrap, None)?;
         if separate_lib64 {
             trusted_directory(Path::new("/usr/lib64"))?;
         }
@@ -206,7 +399,18 @@ pub(crate) fn verify(
     frame.extend_from_slice(&expected);
     frame.extend_from_slice(source);
     frame.extend_from_slice(model);
-    let mut command = Command::new("/usr/bin/bwrap");
+    let mut command = if fixture {
+        Command::new(bwrap)
+    } else {
+        let mut cmd = Command::new("/usr/lib/ld-linux-x86-64.so.2");
+        cmd.args([
+            "--inhibit-cache",
+            "--library-path",
+            "/usr/lib",
+            RUNTIME_BWRAP,
+        ]);
+        cmd
+    };
     command.args([
         "--unshare-user",
         "--unshare-pid",
@@ -218,6 +422,8 @@ pub(crate) fn verify(
         "--cap-drop",
         "ALL",
         "--clearenv",
+        "--dir",
+        "/etc",
         "--setenv",
         "TZ",
         "UTC",
@@ -254,10 +460,16 @@ pub(crate) fn verify(
         .arg("--ro-bind")
         .arg(&modules)
         .arg("/runtime/node_modules")
-        .arg("--ro-bind")
-        .arg(node)
-        .arg("/usr/bin/node")
-        .arg("/usr/bin/node")
+        .args(if fixture {
+            vec!["--ro-bind", node.to_str().unwrap(), "/usr/bin/node"]
+        } else {
+            vec![]
+        })
+        .arg(if fixture {
+            "/usr/bin/node"
+        } else {
+            RUNTIME_NODE
+        })
         .arg("--max-old-space-size=256")
         .arg("--no-addons")
         .arg(if fixture {
@@ -299,52 +511,10 @@ pub(crate) fn verify(
             Ok(())
         });
     }
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|_| unavailable("fixed IFC verifier cannot start"))?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| unavailable("IFC verifier stdin absent"))?;
-    let writer = thread::spawn(move || stdin.write_all(&frame));
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| unavailable("IFC verifier stdout absent"))?;
-    let reader_thread = thread::spawn(move || {
-        let mut bytes = Vec::new();
-        stdout.take(8193).read_to_end(&mut bytes).map(|_| bytes)
-    });
-    let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() < Duration::from_secs(20) => {
-                thread::sleep(Duration::from_millis(20))
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = writer.join();
-                let _ = reader_thread.join();
-                return Err(ArchyError::new(
-                    ErrorCode::BackendTimeout,
-                    "ifc_verifier",
-                    "IFC verifier timed out or failed to wait",
-                ));
-            }
-        }
-    };
-    let written = writer
-        .join()
-        .map_err(|_| unavailable("IFC verifier input thread failed"))?;
-    let output = reader_thread
-        .join()
-        .map_err(|_| unavailable("IFC verifier output thread failed"))?
-        .map_err(|_| artifact_invalid("IFC verifier output unreadable"))?;
-    if written.is_err() || output.len() > 8192 {
-        return Err(artifact_invalid("IFC verifier protocol failure"));
-    }
+    let (status, output) = exchange_verifier(child, &frame, Duration::from_secs(20))?;
     let report: serde_json::Value = serde_json::from_slice(&output)
         .map_err(|_| artifact_invalid("IFC verifier report invalid"))?;
     if report["code"] == "RUNTIME_UNAVAILABLE" {
@@ -369,4 +539,180 @@ pub(crate) fn verify(
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod runtime_trust_tests {
+    use super::{
+        exchange_verifier, sha256_hex, trusted_directory, trusted_file, verify,
+        wait_for_runtime_audit,
+    };
+    use archy_core::{ErrorCode, NormalizedSpec, Variant};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    use std::path::Path;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn immutable_runtime_ownership_modes_and_pins_are_enforced() {
+        let root = std::env::temp_dir().join(format!("archy-ifc-runtime-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("reader.cjs");
+        std::fs::write(&file, b"reviewed").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mapped_root = std::fs::metadata(&root).unwrap().uid() == 0;
+        if mapped_root {
+            assert!(trusted_directory(&root).is_ok());
+            assert!(trusted_file(&file, Some(&sha256_hex(b"reviewed"))).is_ok());
+            assert!(trusted_file(&file, Some(&sha256_hex(b"unreviewed"))).is_err());
+        } else {
+            assert!(trusted_directory(&root).is_err());
+            assert!(trusted_file(&file, None).is_err());
+        }
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(trusted_file(&file, None).is_err());
+        let link = root.join("link");
+        symlink(&file, &link).unwrap();
+        assert!(trusted_file(&link, None).is_err());
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(trusted_directory(&root).is_err());
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn runtime_audit_wait_fails_closed_and_reaps_on_timeout() {
+        let start = |program: &str, args: &[&str]| {
+            Command::new(program)
+                .args(args)
+                .env_clear()
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap()
+        };
+        assert!(
+            wait_for_runtime_audit(start("/usr/bin/true", &[]), Duration::from_secs(2)).is_ok()
+        );
+        assert_eq!(
+            wait_for_runtime_audit(start("/usr/bin/false", &[]), Duration::from_secs(2))
+                .unwrap_err()
+                .code,
+            ErrorCode::BackendUnavailable
+        );
+        let mut completed = start("/usr/bin/true", &[]);
+        assert!(completed.wait().unwrap().success());
+        assert_eq!(
+            wait_for_runtime_audit(completed, Duration::ZERO)
+                .unwrap_err()
+                .code,
+            ErrorCode::BackendTimeout
+        );
+        let child = start("/usr/bin/sleep", &["60"]);
+        let pid = child.id();
+        let began = Instant::now();
+        assert_eq!(
+            wait_for_runtime_audit(child, Duration::from_millis(40))
+                .unwrap_err()
+                .code,
+            ErrorCode::BackendTimeout
+        );
+        assert!(began.elapsed() < Duration::from_secs(10));
+        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    #[test]
+    fn verifier_deadline_covers_pipe_io_after_child_exit() {
+        let spawn = |script: &str| {
+            Command::new("/bin/sh")
+                .args(["-c", script])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap()
+        };
+        let (status, output) =
+            exchange_verifier(spawn("/bin/cat"), b"payload", Duration::from_secs(2)).unwrap();
+        assert!(status.success());
+        assert_eq!(output, b"payload");
+        let big = vec![7u8; 9 * 1024 * 1024];
+        let (status, output) =
+            exchange_verifier(spawn("/usr/bin/wc -c"), &big, Duration::from_secs(5)).unwrap();
+        assert!(status.success());
+        assert_eq!(
+            String::from_utf8(output).unwrap().trim(),
+            big.len().to_string()
+        );
+        let started = Instant::now();
+        let error = exchange_verifier(
+            spawn("/usr/bin/sleep 2 & printf '{}'"),
+            b"payload",
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::BackendTimeout);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let started = Instant::now();
+        let error = exchange_verifier(
+            spawn("/usr/bin/sleep 2 &"),
+            &vec![0u8; 1_000_000],
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::BackendTimeout);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    fn exercise_fixture_verifier() -> archy_core::ArchyError {
+        let spec: NormalizedSpec = serde_json::from_slice(include_bytes!(
+            "../../../tests/fixtures/legacy-preference-run/archived-runs/5248af90-8dfe-4743-b056-7d3385c62c97/normalized.json"
+        )).unwrap();
+        let variant: Variant = serde_json::from_slice(include_bytes!(
+            "../../../tests/fixtures/legacy-preference-run/archived-runs/5248af90-8dfe-4743-b056-7d3385c62c97/variants/variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b.json"
+        )).unwrap();
+        verify(
+            b"invalid model",
+            b"{}",
+            &spec,
+            None,
+            "json",
+            &variant,
+            "run",
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    #[ignore = "requires a disposable container with a descendant holding the verifier pipe"]
+    fn verifier_deadline_covers_descendant_held_pipe() {
+        let started = Instant::now();
+        let error = exercise_fixture_verifier();
+        assert_eq!(error.code, ErrorCode::BackendTimeout);
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    #[ignore = "requires a disposable container with the actual gate and a tampered inventory"]
+    fn invalid_inventory_stops_verifier_before_bwrap() {
+        let marker = Path::new("/tmp/archy-untrusted-bwrap-ran");
+        assert!(!marker.exists());
+        let error = exercise_fixture_verifier();
+        assert_eq!(error.code, ErrorCode::BackendUnavailable);
+        assert!(
+            !marker.exists(),
+            "bwrap ran after the inventory was rejected"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a disposable container with synthetic inventoried runtime files"]
+    fn valid_inventory_reaches_fixture_bwrap() {
+        let marker = Path::new("/tmp/archy-untrusted-bwrap-ran");
+        assert!(!marker.exists());
+        let error = exercise_fixture_verifier();
+        assert_eq!(error.code, ErrorCode::ArtifactInvalid);
+        assert!(marker.exists(), "fixture bwrap was not reached");
+    }
 }

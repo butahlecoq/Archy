@@ -483,7 +483,7 @@ class RecipeTests(unittest.TestCase):
             self.assertIn("python3 packaging/arch/notices.py", recipe)
             self.assertIn("RUSTUP_AUTO_INSTALL=0", recipe)
             self.assertIn("depends=('glibc' 'libgcc')", recipe)
-            self.assertIn("optdepends=('bubblewrap: gated backend isolation' 'systemd: user-service supervisor')", recipe)
+            self.assertIn("optdepends=('archy-runtime: private backend runtimes and isolation' 'systemd: user-service supervisor')", recipe)
             self.assertIn("--gate-binary", recipe)
             self.assertIn("url='https://github.com/butahlecoq/Archy'", recipe)
             self.assertIn("options=('!debug')", recipe)
