@@ -616,6 +616,122 @@ mod tests {
     }
 
     #[test]
+    fn native_export_succeeds_after_two_empty_timeout_attempts_and_replays() {
+        let Ok(python) = std::env::var("ARCHY_IFC_TEST_PYTHON") else {
+            return;
+        };
+        let root =
+            std::env::temp_dir().join(format!("archy-ifc-timeout-retry-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let project = root.join("project.json");
+        fs::write(
+            &project,
+            include_bytes!("../../../tests/fixtures/briefs/courtyard-v2.json"),
+        )
+        .unwrap();
+        let source = generate(GenerateInput {
+            project: project.clone(),
+            mode: GenerationMode::Sample { count: 1, seed: 42 },
+            mutation: MutationOptions::default(),
+        })
+        .unwrap();
+        let mut input = ExportIfcInput {
+            project: project.clone(),
+            source_run: Some(source.run_id.clone()),
+            variant_id: source.variant_ids[0].clone(),
+            mutation: MutationOptions::default(),
+        };
+        let timeout = |_: &IfcRequest| {
+            Err(ArchyError::new(
+                archy_core::ErrorCode::BackendTimeout,
+                "service",
+                "worker cancelled",
+            ))
+        };
+        for attempt in 0..2 {
+            let error = export_with(input.clone(), &timeout).unwrap_err();
+            assert_eq!(error.code, archy_core::ErrorCode::BackendTimeout);
+            assert!(error.retriable);
+            let key = error
+                .message
+                .split("idempotency_key=")
+                .nth(1)
+                .and_then(|tail| tail.split_whitespace().next())
+                .unwrap();
+            assert!(
+                error
+                    .message
+                    .contains(&format!("expected_project_revision={}", source.revision))
+            );
+            if attempt == 0 {
+                assert!(uuid::Uuid::parse_str(key).is_ok());
+                input.mutation.idempotency_key = Some(key.into());
+                input.mutation.expected_project_revision = Some(source.revision);
+            } else {
+                assert_eq!(Some(key), input.mutation.idempotency_key.as_deref());
+            }
+            let store = ProjectStore::open(&project).unwrap();
+            let locked = store.lock().unwrap();
+            assert_eq!(locked.receipts().unwrap().len(), 1);
+            assert_eq!(locked.revision().unwrap(), source.revision);
+            assert_eq!(
+                fs::read_dir(root.join(".archy/staging")).unwrap().count(),
+                0
+            );
+        }
+
+        let job = root.join("worker");
+        fs::create_dir(&job).unwrap();
+        let receipt = export_with(input.clone(), &|request| {
+            native(request, &job, &python, None)
+        })
+        .unwrap();
+        let run_dir = root.join(&receipt.path);
+        let manifest = fs::read(run_dir.join("manifest.json")).unwrap();
+        let model = fs::read(run_dir.join("ifc/model.ifc")).unwrap();
+        let revision =
+            fs::read(root.join(format!(".archy/revisions/{:020}.json", receipt.revision))).unwrap();
+        assert_eq!(receipt.revision, source.revision + 1);
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .receipts()
+                .unwrap()
+                .len(),
+            2
+        );
+        let verified = crate::verify_run(&project, &receipt.run_id).unwrap();
+        assert_eq!(
+            verified.manifest().idempotency_key,
+            input.mutation.idempotency_key.clone().unwrap()
+        );
+        assert_eq!(verified.manifest().operation, "export-ifc");
+        assert_eq!(
+            export_with(input, &|_| panic!("exact replay reached worker")).unwrap(),
+            receipt
+        );
+        assert_eq!(
+            ProjectStore::open(&project)
+                .unwrap()
+                .lock()
+                .unwrap()
+                .receipts()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(fs::read(run_dir.join("manifest.json")).unwrap(), manifest);
+        assert_eq!(fs::read(run_dir.join("ifc/model.ifc")).unwrap(), model);
+        assert_eq!(
+            fs::read(root.join(format!(".archy/revisions/{:020}.json", receipt.revision))).unwrap(),
+            revision
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn implicit_export_retry_keeps_source_after_later_generation() {
         let root = std::env::temp_dir().join(format!("archy-a12-retry-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
