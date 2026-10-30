@@ -64,6 +64,17 @@ def run_case(mode, real_binary=False):
 
 @unittest.skipUnless(os.environ.get("ARCHY_RUN_DESKTOP_QS") == "1", "set ARCHY_RUN_DESKTOP_QS=1 for immutable native container")
 class NativeDesktop(unittest.TestCase):
+    def test_invalid_project_selection_clears_previous_verified_run(self):
+        result, argv = run_case("invalid-selection")
+        self.assertEqual(argv, [
+            ["desktop", "capabilities", "--json"],
+            ["desktop", "status", "--project", SELECTED, "--limit", "20", "--json"],
+        ])
+        self.assertIsNone(result["status"])
+        self.assertEqual(result["manifest"], "")
+        self.assertEqual(result["selectedRunId"], "")
+        self.assertTrue(result["error"])
+
     def test_fixed_commands_and_path_with_spaces(self):
         result, argv = run_case("normal")
         self.assertEqual(argv[0], ["desktop", "capabilities", "--json"])

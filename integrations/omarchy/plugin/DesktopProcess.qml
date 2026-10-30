@@ -50,13 +50,14 @@ Item {
     start("status")
   }
   function selectManifest(path) {
-    if (!Model.validManifest(path)) { error = "Enter an absolute local manifest path"; return }
     if (busy) abort("Project selection changed")
-    manifest = path
+    manifest = ""
     status = null
     selectedRunId = ""
     pageCursor = ""
     stale = false
+    if (!Model.validManifest(path)) { error = "Enter an absolute local manifest path"; return }
+    manifest = path
     refreshStatus()
   }
   function selectRun(id) {

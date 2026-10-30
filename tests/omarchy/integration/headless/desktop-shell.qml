@@ -37,7 +37,9 @@ Scope {
     onStatusChanged: {
       if (!status) return
       root.statusCount++
-      if ((root.scenario === "selected-run" || root.scenario === "wrong-explicit") && root.statusCount === 1) {
+      if (root.scenario === "invalid-selection" && root.statusCount === 1) {
+        Qt.callLater(function() { desktop.selectManifest("relative/project.yaml") })
+      } else if ((root.scenario === "selected-run" || root.scenario === "wrong-explicit") && root.statusCount === 1) {
         Qt.callLater(function() { desktop.selectRun(status.runs[1].run_id) })
       } else if (root.scenario === "stale-cursor" && root.statusCount === 1) {
         Qt.callLater(function() { desktop.nextPage() })
@@ -53,6 +55,7 @@ Scope {
       if (root.scenario === "stale-cursor" && root.busyEvents.length < 8) return
       if (root.scenario === "switch-manifest" && root.busyEvents.length < 6) return
       if (root.scenario === "normal" && root.busyEvents.length < 4) return
+      if (root.scenario === "invalid-selection" && (root.busyEvents.length < 4 || root.statusCount < 1)) return
       if (root.scenario === "malformed" || root.scenario === "flood" || root.scenario === "stderr") {
         if (root.busyEvents.length < 4) return
       }

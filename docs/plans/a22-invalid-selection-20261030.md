@@ -1,0 +1,7 @@
+# A22 invalid project selection
+
+At `feccbc4`, a failed manifest validation returns before clearing the previous verified status. The panel keeps Open buttons enabled for the old project after the user tries to load another path. An in-flight old status can also complete after that rejected selection.
+
+Plan: exercise a valid load followed by an invalid selection through the existing headless `DesktopProcess.qml` harness; assert that no verified status or selected manifest remains and no extra CLI request runs. Then make selection clear the old snapshot and cancel any old request before validating the new path. Keep the existing fixed argv, capability contract and opener unchanged. No dependencies or host configuration changes. Generic Quickshell testing cannot establish Omarchy visual or installed behavior; send the commit for separate review.
+
+Result: the new test failed on the base because the old accepted status remained visible, then passed after the change. `ARCHY_RUN_DESKTOP_QS=1 python3 -m unittest tests.omarchy.integration.test_headless_desktop.NativeDesktop -v` passed 8 tests in the existing read-only generic Quickshell container; `node --test tests/omarchy/integration/*model.test.js` passed 26; `python3 -m unittest discover -s tests/omarchy/integration -p 'test_*.py' -q` passed 43 with 18 opt-in skips; `git diff --check` passed. This is local behavior evidence only. Independent review and native Omarchy acceptance remain separate.
