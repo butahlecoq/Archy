@@ -616,10 +616,26 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires configured native IFC Python, Node, and pinned reader modules"]
     fn native_export_succeeds_after_two_empty_timeout_attempts_and_replays() {
-        let Ok(python) = std::env::var("ARCHY_IFC_TEST_PYTHON") else {
-            return;
-        };
+        let python = std::env::var("ARCHY_IFC_TEST_PYTHON")
+            .expect("set ARCHY_IFC_TEST_PYTHON to the native IFC Python fixture");
+        let node = std::env::var("ARCHY_IFC_TEST_NODE")
+            .expect("set ARCHY_IFC_TEST_NODE to the pinned Node fixture");
+        assert!(
+            std::path::Path::new(&python).is_file(),
+            "ARCHY_IFC_TEST_PYTHON must name an existing file"
+        );
+        assert!(
+            std::path::Path::new(&node).is_file(),
+            "ARCHY_IFC_TEST_NODE must name an existing file"
+        );
+        assert!(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/backend/ifc-reader/node_modules")
+                .is_dir(),
+            "configure the pinned IFC reader node_modules fixture"
+        );
         let root =
             std::env::temp_dir().join(format!("archy-ifc-timeout-retry-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).unwrap();
