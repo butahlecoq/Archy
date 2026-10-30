@@ -13,11 +13,13 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Component, Path, PathBuf};
 
-const DOMAIN: &[u8] = b"archy-root-journal-witness-v1\0";
+const DOMAIN: &[u8] = b"archy-root-journal-witness-v2\0";
+const BINDING_VERSION: &str = "archy-root-journal-binding-v2";
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Binding {
+    schema_version: String,
     broker_uid: u32,
     broker_gid: u32,
     journal_path: PathBuf,
@@ -27,6 +29,8 @@ struct Binding {
     project_dev: u64,
     project_ino: u64,
     project_source_sha256: String,
+    project_identity_sha256: String,
+    project_lock_identity_sha256: String,
 }
 
 fn denied(reason: &'static str) -> io::Error {
@@ -86,6 +90,11 @@ fn binding_check(binding: &Binding) -> io::Result<()> {
     let project = WitnessProject::open(&binding.project_path, binding.broker_uid)?;
     if project.source_sha256() != binding.project_source_sha256 {
         return Err(denied("bound project source changed"));
+    }
+    if project.identity_sha256() != binding.project_identity_sha256
+        || project.lock_identity_sha256() != binding.project_lock_identity_sha256
+    {
+        return Err(denied("bound project ancestor or lock identity changed"));
     }
     Ok(())
 }
@@ -152,7 +161,19 @@ fn read_binding(dir_path: &Path) -> io::Result<Binding> {
         return Err(denied("invalid witness binding"));
     }
     let data = fs::read(path)?;
-    serde_json::from_slice(&data).map_err(|_| denied("invalid witness binding"))
+    let binding: Binding =
+        serde_json::from_slice(&data).map_err(|_| denied("invalid witness binding"))?;
+    if binding.schema_version != BINDING_VERSION {
+        return Err(denied("unsupported witness binding version"));
+    }
+    for digest in [
+        &binding.project_source_sha256,
+        &binding.project_identity_sha256,
+        &binding.project_lock_identity_sha256,
+    ] {
+        hex_decode(digest)?;
+    }
+    Ok(binding)
 }
 
 fn read_state(dir_path: &Path, binding: &Binding) -> io::Result<(usize, [u8; 32])> {
@@ -255,6 +276,7 @@ fn initialize(
     let (journal_dev, journal_ino) = metadata_id(journal_path)?;
     let (project_dev, project_ino) = metadata_id(project_path)?;
     let binding = Binding {
+        schema_version: BINDING_VERSION.to_owned(),
         broker_uid,
         broker_gid,
         journal_path: journal_path.to_owned(),
@@ -264,6 +286,8 @@ fn initialize(
         project_dev,
         project_ino,
         project_source_sha256: project.source_sha256().to_owned(),
+        project_identity_sha256: project.identity_sha256().to_owned(),
+        project_lock_identity_sha256: project.lock_identity_sha256().to_owned(),
     };
     let bytes = serde_json::to_vec(&binding).map_err(io::Error::other)?;
     let mut seed = Sha256::new();
@@ -290,32 +314,7 @@ fn transition(dir_path: &Path, dir: &File, extend_requested: bool) -> io::Result
     )?;
     binding_check(&binding)?;
     let (sequence, observed) = read_state(dir_path, &binding)?;
-    // The witness must never initialize project lock structures as root.
-    let project_dir = binding
-        .project_path
-        .parent()
-        .ok_or_else(|| denied("project parent missing"))?;
-    for name in [
-        ".archy",
-        ".archy/staging",
-        ".archy/revisions",
-        ".archy/lock",
-    ] {
-        let meta = fs::symlink_metadata(project_dir.join(name))?;
-        let expected = if name.ends_with("/lock") {
-            0o600
-        } else {
-            0o700
-        };
-        let right_type = if name.ends_with("/lock") {
-            meta.is_file() && meta.nlink() == 1
-        } else {
-            meta.is_dir()
-        };
-        if meta.uid() != binding.broker_uid || meta.mode() & 0o7777 != expected || !right_type {
-            return Err(denied("project lock structure is not broker provisioned"));
-        }
-    }
+    // The pinned project check also verifies every broker-provisioned lock entry.
     let store = ProjectStore::open(&binding.project_path).map_err(io::Error::other)?;
     let _project_lock = store.lock().map_err(io::Error::other)?;
     binding_check(&binding)?;

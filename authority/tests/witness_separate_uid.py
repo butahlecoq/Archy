@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import signal
 import socket
 import subprocess
@@ -95,12 +96,68 @@ def main():
                     str(PROJECT), str(BROKER), str(BROKER)], check=True)
     server = start()
     assert request(BROKER, 'S') == 'EXACT 0'
+    original_dir = BASE / 'broker/project-original'
+    PROJECT.parent.rename(original_dir)
+    owned_dir(BASE / 'broker/project', BROKER, 0o700)
+    (original_dir / 'project.json').rename(PROJECT)
+    for name in ('.archy', '.archy/staging', '.archy/revisions'):
+        owned_dir(PROJECT.parent / name, BROKER, 0o700)
+    new_lock = PROJECT.parent / '.archy/lock'
+    new_lock.write_bytes(b'')
+    os.chown(new_lock, BROKER, BROKER)
+    new_lock.chmod(0o600)
+    replaced_parent_status = request(BROKER, 'S')
+    assert replaced_parent_status.startswith('DENIED'), replaced_parent_status
+    PROJECT.rename(original_dir / 'project.json')
+    shutil.rmtree(PROJECT.parent)
+    original_dir.rename(PROJECT.parent)
+    assert request(BROKER, 'S') == 'EXACT 0'
+    old_lock = PROJECT.parent / '.archy/old-lock'
+    lock.rename(old_lock)
+    lock.write_bytes(b'')
+    os.chown(lock, BROKER, BROKER)
+    lock.chmod(0o600)
+    assert request(BROKER, 'S').startswith('DENIED')
+    lock.unlink()
+    old_lock.rename(lock)
+    assert request(BROKER, 'S') == 'EXACT 0'
+    old_archy = PROJECT.parent / '.archy-original'
+    archy.rename(old_archy)
+    archy.symlink_to(old_archy, target_is_directory=True)
+    assert request(BROKER, 'S').startswith('DENIED')
+    archy.unlink()
+    old_archy.rename(archy)
+    assert request(BROKER, 'S') == 'EXACT 0'
+    bind = subprocess.run(['mount', '--bind', str(PROJECT.parent), str(PROJECT.parent)],
+                          capture_output=True)
+    if bind.returncode == 0:
+        try:
+            assert request(BROKER, 'S').startswith('DENIED')
+        finally:
+            subprocess.run(['umount', str(PROJECT.parent)], check=True)
+        assert request(BROKER, 'S') == 'EXACT 0'
+    binding_path = STATE / 'binding.json'
+    bound_bytes = binding_path.read_bytes()
+    unbound = json.loads(bound_bytes)
+    del unbound['schema_version']
+    del unbound['project_identity_sha256']
+    del unbound['project_lock_identity_sha256']
+    binding_path.write_text(json.dumps(unbound, separators=(',', ':')))
+    assert request(BROKER, 'S').startswith('DENIED')
+    stop(server)
+    refused = subprocess.run([str(BINARY), 'serve', str(STATE), str(SOCKET)],
+                             capture_output=True, timeout=5)
+    assert refused.returncode != 0 and b'invalid witness binding' in refused.stderr
+    binding_path.write_bytes(bound_bytes)
+    server = start()
+    assert request(BROKER, 'S') == 'EXACT 0'
     denied_peer = subprocess.run(['setpriv', '--reuid', str(AGENT), '--regid', str(AGENT), '--clear-groups',
                                   'python3', __file__, 'client', 'S'], capture_output=True)
     assert denied_peer.returncode != 0
     wrong_uid = subprocess.run(['setpriv', '--reuid', str(AGENT), '--regid', str(BROKER), '--clear-groups',
                                 'python3', __file__, 'client', 'S'], capture_output=True, text=True)
-    assert wrong_uid.returncode == 0 and wrong_uid.stdout.startswith('DENIED unauthorized peer')
+    assert wrong_uid.returncode == 0 and wrong_uid.stdout.startswith('DENIED unauthorized peer'), (
+        wrong_uid.returncode, wrong_uid.stdout, wrong_uid.stderr)
     first, digest = synced_record(1, '0' * 64, 'first', 'candidate-one')
     assert request(BROKER, 'S') == 'STALE 0 1'
     assert request(BROKER, 'E') == 'EXTENDED 1'
@@ -159,7 +216,9 @@ def main():
     (STATE / 'state-00000000000000000000').unlink()
     assert request(BROKER, 'S').startswith('DENIED')
     stop(server)
-    print('PASS: separate UIDs, root parent, unextended tail, rollback/replacement, restart, project inode/source, corrupt/missing state, unauthorized peer/write')
+    print('PASS: separate UIDs, root parent, ancestor/lock/symlink, bind=' +
+          ('tested' if bind.returncode == 0 else 'unavailable') +
+          ', unextended tail, rollback/replacement, restart, project inode/source, corrupt/missing state, unauthorized peer/write')
 
 
 if __name__ == '__main__':
