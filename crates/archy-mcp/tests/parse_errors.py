@@ -14,7 +14,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 TARGET = pathlib.Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
 if not TARGET.is_absolute():
-    TARGET = ROOT / TARGET
+    TARGET = pathlib.Path.cwd() / TARGET
 BIN = TARGET / 'debug/archy-mcp'
 META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
         'io.modelcontextprotocol/clientInfo': {'name': 'parse-test', 'version': '0'},
@@ -286,7 +286,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-parse-') as td:
     check_fabricated_error_rejection()
     check_probe_wiring()
     subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-mcp',
-                    '--example', 'stdout_backpressure_probe'], cwd=ROOT, check=True)
+                    '--example', 'stdout_backpressure_probe'], check=True)
     probe = TARGET / 'debug/examples/stdout_backpressure_probe'
     read_fd, write_fd = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
     control_read, control_write = os.pipe2(os.O_CLOEXEC)

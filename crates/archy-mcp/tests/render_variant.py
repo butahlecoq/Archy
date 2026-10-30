@@ -12,7 +12,7 @@ from jsonschema import Draft202012Validator
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 TARGET = pathlib.Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
 if not TARGET.is_absolute():
-    TARGET = ROOT / TARGET
+    TARGET = pathlib.Path.cwd() / TARGET
 META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
         'io.modelcontextprotocol/clientInfo': {'name': 'render-contract', 'version': '0'},
         'io.modelcontextprotocol/clientCapabilities': {}}

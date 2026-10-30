@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 TARGET = pathlib.Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
 if not TARGET.is_absolute():
-    TARGET = ROOT / TARGET
+    TARGET = pathlib.Path.cwd() / TARGET
 MCP = TARGET / 'debug/archy-mcp'
 CLI = TARGET / 'debug/archy'
 SOURCE = ROOT / 'examples/courtyard-housing/project.yaml'
