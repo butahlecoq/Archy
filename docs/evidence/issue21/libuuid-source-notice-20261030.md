@@ -7,3 +7,40 @@ The exact [Arch recipe tag](https://gitlab.archlinux.org/archlinux/packaging/pac
 The upstream [`libuuid/COPYING`](../../../packaging/arch/issue21-source-notices/util-linux-libs/libuuid-COPYING), SHA-256 `5068749ee9c2f2c545af4a4de9fde3c39dc8d90af47cc0b3a42700116f9b7e71`, points to its full BSD-3-Clause text. All five full license files shipped in the signed package are saved in the [util-linux-libs notice directory](../../../packaging/arch/issue21-source-notices/util-linux-libs/): `COPYING.BSD-2-Clause` (`527f738966ca396cd5a68c1509390de2a780c6b614d9ee57f7544a6161938ed1`), `COPYING.BSD-3-Clause` (`9b718a9460fed5952466421235bc79eb49d4e9eacc920d7a9dd6285ab8fd6c6d`), `COPYING.BSD-4-Clause-UC` (`ba7640f00d93e72e92b94b9d71f25ec53bac2f1682f5c4adcccb0018359f60f8`), `COPYING.ISC` (`e53348ce276358e9997014071c5294b36a18c4b34f32f00ee57b9acce0aafd63`), and `util-linux-BSD-2-Clause.txt` (`6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a`). The first four match files in the signed upstream tree; the final file matches the PKGBUILD's pinned checksum for its extra xxHash license input. The package's SPDX labels also include GPL and LGPL variants and public domain, reflecting the broader split package rather than a determination for this library. `libuuid` compiles shared `randutils`, MD5 and SHA-1 code; source-file header notices need a separate legal mapping before distribution.
 
 Signature verification used keys fetched by fingerprint into private scratch; key certification against an independent trust root was not established. The source tag, recipe, signed package, and exact ELF hash form a historical correspondence chain, but no reproducible source-to-binary build was run. This does not identify a current Omarchy target package or grant distribution or legal approval.
+
+## Source header mapping at the verified v2.42.4 tree
+
+The [Meson libuuid target](https://github.com/util-linux/util-linux/blob/v2.42.4/libuuid/meson.build) explicitly supplies 11 `libuuid/src/*.c` files and three shared `lib/*.c` files. `pack.c` appears in `lib_uuid_sources` and is also assigned to `pack_c` for a separate test; it is counted once in the library. The target also names `include/list.h` through `list_h`. The 11 library-local C files are `clear`, `compare`, `copy`, `gen_uuid`, `isnull`, `pack`, `parse`, `predefined`, `unpack`, `unparse`, and `uuid_time`. The shared C files are `randutils`, `md5`, and `sha1`. These are build-definition inputs, not an observed compiler command or source-to-binary reproduction.
+
+The [26-row source inventory](../../../packaging/arch/issue21-source-notices/util-linux-libs/libuuid-source-notices.tsv) records each C file and relevant project header, its SHA-256 from the exact Git commit, and its leading notice. The [checker](../../../scripts/issue21/verify_libuuid_source_notices.py) checks the tag object, commit, tree, Meson source list and shared-source variables, quoted-include header closure, file hashes, notice classes, and the saved LGPL text. `include/list.h` is a Meson input but is not in that quoted-include closure; the inventory does not assert that it contributes code to the shared object. The closure includes `include/timeutils.h` through `gen_uuid.c` and `uuid_time.c`, though these C files do not call the inline functions named in that header. This distinction matters when assessing the binary and its obligations.
+
+| Inputs | Header evidence | Relevant full text |
+| --- | --- | --- |
+| All 11 `libuuid/src/*.c`, plus `uuidP.h`, `uuidd.h`, and `uuid.h` | Each carries a full BSD-style three-condition header and its own copyright line. Theodore Ts'o is named on all but `predefined.c`, which names Philip Prindeville. No SPDX line appears in these leading headers. | Saved upstream `libuuid/COPYING` points to `Documentation/licenses/COPYING.BSD-3-Clause`, already saved as `COPYING.BSD-3-Clause`. The file headers carry the holder-specific notices needed alongside that generic license text. |
+| `lib/randutils.c`, `include/randutils.h` | `SPDX-License-Identifier: BSD-3-Clause`; `randutils.c` points to the full upstream Modified BSD text. | Saved `COPYING.BSD-3-Clause` (SHA-256 `9b718a9460fed5952466421235bc79eb49d4e9eacc920d7a9dd6285ab8fd6c6d`). |
+| `lib/md5.c`, `lib/sha1.c`, `include/md5.h`, `include/sha1.h` | Public-domain claims; MD5 names Colin Plumb and SHA-1 names Steve Reid. | The source comments themselves state the claim; no separate permission text was identified for these files. |
+| `include/all-io.h`, `include/c.h`, `include/nls.h`, `include/strutils.h` | Public-domain claims; `all-io.h` names Karel Zak and Petr Uzel. | The source comments themselves state the claim. |
+| `include/timeutils.h` | `SPDX-License-Identifier: LGPL-2.1-or-later`, copyright Lennart Poettering and Karel Zak; it states that its first functions came from systemd. | The complete upstream [`COPYING.LGPL-2.1-or-later`](../../../packaging/arch/issue21-source-notices/util-linux-libs/COPYING.LGPL-2.1-or-later) is saved byte for byte, SHA-256 `dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551`. This file was taken from the verified upstream source tree, not from the five license files observed in the signed split package. |
+| `include/list.h` | Copyright Karel Zak and Theodore Ts'o; says GNU Lesser General Public License without a version or SPDX identifier. Meson lists the header, but no listed libuuid C file includes it. | The upstream LGPL 2.1-or-later file exists, but the `list.h` header alone does not identify that version. The version and relevance to binary redistribution remain unresolved. |
+
+The source tree also has many other licenses. This mapping is bounded to Meson's libuuid library inputs and project-local quoted includes. It does not determine the legal effect of including a header, validate the public-domain claims, resolve `list.h`'s version, cover generated/system headers or linked dependencies, or show that this exact recipe produced the archived ELF. Those questions require separate technical and legal review before any distribution decision.
+
+### Independent reproduction
+
+Use a disk-backed checkout of the [upstream v2.42.4 tag](https://github.com/util-linux/util-linux/releases/tag/v2.42.4), then run from this Archy worktree:
+
+```sh
+git -C /path/to/util-linux rev-parse v2.42.4 v2.42.4^{commit} v2.42.4^{tree}
+# Expected, in order: a1d2b6980b84f38b389a6d6dda4a9623f47d13be
+# d76cbf8f13e65ff657344f7f6a90042cf755ba59
+# 2b1bca56bae90356243e14c80b947fc625d9a897
+git -C /path/to/util-linux tag -v v2.42.4
+python3 scripts/issue21/verify_libuuid_source_notices.py /path/to/util-linux
+sha256sum packaging/arch/issue21-source-notices/util-linux-libs/{PKGBUILD,COPYING.LGPL-2.1-or-later,libuuid-source-notices.tsv}
+```
+
+The checker compares bytes from Git objects, so the checkout worktree can remain detached and clean. `git tag -v` needs the upstream signing key; its output must be evaluated with the key-certification caveat above. The checker does not independently establish signature trust.
+
+### Bounded change handoff
+
+Plan: enumerate Meson's library inputs, resolve project-local quoted headers, record each leading notice and source hash, and save the relevant upstream full license text. No runtime or packaging dependencies were added. Validation: the checker reported 26 matching inputs against the recorded tag, commit, and tree, and `git diff --cached --check` passed. A separate technical and legal review is still pending; the inventory is evidence for that review, not its conclusion.
