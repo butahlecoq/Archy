@@ -107,9 +107,53 @@ pub(crate) fn export_with(
     runner: &dyn Fn(&IfcRequest) -> Result<CapturedOutputs, ArchyError>,
 ) -> Result<RunReceipt, ArchyError> {
     let reader = BoundProjectRead::open(&input.project)?;
+    export_with_reader(
+        &reader,
+        input.source_run,
+        input.variant_id,
+        input.mutation,
+        runner,
+    )
+}
+
+impl BoundProjectRead {
+    pub fn export_ifc(
+        &self,
+        source_run: String,
+        variant_id: String,
+        mutation: MutationOptions,
+    ) -> Result<RunReceipt, ArchyError> {
+        export_with_reader(self, Some(source_run), variant_id, mutation, &run_worker)
+    }
+}
+
+fn export_with_reader(
+    reader: &BoundProjectRead,
+    source_run: Option<String>,
+    variant_id: String,
+    mutation: MutationOptions,
+    runner: &dyn Fn(&IfcRequest) -> Result<CapturedOutputs, ArchyError>,
+) -> Result<RunReceipt, ArchyError> {
     let snapshot = reader.snapshot()?;
     snapshot.verify_head()?;
-    let source_id = match &input.source_run {
+    if let (Some(key), Some(selected_run)) =
+        (mutation.idempotency_key.as_deref(), source_run.as_deref())
+    {
+        for receipt in snapshot.receipts().rev() {
+            let run = snapshot.verify_run(&receipt.run_id)?;
+            let manifest = run.manifest();
+            if manifest.idempotency_key == key {
+                if manifest.operation != "export-ifc"
+                    || Some(selected_run) != manifest.parent_run_id.as_deref()
+                    || manifest.parent_variant_id.as_deref() != Some(variant_id.as_str())
+                {
+                    return Err(request_conflict());
+                }
+                break;
+            }
+        }
+    }
+    let source_id = match &source_run {
         Some(id) => id.clone(),
         None => {
             let mut found = None;
@@ -130,7 +174,7 @@ pub(crate) fn export_with(
     let variant = source
         .variants()
         .iter()
-        .find(|v| v.id == input.variant_id)
+        .find(|v| v.id == variant_id)
         .ok_or_else(|| ArchyError::schema("variant", "Variant is absent from source run"))?;
     let evaluation = if source.canonical().is_some() {
         evaluate_variant_v2(source.spec(), variant)?
@@ -146,18 +190,17 @@ pub(crate) fn export_with(
     let variant_bytes = serde_json::to_vec(variant).map_err(|e| artifact_invalid(e.to_string()))?;
     let evaluation_bytes =
         serde_json::to_vec(&evaluation).map_err(|e| artifact_invalid(e.to_string()))?;
-    let request_selector = serde_json::to_vec(
-        &serde_json::json!({"source_run":source_id,"variant_id":input.variant_id}),
-    )
-    .map_err(|e| artifact_invalid(e.to_string()))?;
+    let request_selector =
+        serde_json::to_vec(&serde_json::json!({"source_run":source_id,"variant_id":variant_id}))
+            .map_err(|e| artifact_invalid(e.to_string()))?;
     drop(snapshot);
     let locked = reader.lock()?;
-    let context = input.mutation.resolve(&locked)?;
-    let recorded = recorded_manifest_for_key(&locked, input.mutation.idempotency_key.as_deref())?;
+    let context = mutation.resolve(&locked)?;
+    let recorded = recorded_manifest_for_key(&locked, mutation.idempotency_key.as_deref())?;
     if recorded.as_ref().is_some_and(|m| {
         m.operation != "export-ifc"
             || m.parent_run_id.as_deref() != Some(&source_id)
-            || m.parent_variant_id.as_deref() != Some(&input.variant_id)
+            || m.parent_variant_id.as_deref() != Some(&variant_id)
     }) {
         return Err(request_conflict());
     }
@@ -173,10 +216,10 @@ pub(crate) fn export_with(
         let trusted = crate::run_integrity::verify_history(history, run_id)?;
         if trusted.manifest().operation != "export-ifc"
             || trusted.manifest().parent_run_id.as_deref() != Some(source_id.as_str())
-            || trusted.manifest().parent_variant_id.as_deref() != Some(input.variant_id.as_str())
+            || trusted.manifest().parent_variant_id.as_deref() != Some(variant_id.as_str())
             || trusted.input() != source.input()
             || trusted.variants().len() != 1
-            || trusted.variants()[0].id != input.variant_id
+            || trusted.variants()[0].id != variant_id
         {
             return Err(artifact_invalid(
                 "recovered IFC run differs from selected source",
@@ -280,7 +323,7 @@ pub(crate) fn export_with(
         project_id: source.spec().project_id.clone(),
         source_run_id: source_id.clone(),
         export_run_id: pending.run_id().into(),
-        variant_id: input.variant_id.clone(),
+        variant_id: variant_id.clone(),
         source_input_sha256: source_digest,
         source_normalized_sha256: source_normalized,
         variant_sha256: sha256_hex(&variant_bytes),

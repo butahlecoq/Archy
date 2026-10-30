@@ -1,6 +1,6 @@
 use archy_cli::{RenderReceipt, RenderResult, RenderVariant, WorkflowReceipt};
 use archy_core::project::v2;
-use archy_core::{ArchyError, NormalizedSpec};
+use archy_core::{ArchyError, NormalizedSpec, RunReceipt};
 use archy_report::ComparisonDocument;
 use rmcp::model::{Tool, ToolAnnotations};
 use schemars::JsonSchema;
@@ -173,6 +173,39 @@ pub struct RenderData {
     pub source_manifest_sha256: String,
     pub all_verified: bool,
     pub variants: Vec<RenderVariant>,
+}
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExportIfcData {
+    pub project_id: String,
+    pub run_id: String,
+    pub revision: String,
+    pub path: String,
+    pub manifest_sha256: String,
+    pub source_run_id: String,
+    pub variant_id: String,
+    pub scope: String,
+    pub approval_state: String,
+}
+impl ExportIfcData {
+    pub fn from_receipt(
+        project_id: String,
+        source_run_id: String,
+        variant_id: String,
+        receipt: RunReceipt,
+    ) -> Self {
+        Self {
+            project_id,
+            run_id: receipt.run_id,
+            revision: receipt.revision.to_string(),
+            path: receipt.path,
+            manifest_sha256: receipt.manifest_sha256,
+            source_run_id,
+            variant_id,
+            scope: "SCHEMATIC_MASSING_ONLY".into(),
+            approval_state: "DRAFT".into(),
+        }
+    }
 }
 impl RenderData {
     pub fn from_receipt(project_id: String, receipt: RenderReceipt) -> Self {
@@ -431,9 +464,9 @@ pub fn definitions() -> Vec<Tool> {
             "Compare verified generation/edit runs by absolute target GFA delta; ranks are within each run",
             true,
         ),
-        typed::<ExportIfcArgs, PrerequisiteData>(
+        typed::<ExportIfcArgs, ExportIfcData>(
             NAMES[7],
-            "Unavailable until IFC export integration",
+            "Export one selected variant as draft schematic IFC through the fixed supervised service and verified CLI transaction",
             false,
         ),
         typed::<ProposeApprovalArgs, PrerequisiteData>(
