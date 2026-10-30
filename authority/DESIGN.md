@@ -1,5 +1,61 @@
 # A16 broker slice
 
+## Protected evidence and process pinning follow-on (30 October 2026)
+
+The separate `protected_project` module traverses an absolute, normalized
+path from `/` through directory descriptors with `openat2` symlink/magic-link
+refusal. Ancestors must be root- or broker-owned and have no group/other write
+bits; the final project root must be broker-owned mode 0700 and the source a
+broker-owned, single-link regular file mode 0600. The opened device, inode and
+mount ID of each component are pinned and compared at entry, under the lock,
+and after review. Mount transitions in the ancestor chain are allowed only
+through the same ownership/mode checks; replacement or remount changes its
+mount ID and invalidates the reviewer. The current source inode and bytes are
+also pinned for the lifetime of the reviewer. A legitimate protected writer
+that atomically replaces the source must open a new reviewer. The selected
+accepted run's `input` artifact, rather than the current source file, remains
+the review's historical input; a later protected draft may differ.
+The snapshot labels `input_provenance` as `accepted_run_artifact`, carries the
+current source digest, and states whether it differs from that run input.
+
+The follow-on protected writer now initializes one exclusive
+`project/project.json` below a fixed broker state directory. It validates the
+JSON source before creating broker-owned mode-0700/0600 entries, syncs the
+source and directories, and refuses an existing or partially initialized
+project. `archy-project-ingest` is an administrator-invoked broker-UID binary
+using `/var/lib/archy-authority`; it takes bounded source bytes on stdin and
+publishes a broker-generated accepted run. The writer uses the CLI's pinned
+`BoundProjectRead` transaction, so callers cannot supply accepted artifacts or
+checks. It verifies the published run and rechecks the protected path/source.
+The binary is not yet staged in the package or called by the running daemon.
+It creates no decision. A separate supported ingestion lifecycle and review
+lease invalidation are required before enabling human decisions.
+
+Under the project lock the module
+checks accepted revision/head and run inclusion, uses the CLI's full historical
+run recomputation, re-renders the comparison, matches the A14 claim against
+exact artifact hashes and checks, and emits a bounded broker-digested review
+snapshot containing the exact input, normalized, variant, evaluation and
+comparison text. Review verification admits at most 16 revisions, 48 revision
+directory entries including temporary names, 32 MiB of accepted revision,
+manifest and artifact bytes, 32 requested variants/outcomes per run, and 256
+artifacts per run. Larger projects fail closed until a bounded trusted index
+or anchor is designed. It rejects agent-writable roots, changed artifacts and stale
+heads. The daemon does not yet serve the protected snapshot or own an ingestion
+lifecycle for the new writer.
+
+`bus_identity` accepts only a unique-name-shaped sender, enrolled non-agent
+UID, numeric PID and bus-supplied ProcessFD. It checks the kernel pidfd target
+and liveness, including missing/mismatched descriptor refusals. A disposable
+private D-Bus fixture checks actual unique names and
+`GetConnectionCredentials`; it does not exercise the Rust service over D-Bus.
+The bus adapter, logind session proof, fresh Polkit challenge, installed human
+client, final locked head recheck and journal decision writer are still absent.
+Both production seqpacket endpoints continue to deny `OP_DECIDE`; no approval
+or approved export is emitted. The project root must be under a fixed
+administrator-controlled broker state ancestor; a caller-selected path is not
+an authorization source.
+
 ## Human decision follow-on (unavailable)
 
 The broker now reserves `OP_DECIDE` and denies it on **both** seqpacket
@@ -168,3 +224,18 @@ must be checked before enabling the unit.
    including forged actor, forwarded connection, cached polkit grant, stale
    snapshot, service restart and protected-store tampering. Until every gate
    passes, final approval remains unavailable and exports stay DRAFT.
+
+## Published-head bus review subset (30 October 2026)
+
+The new `human_bus` module and unstaged `archy-human-busd` binary implement a
+system-bus review endpoint on `org.archy.Authority1`. `Review` binds the method
+header's unique sender to `GetConnectionCredentials`, requires UID, PID and
+ProcessFD, checks the kernel pidfd, and requires an active, local, seated logind
+`user` session for the enrolled UID. It rechecks sender credentials before
+returning exact broker-recomputed snapshot bytes and digest. `Confirm` always
+returns AccessDenied; there is no review lease, Polkit check, decision append,
+or approved projection. The binary has fixed broker identity/state paths but is
+not packaged or activated. Its separate zbus dependency and license closure
+must enter the notice inventory before packaging. See the current bus handoff
+for validation and remaining native gates. Earlier sections describe the
+historical pre-bus slice and should be read with this update.

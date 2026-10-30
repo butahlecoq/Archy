@@ -180,6 +180,26 @@ impl Journal {
         Ok(self.scan()?.into_iter().map(|(record, _)| record).collect())
     }
 
+    /// Hold the journal lock across an external witness transition.
+    /// The closure must not call another Journal method on this directory.
+    pub fn with_locked_hashes<T>(
+        &self,
+        action: impl FnOnce(&[(Record, String)]) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let _mutex = self
+            .mutex
+            .lock()
+            .map_err(|_| denied("journal lock poisoned"))?;
+        let _lock = FileLock::take(self.directory.as_raw_fd())?;
+        (self.sync_directory)(self.directory.as_raw_fd())?;
+        let records = self.scan()?;
+        let result = action(&records)?;
+        if self.scan()? != records {
+            return Err(denied("journal changed during witness transition"));
+        }
+        Ok(result)
+    }
+
     fn scan(&self) -> io::Result<Vec<(Record, String)>> {
         let path = format!("/proc/self/fd/{}", self.directory.as_raw_fd());
         let mut names = Vec::new();

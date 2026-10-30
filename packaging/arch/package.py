@@ -26,14 +26,14 @@ NOTICE_INVENTORY_PATH = "usr/share/archy/third-party-notices.json"
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"
 
 
-def normal_registry_graph(metadata):
+def normal_registry_graph(metadata, roots=("archy-cli", "archy-service-gate")):
     packages = {p["id"]: p for p in metadata["packages"]}
     nodes = {n["id"]: n for n in metadata["resolve"]["nodes"]}
-    roots = [p["id"] for p in packages.values() if p["name"] in ("archy-cli", "archy-service-gate") and p.get("source") is None]
-    if len(roots) != 2 or {packages[p]["name"] for p in roots} != {"archy-cli", "archy-service-gate"}:
-        raise ValueError("expected local CLI and service gate packages")
+    root_ids = [p["id"] for p in packages.values() if p["name"] in roots and p.get("source") is None]
+    if len(root_ids) != len(roots) or {packages[p]["name"] for p in root_ids} != set(roots):
+        raise ValueError(f"expected local packages: {roots}")
     visited = set()
-    pending = roots
+    pending = root_ids
     while pending:
         pid = pending.pop()
         if pid in visited:
