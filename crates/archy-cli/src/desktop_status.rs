@@ -58,6 +58,7 @@ pub enum DesktopRunOperation {
     Edit,
     Evaluate,
     Render,
+    Propose,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -161,6 +162,7 @@ fn summary(
         "edit" => DesktopRunOperation::Edit,
         "evaluate" => DesktopRunOperation::Evaluate,
         "render" => DesktopRunOperation::Render,
+        "propose" => DesktopRunOperation::Propose,
         _ => return Err(artifact_invalid("unsupported run operation")),
     };
     Ok(DesktopRunSummary {
@@ -351,6 +353,9 @@ pub fn desktop_status_schema() -> schemars::Schema {
             {"required": ["render_outcome"]},
             {"required": ["preview_symbols"]}
         ]}}
+    }, {
+        "if": {"properties": {"operation": {"const": "propose"}}, "required": ["operation"]},
+        "then": {"properties": {"variant_count": {"const": 1}, "all_required_checks_passed": {"const": false}}}
     }]);
     schema["$defs"]["DesktopPreviewSymbol"]["properties"]["variant_id"]["pattern"] =
         serde_json::json!("^variant-[0-9a-f]{64}$");

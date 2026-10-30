@@ -12,6 +12,8 @@ Read the project and accepted revision, validate its constraints, then generate 
 
 The current published source supports canonical `0.2.0` briefs and bounded fresh imports of `0.1.0` briefs. Use the v2 `id`, `bound`, `unit`, `source` and `authority` fields for new constraints. Existing accepted v1 runs retain their recorded profile and bytes; a fresh generation from an imported v1 source produces v2 artifacts. Do not treat a claimed authority as verified law or convert its required `UNKNOWN` authority check into a pass. [ADR 0006](../adr/0006-canonical-project-v2.md) defines these version boundaries.
 
+`compare_variants` and `propose_approval` reject a historical v1 generation or edit run containing `claimed_regulation`, because its evaluation lacks the v2 authority check. Use an accepted generation or edit with the v2 authority profile; an explicitly linked edit of that historic run can produce one. Its claimed authority remains `UNKNOWN`. Keep the original run and report the rejection.
+
 ## Gate execution on a clean native machine
 
 Use the single 27-gate acceptance inventory in `scripts/validate-omarchy.py`, with procedures in `docs/validation/omarchy-gates.md`. The inventory and these commands are present in this integrated checkout. They provide a worksheet and source checks; native target evidence and independent A20 review are still required. Run from the repository root:

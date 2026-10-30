@@ -105,6 +105,8 @@ class PlaybookContracts(unittest.TestCase):
             self.assertIn("does not grant human approval", text)
             self.assertIn("`propose_approval` records an untrusted proposal", text)
             self.assertIn("does not grant human approval", text)
+            self.assertIn("historical v1 generation or edit run containing `claimed_regulation`", text)
+            self.assertIn("`compare_variants` and `propose_approval` reject", text)
             self.assertIn("same key and request", text)
             self.assertNotIn("`export_ifc` and `propose_approval` remain unavailable", text)
 

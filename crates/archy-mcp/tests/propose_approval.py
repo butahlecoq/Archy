@@ -15,7 +15,9 @@ TARGET = Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
 if not TARGET.is_absolute():
     TARGET = Path.cwd() / TARGET
 MCP = TARGET / 'debug/archy-mcp'
+CLI = TARGET / 'debug/archy'
 SCHEMA = Draft202012Validator(json.loads((ROOT / 'schemas/mcp/propose_approval.schema.json').read_text())['output'])
+DESKTOP_SCHEMA = Draft202012Validator(json.loads((ROOT / 'schemas/desktop-status.schema.json').read_text()))
 META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
         'io.modelcontextprotocol/clientInfo': {'name': 'proposal-contract', 'version': '0'},
         'io.modelcontextprotocol/clientCapabilities': {}}
@@ -107,7 +109,62 @@ with tempfile.TemporaryDirectory(prefix='archy-proposal-') as directory:
     assert {a['path'] for a in manifest['artifacts']} == {
         'input.json', 'normalized.json', 'profile.json', 'comparison.json', 'proposal.json',
         f'variants/{variant}.json', f'evaluations/{variant}.json'}
+    before_desktop = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    def desktop(*extra):
+        result = subprocess.run([str(CLI), 'desktop', 'status', '--project', str(project),
+                                 *extra, '--json'], capture_output=True)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        status = json.loads(result.stdout)
+        DESKTOP_SCHEMA.validate(status)
+        validator = """const fs=require('fs'),vm=require('vm');
+const ctx=vm.createContext({}); vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),ctx);
+if (!ctx.validStatus(JSON.parse(fs.readFileSync(0,'utf8')), process.argv[2] || null)) process.exit(1);"""
+        selected = extra[extra.index('--run') + 1] if '--run' in extra else ''
+        subprocess.run(['node', '-e', validator, str(ROOT / 'integrations/omarchy/plugin/DesktopModel.js'), selected],
+                       input=result.stdout, check=True, capture_output=True)
+        return status
+    status = desktop('--limit', '1')
+    assert status['project']['revision'] == 3
+    assert status['runs'][0]['run_id'] == data['run_id']
+    assert status['runs'][0]['operation'] == 'propose'
+    assert status['runs'][0]['all_required_checks_passed'] is False
+    assert status['selected_run']['summary'] == status['runs'][0]
+    assert any(a['id'] == 'proposal.json' and a['sha256'] == data['proposal_sha256']
+               for a in status['selected_run']['artifacts'])
+    previous = desktop('--limit', '1', '--cursor', status['next_cursor'])
+    assert previous['runs'][0]['run_id'] == evaluated['data']['run_id']
+    selected_source = desktop('--limit', '1', '--run', source)
+    assert selected_source['selected_run']['summary']['run_id'] == source
+    assert {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()} == before_desktop
     assert call(proc, 'get_project', {'project_id': 'courtyard-demo'}, 21)['data']['revision'] == '3'
+    with tempfile.TemporaryDirectory(prefix='archy-proposal-orphan-') as orphan_directory:
+        orphan_root = Path(orphan_directory)
+        shutil.copytree(root, orphan_root, dirs_exist_ok=True)
+        revision_file = orphan_root / '.archy' / 'revisions' / '00000000000000000003.json'
+        revision_file.unlink()
+        orphan_artifact = orphan_root / data['proposal_path']
+        orphan_manifest = orphan_root / data['path'] / 'manifest.json'
+        manifest_bytes = orphan_manifest.read_bytes()
+        changed_reason = proposal_bytes.replace(args['reason'].encode(), b'An unrelated review request', 1)
+        assert changed_reason != proposal_bytes
+        orphan_artifact.write_bytes(changed_reason)
+        forged_manifest = json.loads(manifest_bytes)
+        entry = next(a for a in forged_manifest['artifacts'] if a['path'] == 'proposal.json')
+        entry['sha256'] = hashlib.sha256(changed_reason).hexdigest()
+        entry['byte_len'] = len(changed_reason)
+        orphan_manifest.write_text(json.dumps(forged_manifest, separators=(',', ':')))
+        orphan_proc = subprocess.Popen([str(MCP), '--project', str(orphan_root / 'project.json')],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        refused = call(orphan_proc, 'propose_approval', args, 50)
+        assert not refused['ok'] and refused['error']['code'] == 'REVISION_CONFLICT', refused
+        assert not revision_file.exists()
+        orphan_artifact.write_bytes(proposal_bytes)
+        orphan_manifest.write_bytes(manifest_bytes)
+        recovered = call(orphan_proc, 'propose_approval', args, 51)
+        assert recovered == first and revision_file.is_file(), recovered
+        assert call(orphan_proc, 'propose_approval', args, 52) == first
+        orphan_proc.stdin.close()
+        assert orphan_proc.wait(timeout=10) == 0, orphan_proc.stderr.read()
     state = sorted(str(p.relative_to(root)) for p in root.rglob('*'))
     assert call(proc, 'propose_approval', args, 22) == first
     frames = [json.dumps({'jsonrpc': '2.0', 'id': ident, 'method': 'tools/call',
@@ -140,3 +197,29 @@ with tempfile.TemporaryDirectory(prefix='archy-proposal-') as directory:
     proc.stdin.close()
     assert proc.wait(timeout=10) == 0, proc.stderr.read()
 print('MCP proposal accepted source/evidence, replay, conflicts, stale and no approval: PASS')
+
+with tempfile.TemporaryDirectory(prefix='archy-proposal-legacy-authority-') as directory:
+    root = Path(directory)
+    shutil.copytree(ROOT / 'tests/fixtures/historical-claimed-v1', root, dirs_exist_ok=True)
+    for path in (root / '.archy', root / 'runs'):
+        for child in [path, *path.rglob('*')]:
+            if child.is_dir():
+                child.chmod(0o700)
+    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    proc = subprocess.Popen([str(MCP), '--project', str(root / 'project.json')],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+    source = 'e80391ef-a7ec-4900-8d05-9409b250094e'
+    variant = 'variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b'
+    compared = call(proc, 'compare_variants', {'project_id': 'courtyard-demo', 'run_ids': [source],
+                    'objective': 'absolute_target_gfa_delta'}, 41)
+    assert compared['error']['code'] == 'INVALID_SCHEMA', compared
+    assert 'authority' in compared['error']['message'].lower()
+    proposal = call(proc, 'propose_approval', {'project_id': 'courtyard-demo', 'source_run': source,
+        'variant_id': variant, 'reason': 'Review', 'idempotency_key': 'legacy-proposal',
+        'expected_project_revision': '2', 'destination': 'runs'}, 42)
+    assert proposal['error']['code'] == 'INVALID_SCHEMA', proposal
+    assert 'authority' in proposal['error']['message'].lower()
+    assert {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()} == before
+    proc.stdin.close()
+    assert proc.wait(timeout=10) == 0, proc.stderr.read()
+print('MCP historical v1 claimed-regulation comparison/proposal refusal without writes: PASS')

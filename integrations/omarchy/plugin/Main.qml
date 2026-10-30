@@ -4,6 +4,7 @@ import Quickshell
 import qs.Ui
 import qs.Commons
 import qs.Commons as Commons
+import "DesktopModel.js" as DesktopModel
 
 Item {
   id: root
@@ -98,12 +99,12 @@ Item {
           PanelSectionHeader { text: "NEWEST VERIFIED RUNS" }
           Repeater {
             model: desktop.status ? desktop.status.runs : []
-            delegate: Button { required property var modelData; width: scrollArea.availableWidth; text: modelData.run_id + " · " + modelData.operation + " · revision " + modelData.revision + (modelData.operation === "render" ? " · render " + modelData.render_outcome : "") + " · required checks " + (modelData.all_required_checks_passed ? "passed" : "unmet"); focusable: true; enabled: !desktop.busy; onClicked: { opener.abort("Run selection changed"); desktop.selectRun(modelData.run_id) } }
+            delegate: Button { required property var modelData; width: scrollArea.availableWidth; text: modelData.run_id + " · " + modelData.operation + " · revision " + modelData.revision + (modelData.operation === "render" ? " · render " + modelData.render_outcome : "") + " · " + DesktopModel.checkSummary(modelData); focusable: true; enabled: !desktop.busy; onClicked: { opener.abort("Run selection changed"); desktop.selectRun(modelData.run_id) } }
           }
           Text { width: parent.width; text: desktop.status && desktop.status.runs.length === 0 ? "No accepted runs" : ""; textFormat: Text.PlainText; color: Commons.Color.muted; font.family: Style.font.family; font.pixelSize: Style.font.body }
           Button { text: "Next 20 verified runs"; focusable: true; enabled: !desktop.busy && desktop.status && desktop.status.next_cursor !== null; onClicked: desktop.nextPage() }
           PanelSectionHeader { text: "SELECTED RUN · VERIFIED METADATA" }
-          Text { width: parent.width; text: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.run_id + " · " + desktop.status.selected_run.summary.operation + (desktop.status.selected_run.summary.operation === "render" ? " · render " + desktop.status.selected_run.summary.render_outcome : "") + " · variants " + desktop.status.selected_run.summary.variant_count + " · required checks " + (desktop.status.selected_run.summary.all_required_checks_passed ? "passed" : "unmet")) : "No run selected"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
+          Text { width: parent.width; text: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.run_id + " · " + desktop.status.selected_run.summary.operation + (desktop.status.selected_run.summary.operation === "render" ? " · render " + desktop.status.selected_run.summary.render_outcome : "") + " · variants " + desktop.status.selected_run.summary.variant_count + " · " + DesktopModel.checkSummary(desktop.status.selected_run.summary)) : "No run selected"; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }
           Repeater {
             model: desktop.status && desktop.status.selected_run ? (desktop.status.selected_run.summary.preview_symbols || []) : []
             delegate: Text { required property var modelData; width: scrollArea.availableWidth; text: modelData.variant_id + " · preview views " + modelData.views.join(", ") + "\n" + modelData.notice; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Commons.Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.body }

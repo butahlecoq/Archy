@@ -139,7 +139,8 @@
         "generate",
         "edit",
         "evaluate",
-        "render"
+        "render",
+        "propose"
       ],
       "type": "string"
     },
@@ -178,6 +179,28 @@
             "required": [
               "render_outcome"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "propose"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "all_required_checks_passed": {
+                "const": false
+              },
+              "variant_count": {
+                "const": 1
+              }
+            }
           }
         }
       ],
