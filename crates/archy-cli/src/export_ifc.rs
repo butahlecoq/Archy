@@ -767,6 +767,36 @@ mod tests {
         }
     }
 
+    fn assert_native_orphan_retry(
+        project: &std::path::Path,
+        source: &[u8],
+        input: ExportIfcInput,
+        receipt: RunReceipt,
+        previous_revision: u64,
+    ) {
+        let root = project.parent().unwrap();
+        let run_dir = root.join("runs").join(&receipt.run_id);
+        let manifest = fs::read(run_dir.join("manifest.json")).unwrap();
+        let model = fs::read(run_dir.join("ifc/model.ifc")).unwrap();
+        fs::remove_file(root.join(format!(".archy/revisions/{:020}.json", receipt.revision)))
+            .unwrap();
+        let store = ProjectStore::open(project).unwrap();
+        assert_eq!(store.lock().unwrap().revision().unwrap(), previous_revision);
+        let recovered =
+            export_with(input.clone(), &|_| panic!("orphan retry reached worker")).unwrap();
+        assert_eq!(recovered, receipt);
+        assert_eq!(store.lock().unwrap().revision().unwrap(), receipt.revision);
+        let verified = crate::verify_run(project, &receipt.run_id).unwrap();
+        assert_eq!(verified.input(), source);
+        assert_eq!(fs::read(project).unwrap(), source);
+        assert_eq!(fs::read(run_dir.join("manifest.json")).unwrap(), manifest);
+        assert_eq!(fs::read(run_dir.join("ifc/model.ifc")).unwrap(), model);
+        assert_eq!(
+            export_with(input, &|_| panic!("recovered replay reached worker")).unwrap(),
+            receipt
+        );
+    }
+
     #[test]
     fn native_canonical_v2_json_yaml_rectangle_l_export_and_replay() {
         let Ok(python) = std::env::var("ARCHY_IFC_TEST_PYTHON") else {
@@ -862,9 +892,18 @@ mod tests {
                 assert!(run.artifact("profile.json").is_some());
                 drop(locked);
                 assert_eq!(
-                    export_with(input, &|_| panic!("replay reached worker")).unwrap(),
+                    export_with(input.clone(), &|_| panic!("replay reached worker")).unwrap(),
                     receipt
                 );
+                if format == "yaml" {
+                    assert_native_orphan_retry(
+                        &project,
+                        &source,
+                        input,
+                        receipt,
+                        generation.revision,
+                    );
+                }
                 fs::remove_dir_all(root).unwrap();
             }
         }
@@ -992,9 +1031,10 @@ mod tests {
                 assert!(stored.artifact("profile.json").is_none());
                 drop(locked);
                 assert_eq!(
-                    export_with(input, &|_| panic!("replay reached worker")).unwrap(),
+                    export_with(input.clone(), &|_| panic!("replay reached worker")).unwrap(),
                     exported
                 );
+                assert_native_orphan_retry(&project, &source, input, exported, revision);
                 fs::remove_dir_all(root).unwrap();
             }
         }
