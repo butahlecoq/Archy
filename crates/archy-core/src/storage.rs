@@ -350,6 +350,14 @@ impl AcceptedHistory<'_> {
         read_record_run(&self.store.root, record)
     }
 }
+type OrphanValidator<'a> = dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError> + 'a;
+
+#[derive(Default)]
+struct RecoveryChecks<'a> {
+    binding: Option<&'a dyn Fn() -> Result<(), ArchyError>>,
+    orphan: Option<&'a OrphanValidator<'a>>,
+}
+
 pub enum BeginResult<'a> {
     Replay(RunReceipt),
     Pending(Box<PendingRun<'a>>),
@@ -761,8 +769,7 @@ impl LockedProject<'_> {
         records: &[RevisionRecord],
         previous_sha256: Option<String>,
         next: u64,
-        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
-        validate: Option<&dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>>,
+        checks: RecoveryChecks<'_>,
     ) -> Result<Option<RunReceipt>, ArchyError> {
         let mut dest = self
             .store
@@ -832,7 +839,7 @@ impl LockedProject<'_> {
                 receipt: receipt.clone(),
             };
             self.read_record_run(&record)?;
-            if let Some(validate) = validate {
+            if let Some(validate) = checks.orphan {
                 let mut candidate_records = records.to_vec();
                 candidate_records.push(record.clone());
                 let candidate = AcceptedHistory {
@@ -855,12 +862,12 @@ impl LockedProject<'_> {
                 .map_err(|e| uncertain("sync orphan destination", e))?;
             #[cfg(test)]
             recovery_boundary();
-            if let Some(check) = check {
+            if let Some(check) = checks.binding {
                 check().map_err(|error| {
                     uncertain("binding changed before orphan revision publication", error)
                 })?;
             }
-            if validate.is_some() {
+            if checks.orphan.is_some() {
                 self.read_record_run(&record)?;
             }
             publish_revision(&self.store.root, &record, Interrupt::None)?;
@@ -918,7 +925,7 @@ impl LockedProject<'_> {
         read_bounded(&mut file, limit)
     }
     pub fn begin<'a>(&'a self, request: RunRequest) -> Result<BeginResult<'a>, ArchyError> {
-        self.begin_inner(request, None, None)
+        self.begin_inner(request, RecoveryChecks::default())
     }
     /// Checks an external binding before publishing a recovered orphan revision.
     /// A concurrent rename between this check and publication remains possible.
@@ -927,7 +934,13 @@ impl LockedProject<'_> {
         request: RunRequest,
         check: &dyn Fn() -> Result<(), ArchyError>,
     ) -> Result<BeginResult<'a>, ArchyError> {
-        self.begin_inner(request, Some(check), None)
+        self.begin_inner(
+            request,
+            RecoveryChecks {
+                binding: Some(check),
+                orphan: None,
+            },
+        )
     }
     /// Validate a hash-checked orphan as the next run before publishing its revision.
     /// The candidate history is available only during this call under the project lock.
@@ -937,13 +950,18 @@ impl LockedProject<'_> {
         check: &dyn Fn() -> Result<(), ArchyError>,
         validate: &dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>,
     ) -> Result<BeginResult<'a>, ArchyError> {
-        self.begin_inner(request, Some(check), Some(validate))
+        self.begin_inner(
+            request,
+            RecoveryChecks {
+                binding: Some(check),
+                orphan: Some(validate),
+            },
+        )
     }
     fn begin_inner<'a>(
         &'a self,
         request: RunRequest,
-        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
-        validate: Option<&dyn Fn(&AcceptedHistory<'_>, &str) -> Result<(), ArchyError>>,
+        checks: RecoveryChecks<'_>,
     ) -> Result<BeginResult<'a>, ArchyError> {
         self.require_owner()?;
         if request.schema_version != RUN_REQUEST_SCHEMA_VERSION {
@@ -1000,8 +1018,7 @@ impl LockedProject<'_> {
             &records,
             previous_sha256.clone(),
             next,
-            check,
-            validate,
+            checks,
         )? {
             return Ok(BeginResult::Replay(receipt));
         }
