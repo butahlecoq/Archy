@@ -1,0 +1,22 @@
+# Historical libX11 source and notice evidence
+
+Scope: provisional inventory commit `1b10a901dfea3545723e1491601766c7d2b198cf`, historical image `sha256:98bafd0772026dd0c92b4beaffe415163272a6b9f21d4f3b089ba89affcc759f`. This is evidence for that image, not a current target assertion.
+
+| Item | Observed value |
+| --- | --- |
+| Inventory row | `/usr/lib/libX11.so.6.4.0`, `libx11 1.8.14-1`, SHA-256 `8c202bd93c4f4f3967ac66a20588da1e8f44a17b57ecc292d5cce51aa1168b74` |
+| [Arch package](https://archive.archlinux.org/packages/l/libx11/libx11-1.8.14-1-x86_64.pkg.tar.zst) | SHA-256 `47fff5bbeadabe30b5fb1ad3f3609c20e6064ef002ba0377dfd8564ec813da7b` |
+| [Arch package signature](https://archive.archlinux.org/packages/l/libx11/libx11-1.8.14-1-x86_64.pkg.tar.zst.sig) | SHA-256 `53b0b53dce609fbf831eaf610806d1193d92ed854e791b91c2204a2fd3563dbc`; `gpgv` reported a good signature by T.J. Townsend, key `54C1FD273361EA514A237793F296BDE50368C6CE`, against the historical image's `/etc/pacman.d/gnupg/pubring.gpg` |
+| [Arch recipe](https://gitlab.archlinux.org/archlinux/packaging/packages/libx11/-/tree/1.8.14-1) | tag `1.8.14-1`, commit `eb9fb866a330f4f5782846166e22d05a8e8e4559`; [local snapshot](PKGBUILD) SHA-256 `7458111c70d256c15e223e893c1d6efb018f52051c6d712fd5b96e896d91a770` |
+| [X.Org signed Git tag](https://gitlab.freedesktop.org/xorg/lib/libx11/-/tags/libX11-1.8.14) | tag object `dac0857b9e172f877788bbdf84bedbb6f55e5006`, commit `b8d5a7046a98a244ee8ca3c9c07fd617c800dde2`; `git verify-tag` reported a good signature from Alan Coopersmith key `3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2`; GnuPG currently marks the key expired |
+| [X.Org release tarball](https://xorg.freedesktop.org/releases/individual/lib/libX11-1.8.14.tar.xz) | SHA-256 `bbc78c46217174655c2b32b138ad119f3ac15f50808b4d0b3a2677a4b1afc950`; this corroborates the signed tag but is **not** the Arch recipe's declared Git source |
+| [X.Org tarball signature](https://xorg.freedesktop.org/releases/individual/lib/libX11-1.8.14.tar.xz.sig) | SHA-256 `96634abc2fb2e46b56d907d0c43109137ebac6c2dcd20d9e5707cf6cc53dabea`; good cryptographic signature from the same Alan Coopersmith key; GnuPG currently marks the key expired |
+| [Package metadata](PKGINFO) | SHA-256 `a9a180b061d8475454aa62ad00c4cb703de721711242125a7c136ffdf84d7893`; declares `libx11 1.8.14-1` |
+| [Build metadata](BUILDINFO) | SHA-256 `c334b0d5f6fe1bd22f1fdf39a904ecd29036878786b74c73301faf48e012124e`; embedded `pkgbuild_sha256sum` exactly matches the tagged `PKGBUILD` snapshot |
+| [Full packaged notice](COPYING) | SHA-256 `eda0c2ed1cae0280c7fe79762eaad8ad31c044afc64e71e92ef2c6f3cd7bc395`; byte identical to `COPYING` in both the signed tag checkout and signed release tarball |
+
+The archive member `usr/lib/libX11.so.6.4.0` hashes exactly to the provisional image row. The package also contains `usr/lib/libX11.so.6` and `usr/lib/libX11.so` aliases. The recipe declares `libxcb`, `glibc`, and `xorgproto` dependencies; `git`, `xorg-util-macros`, and `xtrans` are build dependencies. It runs `autoreconf`, configures with `--disable-static --disable-xf86bigfont`, runs `make check`, and installs `COPYING` to `usr/share/licenses/libx11/COPYING`. That exact package notice is preserved here. All 1,627 regular file paths shared by the signed tag checkout and signed release tarball were byte identical; the tarball also contains generated distribution files.
+
+To repeat the key checks, download the Arch package and signature above; hash them and run `gpgv --keyring <historical-image-pubring.gpg> <package>.sig <package>`. Clone the recipe at tag `1.8.14-1` and X.Org Git at tag `libX11-1.8.14`, import the recipe's `keys/pgp/3AB285232C46AE43D8E192F4DAB0F78EA6E7E2D2.asc` into a private GnuPG home, and run `git verify-tag libX11-1.8.14`. The separately downloaded tarball and `.sig` can be checked with `gpg --verify <source>.sig <source>`. Extract `usr/lib/libX11.so.6.4.0`, `.PKGINFO`, `.BUILDINFO`, and `usr/share/licenses/libx11/COPYING` from the Arch archive and compare their SHA-256s and bytes to the inventory and local snapshots. The inspected archives and checkout remain in private disk scratch; they are not release payloads.
+
+This proves package-byte correspondence to the historical image and a signed Git source revision matching the recipe's declared tag. The recipe's SHA-512 for its VCS source was not independently reproduced. This does not prove a reproducible rebuild, complete source-to-binary derivation, notice sufficiency, current target availability, or legal approval.
