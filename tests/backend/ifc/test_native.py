@@ -41,6 +41,22 @@ class NativeTests(unittest.TestCase):
                 with self.assertRaises(verify.ArtifactError):
                     verify.inspect(path, item)
 
+    def test_site_world_transform_must_match_canonical_origin(self):
+        from archy_ifc_worker import hierarchy, verify
+        item = request()
+        with tempfile.TemporaryDirectory() as temp:
+            model = hierarchy.build(item)
+            site = model.by_type("IfcSite")[0]
+            building = model.by_type("IfcBuilding")[0]
+            site.ObjectPlacement.RelativePlacement.Location.Coordinates = (1., 0., 0.)
+            building.ObjectPlacement.RelativePlacement.Location.Coordinates = (
+                item["variant"]["parameters"]["origin_xy_m"][0] - 1.,
+                item["variant"]["parameters"]["origin_xy_m"][1], 0.)
+            path = Path(temp) / "model.ifc"
+            model.write(str(path))
+            with self.assertRaisesRegex(verify.ArtifactError, "site placement"):
+                verify.inspect(path, item)
+
     def test_fixed_module_cli_writes_reopen_verified_artifacts(self):
         item = request()
         with tempfile.TemporaryDirectory() as temp:

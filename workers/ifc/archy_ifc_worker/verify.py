@@ -81,6 +81,16 @@ def inspect(path, request):
     building = model.by_type("IfcBuilding")[0]
     require(site in project.IsDecomposedBy[0].RelatedObjects, "site aggregation wrong")
     require(building in site.IsDecomposedBy[0].RelatedObjects, "building aggregation wrong")
+
+    def check_placement(entity, expected, label):
+        matrix = ifcopenshell.util.placement.get_local_placement(entity.ObjectPlacement)
+        require(all(abs(matrix[axis, 3] - expected[axis]) <= 1e-6 for axis in range(3)) and
+                all(abs(matrix[row, col] - (1 if row == col else 0)) <= 1e-6
+                    for row in range(3) for col in range(3)),
+                "wrong " + label + " placement")
+
+    check_placement(site, (0, 0, 0), "site")
+    check_placement(building, (ox, oy, 0), "building")
     psets = ifcopenshell.util.element.get_psets(building)
     props = psets.get("Archy_SchematicMassing", {})
     require(props.get("ApprovalState") == "DRAFT" and props.get("Schematic") is True,
@@ -138,9 +148,7 @@ def inspect(path, request):
                 representations[0].Items[0].is_a("IfcExtrudedAreaSolid"),
                 "proxy must have one Body/SweptSolid extrusion")
         for entity, expected in ((storey, (ox, oy, i * h)), (proxy, (ox, oy, i * h))):
-            matrix = ifcopenshell.util.placement.get_local_placement(entity.ObjectPlacement)
-            require(all(abs(matrix[axis, 3] - expected[axis]) <= 1e-6 for axis in range(3)),
-                    "wrong accumulated placement")
+            check_placement(entity, expected, "accumulated")
         try:
             shape = ifcopenshell.geom.create_shape(settings, proxy)
         except Exception as exc:

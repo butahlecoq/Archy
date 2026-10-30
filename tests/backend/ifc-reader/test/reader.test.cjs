@@ -433,6 +433,14 @@ test('rejects corrupt and truncated IFC', async () => {
   await assert.rejects(inspectBuffer(read('rectangle.ifc').subarray(0, 100), fixture('rectangle.ifc'), source(fixture('rectangle.ifc'))));
 });
 
+test('rejects offsetting site and building placements with unchanged mass geometry', async () => {
+  const item = fixture('l_shape.ifc');
+  const model = changed(changed(read(item.file),
+    '#19=IFCCARTESIANPOINT((0.,0.,0.));', '#19=IFCCARTESIANPOINT((1.,0.,0.));'),
+    '#24=IFCCARTESIANPOINT((13.,-2.,0.));', '#24=IFCCARTESIANPOINT((12.,-2.,0.));');
+  await assert.rejects(inspectBuffer(model, item, source(item)), /site placement/);
+});
+
 test('rejects a changed canonical L inner boundary with unchanged area and bounds', async () => {
   const item = structuredClone(fixture('l_shape.ifc'));
   item.footprint_xy_m[3][0] = 19;
