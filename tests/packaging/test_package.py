@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+from contextlib import redirect_stdout
 from pathlib import Path
 import subprocess
 import sys
@@ -87,6 +88,29 @@ class StageTests(unittest.TestCase):
             path.unlink()  # package-owned path removal simulation, not pacman behavior
         for name in sentinels:
             self.assertEqual((self.dest / name).read_text(), name)
+
+    def test_staged_source_package_contains_complete_omarchy_plugin(self):
+        self.source = ROOT
+        self.manifest = ROOT / "packaging/arch/files.txt"
+        with patch.object(PACKAGE, "locked_graph", return_value=set()), redirect_stdout(io.StringIO()):
+            self.stage_direct()
+
+        source_root = ROOT / "integrations/omarchy"
+        staged_root = self.dest / "usr/lib/archy/omarchy"
+        expected = {source_root / name for name in ("install.py", "uninstall.py")}
+        expected.update((source_root / "plugin").iterdir())
+        expected.update((source_root / "templates").iterdir())
+        self.assertTrue(all(path.is_file() for path in expected))
+        staged = {path for path in staged_root.rglob("*") if path.is_file()}
+        self.assertEqual(staged, {staged_root / path.relative_to(source_root) for path in expected})
+
+        entries = {item["path"]: item for item in json.loads(self.inventory.read_text())}
+        for source in expected:
+            destination = staged_root / source.relative_to(source_root)
+            with self.subTest(path=source.relative_to(source_root)):
+                self.assertEqual(destination.read_bytes(), source.read_bytes())
+                self.assertEqual(destination.stat().st_mode & 0o777, 0o644)
+                self.assertEqual(entries[str(destination.relative_to(self.dest))]["mode"], "0644")
 
     def test_rejects_collision_without_mutation(self):
         target = self.dest / "usr/bin/archy"

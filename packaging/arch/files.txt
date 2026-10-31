@@ -1,6 +1,19 @@
 # source relative to snapshot root, destination relative to pkgdir, mode
 @binary	usr/bin/archy	0755
 @gate-binary	usr/lib/archy/archy-service-gate	0755
+integrations/omarchy/install.py	usr/lib/archy/omarchy/install.py	0644
+integrations/omarchy/uninstall.py	usr/lib/archy/omarchy/uninstall.py	0644
+integrations/omarchy/plugin/manifest.json	usr/lib/archy/omarchy/plugin/manifest.json	0644
+integrations/omarchy/plugin/Main.qml	usr/lib/archy/omarchy/plugin/Main.qml	0644
+integrations/omarchy/plugin/DoctorModel.js	usr/lib/archy/omarchy/plugin/DoctorModel.js	0644
+integrations/omarchy/plugin/DoctorProcess.qml	usr/lib/archy/omarchy/plugin/DoctorProcess.qml	0644
+integrations/omarchy/plugin/DesktopModel.js	usr/lib/archy/omarchy/plugin/DesktopModel.js	0644
+integrations/omarchy/plugin/DesktopProcess.qml	usr/lib/archy/omarchy/plugin/DesktopProcess.qml	0644
+integrations/omarchy/plugin/OpenModel.js	usr/lib/archy/omarchy/plugin/OpenModel.js	0644
+integrations/omarchy/plugin/OpenProcess.qml	usr/lib/archy/omarchy/plugin/OpenProcess.qml	0644
+integrations/omarchy/templates/bindings.lua.example	usr/lib/archy/omarchy/templates/bindings.lua.example	0644
+integrations/omarchy/templates/menu.jsonc.example	usr/lib/archy/omarchy/templates/menu.jsonc.example	0644
+integrations/omarchy/templates/theme-set.example	usr/lib/archy/omarchy/templates/theme-set.example	0644
 LICENSE	usr/share/licenses/archy/LICENSE	0644
 @notices	usr/share/licenses/archy/THIRD-PARTY-NOTICES.txt	0644
 @notice-inventory	usr/share/archy/third-party-notices.json	0644
