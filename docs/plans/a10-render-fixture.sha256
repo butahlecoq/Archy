@@ -1,0 +1,8 @@
+a3b413c0a03b76242891294774d5407e78d7b149e532c51988a81ff43b9b5606  tests/fixtures/a10-render-real/evaluation.json
+8711ea166746fceda41dfb4016bf1586bd2a6104df06262c39789aef82b96cde  tests/fixtures/a10-render-real/model.glb
+c3575380fc0762f1596d5e7f7528d024e41356f6075b5267402dd74365376e09  tests/fixtures/a10-render-real/response.json
+9e4c5bcbce2524971fe1e7370fa31c7a3d31ab3a17d99746848bd225f73a09fe  tests/fixtures/a10-render-real/scene.blend
+916627457ccab67c9aad01832af638933334c2fbff6dc5d915300c655075b8c9  tests/fixtures/a10-render-real/variant.json
+4338fa9b88d32094389948d296d06112165f04db67f2ada175bb99cdfb3857eb  tests/fixtures/a10-render-real/view-front.png
+733b754c38a3470774883519df41149380133d99d9beff4a06adc82444e3b926  tests/fixtures/a10-render-real/view-iso.png
+daae74bfc72fa613e0a24a3cf7cbc7e71a2000fc29bf9c63cbf036253baa1db8  tests/fixtures/a10-render-real/view-top.png

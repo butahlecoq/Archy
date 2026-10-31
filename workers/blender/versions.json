@@ -1,0 +1,12 @@
+{
+  "archive": "blender-4.5.15-linux-x64.tar.xz",
+  "archive_sha256": "0d2b8bb2efe97e6c8eb57de6b7322f8800e1984e3125b60decca5f6771e4773e",
+  "archive_source": "https://download.blender.org/release/Blender4.5/blender-4.5.15-linux-x64.tar.xz",
+  "checksum_source": "https://download.blender.org/release/Blender4.5/blender-4.5.15.sha256",
+  "blender_version": "4.5.15 LTS",
+  "build_hash": "5afeabba6097",
+  "bundled_python": "3.11.15",
+  "development_host": "WSL2 Linux 6.6.87.2 x86_64 glibc 2.43",
+  "worker_protocol": "blender-worker-v1",
+  "glb_exporter": "bundled io_scene_gltf2 4.5.51"
+}

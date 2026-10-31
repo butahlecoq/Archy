@@ -1,0 +1,22 @@
+[package]
+name = "archy-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[test]]
+name = "fork_lock"
+harness = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+schemars.workspace = true
+serde-saphyr.workspace = true
+geo.workspace = true
+sha2.workspace = true
+rustix.workspace = true
+uuid.workspace = true

@@ -1,0 +1,321 @@
+{
+  "$comment": "Desktop CLI ASCII JSON output, including its trailing newline, is limited to 33554432 bytes.",
+  "$defs": {
+    "DesktopArtifactIntegrity": {
+      "enum": [
+        "verified"
+      ],
+      "type": "string"
+    },
+    "DesktopArtifactKind": {
+      "enum": [
+        "report",
+        "preview",
+        "blender",
+        "variant",
+        "evaluation",
+        "source",
+        "run_data"
+      ],
+      "type": "string"
+    },
+    "DesktopArtifactSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_len": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "integrity": {
+          "$ref": "#/$defs/DesktopArtifactIntegrity"
+        },
+        "kind": {
+          "$ref": "#/$defs/DesktopArtifactKind"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "byte_len",
+        "sha256",
+        "integrity"
+      ],
+      "type": "object"
+    },
+    "DesktopJobObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DesktopJobStatus"
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "DesktopJobStatus": {
+      "enum": [
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "DesktopPreviewSymbol": {
+      "additionalProperties": false,
+      "properties": {
+        "notice": {
+          "const": "Screen-width massing edges are nonphysical preview symbols; GLB dimensions remain exact.",
+          "type": "string"
+        },
+        "variant_id": {
+          "pattern": "^variant-[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "views": {
+          "items": {
+            "enum": [
+              "top",
+              "front",
+              "iso"
+            ],
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "variant_id",
+        "views",
+        "notice"
+      ],
+      "type": "object"
+    },
+    "DesktopProject": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source_sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "source_sha256"
+      ],
+      "type": "object"
+    },
+    "DesktopRenderOutcome": {
+      "enum": [
+        "verified",
+        "partial",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "DesktopRunOperation": {
+      "enum": [
+        "generate",
+        "edit",
+        "evaluate",
+        "render",
+        "propose",
+        "export-ifc"
+      ],
+      "type": "string"
+    },
+    "DesktopRunSummary": {
+      "$comment": "For render summaries, preview_symbols length must not exceed variant_count. This cross-field cardinality rule is enforced by DesktopModel because standard JSON Schema cannot compare an array length with a sibling value.",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "render_outcome"
+                  ]
+                },
+                {
+                  "required": [
+                    "preview_symbols"
+                  ]
+                }
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "render"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "required": [
+              "render_outcome"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "propose"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "all_required_checks_passed": {
+                "const": false
+              },
+              "variant_count": {
+                "const": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "all_required_checks_passed": {
+          "type": "boolean"
+        },
+        "artifact_count": {
+          "format": "uint",
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operation": {
+          "$ref": "#/$defs/DesktopRunOperation"
+        },
+        "preview_symbols": {
+          "items": {
+            "$ref": "#/$defs/DesktopPreviewSymbol"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
+        "render_outcome": {
+          "$ref": "#/$defs/DesktopRenderOutcome"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "variant_count": {
+          "format": "uint",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "revision",
+        "operation",
+        "variant_count",
+        "all_required_checks_passed",
+        "artifact_count"
+      ],
+      "type": "object"
+    },
+    "DesktopSelectedRun": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/DesktopArtifactSummary"
+          },
+          "maxItems": 4096,
+          "type": "array"
+        },
+        "summary": {
+          "$ref": "#/$defs/DesktopRunSummary"
+        }
+      },
+      "required": [
+        "summary",
+        "artifacts"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "backend_jobs": {
+      "$ref": "#/$defs/DesktopJobObservation"
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project": {
+      "$ref": "#/$defs/DesktopProject"
+    },
+    "runs": {
+      "items": {
+        "$ref": "#/$defs/DesktopRunSummary"
+      },
+      "maxItems": 100,
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "selected_run": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesktopSelectedRun"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "project",
+    "runs",
+    "backend_jobs"
+  ],
+  "title": "DesktopStatus",
+  "type": "object"
+}

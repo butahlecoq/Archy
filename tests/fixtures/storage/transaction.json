@@ -1,0 +1,13 @@
+{
+  "receipt": {
+    "manifest_sha256": "3dd5ed16faf7b353de78d5ed245d32ca34f0f6108f495c095c349a0e913fac6d",
+    "path": "runs/40c4d940-6dd6-432a-b44d-444dbbe53b4d",
+    "revision": 1,
+    "run_id": "40c4d940-6dd6-432a-b44d-444dbbe53b4d"
+  },
+  "serialized": {
+    "revision": "{\"schema_version\":\"archy-revision-v1\",\"revision\":1,\"previous_sha256\":null,\"idempotency_key\":\"storage-schema-fixture\",\"request_sha256\":\"ae2975519d9899c95f9faeed60583c00b0fd256cb4e4e62b91fcddc45931f2b1\",\"request_schema_version\":\"archy-run-request-v1\",\"receipt\":{\"run_id\":\"40c4d940-6dd6-432a-b44d-444dbbe53b4d\",\"revision\":1,\"manifest_sha256\":\"3dd5ed16faf7b353de78d5ed245d32ca34f0f6108f495c095c349a0e913fac6d\",\"path\":\"runs/40c4d940-6dd6-432a-b44d-444dbbe53b4d\"}}",
+    "run-manifest": "{\"schema_version\":\"archy-run-v1\",\"project_id\":\"storage-schema-fixture\",\"run_id\":\"40c4d940-6dd6-432a-b44d-444dbbe53b4d\",\"idempotency_key\":\"storage-schema-fixture\",\"request_sha256\":\"ae2975519d9899c95f9faeed60583c00b0fd256cb4e4e62b91fcddc45931f2b1\",\"request_schema_version\":\"archy-run-request-v1\",\"expected_project_revision\":0,\"operation\":\"storage-schema-fixture\",\"parent_run_id\":null,\"parent_variant_id\":null,\"input_sha256\":\"57b0beac149f4af8ba4e0cfe73c570c6d2119cefff94d300d0b2e6eab5bd49e6\",\"normalized_sha256\":null,\"source_format\":null,\"seed\":null,\"count\":null,\"algorithm_version\":\"storage-fixture-v1\",\"build_version\":\"0.1.0\",\"artifacts\":[{\"path\":\"input.txt\",\"sha256\":\"57b0beac149f4af8ba4e0cfe73c570c6d2119cefff94d300d0b2e6eab5bd49e6\",\"media_type\":\"text/plain\",\"producer\":\"storage-contracts\",\"byte_len\":23}],\"outcomes\":[]}",
+    "run-request": "{\"schema_version\":\"archy-run-request-v1\",\"context\":{\"idempotency_key\":\"storage-schema-fixture\",\"expected_project_revision\":0,\"destination\":\"runs\"},\"operation\":\"storage-schema-fixture\",\"request_bytes\":[102,105,120,116,117,114,101,32,114,101,113,117,101,115,116],\"input_sha256\":\"57b0beac149f4af8ba4e0cfe73c570c6d2119cefff94d300d0b2e6eab5bd49e6\",\"source_run\":null}"
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "rust_std": {
+    "version": "1.99.1",
+    "files": [
+      {
+        "path": "packaging/arch/notices-sources/rust-1.99.1/COPYRIGHT-library.html",
+        "sha256": "5647be074c8edf7339fd863055923a8fc80bc5610a8d4661ec3b767b9d392c27"
+      },
+      {
+        "path": "packaging/arch/notices-sources/rust-1.99.1/MIT.txt",
+        "sha256": "b85dcd3e453d05982552c52b5fc9e0bdd6d23c6f8e844b984a88af32570b0cc0"
+      },
+      {
+        "path": "packaging/arch/notices-sources/rust-1.99.1/Apache-2.0.txt",
+        "sha256": "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+      }
+    ]
+  },
+  "external": [
+    {
+      "name": "geo",
+      "version": "0.33.1",
+      "path": "packaging/arch/notices-sources/geo-0.33.1/LICENSE-APACHE",
+      "repository": "georust/geo",
+      "commit": "5ab50b072e34a915a33eaa46c80763d51d61295e",
+      "path_in_repository": "LICENSE-APACHE",
+      "git_blob": "16fe87b06e802f094b3fbb0894b137bca2b16ef1",
+      "source_url": "https://github.com/georust/geo/blob/5ab50b072e34a915a33eaa46c80763d51d61295e/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "name": "geo",
+      "version": "0.33.1",
+      "path": "packaging/arch/notices-sources/geo-0.33.1/LICENSE-MIT",
+      "repository": "georust/geo",
+      "commit": "5ab50b072e34a915a33eaa46c80763d51d61295e",
+      "path_in_repository": "LICENSE-MIT",
+      "git_blob": "c26fb0916ab1404eb31ed9f88293ef730be30b55",
+      "source_url": "https://github.com/georust/geo/blob/5ab50b072e34a915a33eaa46c80763d51d61295e/LICENSE-MIT",
+      "sha256": "2f8267b247fd81e9555a2e196e119a5b341bcae21011cd93985c312f1312f727"
+    },
+    {
+      "name": "i_key_sort",
+      "version": "0.10.3",
+      "path": "packaging/arch/notices-sources/i_key_sort-0.10.3/LICENSE",
+      "repository": "iShape-Rust/iKeySort",
+      "commit": "10a9a72f0cdae785dd2185896eed138b09945515",
+      "path_in_repository": "LICENSE",
+      "git_blob": "5f21cc740b01ba7c80f95e9f71c857379f355ed8",
+      "source_url": "https://github.com/iShape-Rust/iKeySort/blob/10a9a72f0cdae785dd2185896eed138b09945515/LICENSE",
+      "sha256": "47e00f18b265d350a2860d3899f17dd1c7689b966545e929df8ffa7033f5acdc"
+    },
+    {
+      "name": "i_overlay",
+      "version": "4.5.2",
+      "path": "packaging/arch/notices-sources/i_overlay-4.5.2/LICENSE-APACHE",
+      "repository": "iShape-Rust/iOverlay",
+      "commit": "9448d8da87e11f5b7aedcf994967b18ff640c734",
+      "path_in_repository": "LICENSE-APACHE",
+      "git_blob": "2bb9ad240fa04c8cf706a4901c4807878e90c2dc",
+      "source_url": "https://github.com/iShape-Rust/iOverlay/blob/9448d8da87e11f5b7aedcf994967b18ff640c734/LICENSE-APACHE",
+      "sha256": "59899c6091b540582ed617e8eeaac4919dc985ccfc35459ee9752b699be5205b"
+    },
+    {
+      "name": "i_overlay",
+      "version": "4.5.2",
+      "path": "packaging/arch/notices-sources/i_overlay-4.5.2/LICENSE-MIT",
+      "repository": "iShape-Rust/iOverlay",
+      "commit": "9448d8da87e11f5b7aedcf994967b18ff640c734",
+      "path_in_repository": "LICENSE-MIT",
+      "git_blob": "f1bb3ddc723a156fb96bf6e9c5e9e01201e63bae",
+      "source_url": "https://github.com/iShape-Rust/iOverlay/blob/9448d8da87e11f5b7aedcf994967b18ff640c734/LICENSE-MIT",
+      "sha256": "260cc580f53a756821a0f35475e2cd6da790f8fed0efc058252fe1bed8f2689e"
+    },
+    {
+      "name": "rstar",
+      "version": "0.12.2",
+      "path": "packaging/arch/notices-sources/rstar-0.12.2/LICENSE-APACHE",
+      "repository": "georust/rstar",
+      "commit": "c8c5bf9e41468281d030869d409e3f67f1aaf5b7",
+      "path_in_repository": "LICENSE-APACHE",
+      "git_blob": "16fe87b06e802f094b3fbb0894b137bca2b16ef1",
+      "source_url": "https://github.com/georust/rstar/blob/c8c5bf9e41468281d030869d409e3f67f1aaf5b7/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "name": "rstar",
+      "version": "0.12.2",
+      "path": "packaging/arch/notices-sources/rstar-0.12.2/LICENSE-MIT",
+      "repository": "georust/rstar",
+      "commit": "c8c5bf9e41468281d030869d409e3f67f1aaf5b7",
+      "path_in_repository": "LICENSE-MIT",
+      "git_blob": "c2ddafbb7dbb8d8d667ef6acb0c38cda8f03fbd4",
+      "source_url": "https://github.com/georust/rstar/blob/c8c5bf9e41468281d030869d409e3f67f1aaf5b7/LICENSE-MIT",
+      "sha256": "9b3a76c27bac8f3e0ff2d1f64f65941c50310ae3ff69318cea230bd4a36822c5"
+    }
+  ]
+}

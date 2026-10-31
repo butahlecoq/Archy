@@ -1,0 +1,3 @@
+-- Add only after checking `omarchy menu keybindings --print` for the chosen chord.
+-- Choose a chord that is unbound in both Omarchy defaults and your local files.
+-- o.bind("SUPER + SHIFT + A", "Archy status", "omarchy-shell shell toggle archy.status '{}'")

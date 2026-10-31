@@ -1,0 +1,9 @@
+# A09 artifact capture publication fixture rereview, round 2
+
+**Scoped verdict: PASS.** The publication failure was a time assumption in the test fixture. The frozen correction makes the late mutation observably distinct and does not change production capture behavior, the protocol, or the round-1 Blender error provenance disposition.
+
+The failing publication log `/tmp/archy-core-publication-gates-round2.log` shows `read_file_with_after()` returned the original `before` bytes and matching hash after the callback wrote same-size `after!`; pre/post mtime and ctime had the same nanosecond value on tmpfs. The old test expected `ARTIFACT_INVALID` based on a 2 ms sleep, which could not guarantee a timestamp change. The new callback removes the sleep, writes `after!`, and sets mtime explicitly to `UNIX_EPOCH + 1 second`. Its assertion now tests rejection of an **observable** mutation. It does not claim that metadata detects every same-size write.
+
+The handoff now states the actual limit: a same-size write within one filesystem timestamp tick may go undetected without malicious timestamp restoration. The returned bytes and SHA-256 still describe the single owned read, which may precede such a write. Whole-writer teardown and a private bounded scratch capability remain caller preconditions before any semantic verification or publication.
+
+I checked the frozen `artifacts.rs` SHA-256 `4e07785b2021bae1fef7407f322dccb7dc28d0585cdffaaf1d9df76a655297d2` against the handoff and independently ran `RUSTUP_AUTO_INSTALL=0 CARGO_NET_OFFLINE=true cargo test --locked -p archy-adapters --lib artifacts::tests::late_same_size_write_and_device_metadata_are_rejected`: exit 0, 1 passed. The author reports package format, strict clippy, and the 14 unit/6 artifact/8 protocol tests passing after the correction; I did not rerun those broader gates. No source file was edited in this review.

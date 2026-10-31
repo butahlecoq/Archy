@@ -1,0 +1,333 @@
+{
+  "$defs": {
+    "Brief": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor_to_floor_m": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "storeys": {
+          "format": "uint32",
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "target_gfa": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "target_gfa_hard": {
+          "default": false,
+          "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "storeys"
+      ],
+      "type": "object"
+    },
+    "Constraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "bound": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "pattern": "^(?!site_containment$|target_gfa$)[A-Za-z0-9_-]{1,128}$",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/Units"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "bound",
+        "unit",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "Generation": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
+    },
+    "Preference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "PreferenceKind": {
+      "enum": [
+        "massing_character",
+        "landscape_intent",
+        "architectural_intent"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "enum": [
+        "0.2.0"
+      ],
+      "type": "string"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "Site": {
+      "additionalProperties": false,
+      "properties": {
+        "depth": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "depth_m": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "north_deg": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "polygon_xy_m": {
+          "default": null,
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "width": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "width_m": {
+          "default": null,
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/Brief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/Constraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation",
+      "default": {
+        "count": 3,
+        "seed": 42,
+        "shapes": [
+          "rectangle",
+          "l_shape"
+        ]
+      }
+    },
+    "id": {
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "type": "string"
+    },
+    "notes": {
+      "default": [],
+      "description": "Passive source text. It does not set a constraint or direct an operation.",
+      "items": {
+        "maxLength": 512,
+        "type": "string"
+      },
+      "maxItems": 4,
+      "type": "array"
+    },
+    "preferences": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Preference"
+      },
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "site": {
+      "$ref": "#/$defs/Site"
+    },
+    "units": {
+      "$ref": "#/$defs/Units"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "units",
+    "site",
+    "brief",
+    "constraints"
+  ],
+  "title": "Project",
+  "type": "object"
+}

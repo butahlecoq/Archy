@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "RunReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_sha256": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "revision",
+        "manifest_sha256",
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": {
+      "type": "string"
+    },
+    "previous_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "receipt": {
+      "$ref": "#/$defs/RunReceipt"
+    },
+    "request_schema_version": {
+      "type": "string"
+    },
+    "request_sha256": {
+      "type": "string"
+    },
+    "revision": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schema_version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "revision",
+    "idempotency_key",
+    "request_sha256",
+    "request_schema_version",
+    "receipt"
+  ],
+  "title": "RevisionRecord",
+  "type": "object"
+}

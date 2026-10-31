@@ -1,0 +1,11 @@
+# A12 retry and A23 runtime ordinary composition
+
+Base: `8e6c8987431a3c613563345ee38f95f530181b12`. Apply A12 commit `32818b7bf4f48bbd298a96e24b0803488dba3aea`, then the A23 runtime candidate v1 patch in an isolated worktree. This is a composition candidate for independent review, not release or target acceptance.
+
+Plan: preserve A12's implicit source selection and A23's early runtime error mapping, resolve their shared `export_ifc.rs` edits, run named ordinary retry and packaging checks, then inspect the build gates. No new dependency was introduced by the resolution; the A23 patch's `rustix` `fs` feature remains as supplied.
+
+The patch produced one textual conflict, in `export_with_reader`. The resolution performs A23's mapped snapshot and accepted-head verification before A12's key scan. It scans by key even when `source_run` is implicit, validates any recorded parent and variant, and selects that recorded parent for replay. Without a recorded export it selects a generation or edit no newer than the expected revision. Both scans map runtime availability failures to A23's pre-lookup retry identity. The locked authoritative key check and checked recovery remain unchanged.
+
+Validation in this worktree: `cargo fmt --all -- --check` passed; three individually named `archy-cli` Rust tests passed (A12 stale implicit retry, A23 pinned-reader key scan, and A23 accepted-head pre-lookup identity); `python3 -m unittest -v tests.packaging.test_runtime_a12_contract` passed two tests. `python3 packaging/arch/runtime_manifest.py --source . --identity` returned input identity `ae620ba494bef9e7639200e00e29ba1128bce840c13df460c773ac1d96880abc` with `build_ready: false`. `TRUSTED_REVIEWS` retains empty A12 and distribution sets. `git diff --check` passed. The wider packaging invocation was interrupted while an unrelated static PIE fixture compiled; it is not counted as passing. The full IFC export group and native orphan replay were not run because they include adversarial cases outside this assignment.
+
+There are no remaining Git conflict entries. Independent A12 and A15 reviews, full runtime closure, installed backend behavior, and target Omarchy validation remain outside this ordinary composition check.

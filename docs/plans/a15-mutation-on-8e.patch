@@ -1,0 +1,1318 @@
+diff --git a/crates/archy-cli/src/evaluate.rs b/crates/archy-cli/src/evaluate.rs
+index 3a25f43..ec77754 100644
+--- a/crates/archy-cli/src/evaluate.rs
++++ b/crates/archy-cli/src/evaluate.rs
+@@ -3,15 +3,32 @@ use crate::{
+     recorded_manifest_for_key, request_conflict, run_integrity::verify_locked, workflow_receipt,
+ };
+ use archy_core::{
+-    ArchyError, ErrorCode, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest, sha256_hex,
++    ArchyError, ErrorCode, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest,
++    sha256_hex,
+ };
+ use archy_eval::{EVALUATION_VERSION, evaluate_variant};
+ 
+ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+     let store = archy_core::ProjectStore::open(&input.project)?;
+     let locked = store.lock()?;
+-    let context = input.mutation.resolve(&locked)?;
+-    let recorded = recorded_manifest_for_key(&locked, input.mutation.idempotency_key.as_deref())?;
++    evaluate_locked(
++        &locked,
++        input.source_run,
++        input.selection,
++        input.mutation,
++        None,
++    )
++}
++
++pub(crate) fn evaluate_locked(
++    locked: &LockedProject<'_>,
++    source_run: Option<String>,
++    selection: VariantSelection,
++    mutation: crate::MutationOptions,
++    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
++) -> Result<WorkflowReceipt, ArchyError> {
++    let context = mutation.resolve(locked)?;
++    let recorded = recorded_manifest_for_key(locked, mutation.idempotency_key.as_deref())?;
+     if recorded
+         .as_ref()
+         .is_some_and(|run| run.operation != "evaluate")
+@@ -19,12 +36,12 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+         return Err(request_conflict());
+     }
+     let receipts = locked.receipts()?;
+-    let replay_source = if input.source_run.is_none() {
++    let replay_source = if source_run.is_none() {
+         recorded.as_ref().and_then(|run| run.parent_run_id.clone())
+     } else {
+         None
+     };
+-    let source_id = match input.source_run.or(replay_source) {
++    let source_id = match source_run.or(replay_source) {
+         Some(id) => id,
+         None => {
+             let mut found = None;
+@@ -43,7 +60,7 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+     {
+         return Err(request_conflict());
+     }
+-    if let VariantSelection::One(id) = &input.selection
++    if let VariantSelection::One(id) = &selection
+         && id.len() > archy_core::validation::MAX_INPUT_BYTES.saturating_sub(64)
+     {
+         return Err(ArchyError::schema(
+@@ -51,7 +68,7 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+             "Selector exceeds request byte limit",
+         ));
+     }
+-    let selection_bytes = match &input.selection {
++    let selection_bytes = match &selection {
+         VariantSelection::All => serde_json::json!({"selector":"all"}),
+         VariantSelection::One(id) => serde_json::json!({"selector":"one","variant":id}),
+     };
+@@ -68,20 +85,26 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+         },
+         source_run: Some(source_id.clone()),
+     };
+-    let pending = match locked.begin(request)? {
+-        archy_core::BeginResult::Replay(receipt) => {
+-            let verified = verify_locked(&locked, &receipt.run_id)?;
+-            return Ok(workflow_receipt(receipt, &verified));
+-        }
+-        archy_core::BeginResult::Pending(pending) => pending,
+-    };
+-    let source = verify_locked(&locked, &source_id)?;
++    if recorded.is_some() {
++        return match locked.begin(request)? {
++            archy_core::BeginResult::Replay(receipt) => {
++                let verified = verify_locked(locked, &receipt.run_id)?;
++                Ok(workflow_receipt(receipt, &verified))
++            }
++            archy_core::BeginResult::Pending(_) => Err(ArchyError::new(
++                ErrorCode::InternalError,
++                "idempotency_key",
++                "Recorded key unexpectedly began a new run",
++            )),
++        };
++    }
++    let source = verify_locked(locked, &source_id)?;
+     if !matches!(source.manifest().operation.as_str(), "generate" | "edit") {
+         return Err(artifact_invalid(
+             "evaluation source must be a generation or edit run",
+         ));
+     }
+-    let variants = match &input.selection {
++    let variants = match &selection {
+         VariantSelection::All => source.variants().to_vec(),
+         VariantSelection::One(id) => vec![
+             source
+@@ -100,6 +123,13 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+             "Source run has no variants to evaluate",
+         ));
+     }
++    let pending = match locked.begin(request)? {
++        archy_core::BeginResult::Replay(receipt) => {
++            let verified = verify_locked(locked, &receipt.run_id)?;
++            return Ok(workflow_receipt(receipt, &verified));
++        }
++        archy_core::BeginResult::Pending(pending) => pending,
++    };
+     let evaluations = variants
+         .iter()
+         .map(|variant| evaluate_variant(source.spec(), variant))
+@@ -134,7 +164,8 @@ pub fn evaluate(input: EvaluateInput) -> Result<WorkflowReceipt, ArchyError> {
+             variants: &variants,
+             evaluations: &evaluations,
+         },
++        check,
+     )?;
+-    let verified = verify_locked(&locked, &receipt.run_id)?;
++    let verified = verify_locked(locked, &receipt.run_id)?;
+     Ok(workflow_receipt(receipt, &verified))
+ }
+diff --git a/crates/archy-cli/src/generate.rs b/crates/archy-cli/src/generate.rs
+index 5c734e3..db3aebf 100644
+--- a/crates/archy-cli/src/generate.rs
++++ b/crates/archy-cli/src/generate.rs
+@@ -1,11 +1,11 @@
+ use crate::{
+-    GenerateInput, GenerationMode, RunPayload, WorkflowReceipt, artifact_invalid, input_format,
+-    publish, recorded_manifest_for_key, request_conflict, run_integrity::verify_locked,
+-    workflow_receipt,
++    GenerateInput, GenerationMode, MutationOptions, RunPayload, WorkflowReceipt, artifact_invalid,
++    input_format, publish, recorded_manifest_for_key, request_conflict,
++    run_integrity::verify_locked, workflow_receipt,
+ };
+ use archy_core::{
+-    ArchyError, ErrorCode, RUN_REQUEST_SCHEMA_VERSION, RunMetadata, RunRequest, ShapeParameters,
+-    Variant, parse_project, sha256_hex,
++    ArchyError, ErrorCode, InputFormat, LockedProject, RUN_REQUEST_SCHEMA_VERSION, RunMetadata,
++    RunRequest, ShapeParameters, Variant, parse_project, sha256_hex,
+ };
+ use archy_eval::evaluate_variant;
+ use archy_generate::{ALGORITHM_VERSION, generate_variants};
+@@ -23,18 +23,47 @@ pub(crate) struct EditParameters {
+ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
+     let store = archy_core::ProjectStore::open(&input.project)?;
+     let locked = store.lock()?;
+-    let context = input.mutation.resolve(&locked)?;
+-    let recorded = recorded_manifest_for_key(&locked, input.mutation.idempotency_key.as_deref())?;
+-    match input.mode {
++    let (format, source_format, _) = input_format(&input.project)?;
++    generate_locked(
++        &locked,
++        input.mode,
++        input.mutation,
++        format,
++        source_format,
++        None,
++        None,
++    )
++}
++
++pub(crate) fn generate_locked(
++    locked: &LockedProject<'_>,
++    mode: GenerationMode,
++    mutation: MutationOptions,
++    format: InputFormat,
++    source_format: &str,
++    pinned_source: Option<&[u8]>,
++    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
++) -> Result<WorkflowReceipt, ArchyError> {
++    let context = mutation.resolve(locked)?;
++    let recorded = recorded_manifest_for_key(locked, mutation.idempotency_key.as_deref())?;
++    match mode {
+         GenerationMode::Sample { count, seed } => {
++            if recorded.is_none() && !(1..=1000).contains(&count) {
++                return Err(ArchyError::schema(
++                    "count",
++                    "Requested count must be 1..1000",
++                ));
++            }
+             if recorded
+                 .as_ref()
+                 .is_some_and(|run| run.operation != "generate")
+             {
+                 return Err(request_conflict());
+             }
+-            let (format, source_format, _) = input_format(&input.project)?;
+-            let raw = locked.read_source()?;
++            let raw = match pinned_source {
++                Some(bytes) => bytes.to_vec(),
++                None => locked.read_source()?,
++            };
+             let request_bytes =
+                 serde_json::to_vec(&serde_json::json!({"mode":"sample","count":count,"seed":seed}))
+                     .map_err(|e| {
+@@ -50,7 +79,7 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
+             };
+             let pending = match locked.begin(request)? {
+                 archy_core::BeginResult::Replay(receipt) => {
+-                    let verified = verify_locked(&locked, &receipt.run_id)?;
++                    let verified = verify_locked(locked, &receipt.run_id)?;
+                     return Ok(workflow_receipt(receipt, &verified));
+                 }
+                 archy_core::BeginResult::Pending(pending) => pending,
+@@ -90,8 +119,9 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
+                     variants: &generation.variants,
+                     evaluations: &evaluations,
+                 },
++                check,
+             )?;
+-            let verified = verify_locked(&locked, &receipt.run_id)?;
++            let verified = verify_locked(locked, &receipt.run_id)?;
+             Ok(workflow_receipt(receipt, &verified))
+         }
+         GenerationMode::Edit {
+@@ -123,12 +153,12 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
+             };
+             let pending = match locked.begin(request)? {
+                 archy_core::BeginResult::Replay(receipt) => {
+-                    let verified = verify_locked(&locked, &receipt.run_id)?;
++                    let verified = verify_locked(locked, &receipt.run_id)?;
+                     return Ok(workflow_receipt(receipt, &verified));
+                 }
+                 archy_core::BeginResult::Pending(pending) => pending,
+             };
+-            let parent = verify_locked(&locked, &from_run)?;
++            let parent = verify_locked(locked, &from_run)?;
+             if !matches!(parent.manifest().operation.as_str(), "generate" | "edit") {
+                 return Err(artifact_invalid(
+                     "edit source must be a generation or edit run",
+@@ -190,8 +220,9 @@ pub fn generate(input: GenerateInput) -> Result<WorkflowReceipt, ArchyError> {
+                     variants: &variants,
+                     evaluations: &evaluations,
+                 },
++                check,
+             )?;
+-            let verified = verify_locked(&locked, &receipt.run_id)?;
++            let verified = verify_locked(locked, &receipt.run_id)?;
+             Ok(workflow_receipt(receipt, &verified))
+         }
+     }
+diff --git a/crates/archy-cli/src/lib.rs b/crates/archy-cli/src/lib.rs
+index 60b179e..1296649 100644
+--- a/crates/archy-cli/src/lib.rs
++++ b/crates/archy-cli/src/lib.rs
+@@ -183,6 +183,7 @@ pub(crate) fn publish(
+     mut pending: Box<PendingRun<'_>>,
+     metadata: RunMetadata,
+     payload: RunPayload<'_>,
++    check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+ ) -> Result<RunReceipt, ArchyError> {
+     let normalized = serde_json::to_vec(payload.spec)
+         .map_err(|e| ArchyError::new(ErrorCode::InternalError, "normalized", e.to_string()))?;
+@@ -292,5 +293,8 @@ pub(crate) fn publish(
+         "application/x-ndjson",
+         "archy-cli",
+     )?;
+-    pending.commit(metadata)
++    match check {
++        Some(check) => pending.commit_checked(metadata, check),
++        None => pending.commit(metadata),
++    }
+ }
+diff --git a/crates/archy-cli/src/project_read.rs b/crates/archy-cli/src/project_read.rs
+index 1971a4a..5f2b0b5 100644
+--- a/crates/archy-cli/src/project_read.rs
++++ b/crates/archy-cli/src/project_read.rs
+@@ -1,5 +1,12 @@
+ //! Pinned, noncreating project reads shared by desktop and the stdio facade.
+-use crate::{TrustedRun, artifact_invalid, input_format, run_integrity::verify_history};
++use crate::{
++    GenerationMode, MutationOptions, TrustedRun, VariantSelection, WorkflowReceipt,
++    artifact_invalid,
++    evaluate::evaluate_locked,
++    generate::generate_locked,
++    input_format,
++    run_integrity::{verify_history, verify_locked},
++};
+ use archy_core::{
+     AcceptedHistory, ArchyError, ErrorCode, InputFormat, NormalizedSpec, PinnedProjectSource,
+     ProjectStore, RunReceipt, parse_project, sha256_hex,
+@@ -14,7 +21,8 @@ pub struct BoundProjectRead {
+     spec: NormalizedSpec,
+     root_path: PathBuf,
+     identity: String,
+-    _format: InputFormat,
++    format: InputFormat,
++    source_format: &'static str,
+ }
+ impl BoundProjectRead {
+     pub fn open(project: &Path) -> Result<Self, ArchyError> {
+@@ -22,7 +30,7 @@ impl BoundProjectRead {
+             .parent()
+             .ok_or_else(|| ArchyError::schema("project", "Project has no parent"))?
+             .to_path_buf();
+-        let (format, _, _) = input_format(project)?;
++        let (format, source_format, _) = input_format(project)?;
+         let store = ProjectStore::open(project)?;
+         let source = store.pin_source()?;
+         let source_bytes = source.read()?;
+@@ -39,10 +47,11 @@ impl BoundProjectRead {
+             spec,
+             root_path,
+             identity,
+-            _format: format,
++            format,
++            source_format,
+         })
+     }
+-    pub fn snapshot(&self) -> Result<BoundReadSnapshot<'_>, ArchyError> {
++    fn check_binding(&self) -> Result<(), ArchyError> {
+         let root_matches = self
+             .store
+             .matches_root_path(&self.root_path)
+@@ -55,6 +64,10 @@ impl BoundProjectRead {
+                 "Configured project path or source changed; restart the reader",
+             ));
+         }
++        Ok(())
++    }
++    pub fn snapshot(&self) -> Result<BoundReadSnapshot<'_>, ArchyError> {
++        self.check_binding()?;
+         Ok(BoundReadSnapshot {
+             owner: self,
+             history: self.store.read_history()?,
+@@ -66,6 +79,84 @@ impl BoundProjectRead {
+     pub fn identity(&self) -> &str {
+         &self.identity
+     }
++    fn transact(
++        &self,
++        action: impl FnOnce(
++            &archy_core::LockedProject<'_>,
++            &dyn Fn() -> Result<(), ArchyError>,
++        ) -> Result<WorkflowReceipt, ArchyError>,
++    ) -> Result<WorkflowReceipt, ArchyError> {
++        self.check_binding()?;
++        self.store.read_history()?;
++        let locked = self.store.lock()?;
++        self.check_binding()?;
++        if let Some(head) = locked.receipts()?.last() {
++            let run = verify_locked(&locked, &head.run_id)?;
++            if run.spec().project_id != self.spec.project_id {
++                return Err(artifact_invalid(
++                    "Accepted head belongs to another project ID",
++                ));
++            }
++        }
++        self.check_binding()?;
++        let receipt = action(&locked, &|| self.check_binding())?;
++        let run = verify_locked(&locked, &receipt.run_id)?;
++        if run.spec().project_id != self.spec.project_id {
++            return Err(artifact_invalid(
++                "Accepted run belongs to another project ID",
++            ));
++        }
++        self.check_binding().map_err(|_| {
++            let mut error = ArchyError::new(
++                ErrorCode::RevisionConflict,
++                "project",
++                "Configured project changed during mutation; commit may have occurred on the pinned root; retry the same idempotency key after restoring the project binding",
++            );
++            error.retriable = true;
++            error
++        })?;
++        Ok(receipt)
++    }
++    pub fn generate(
++        &self,
++        count: u32,
++        seed: u64,
++        mutation: MutationOptions,
++    ) -> Result<WorkflowReceipt, ArchyError> {
++        self.transact(|locked, check| {
++            generate_locked(
++                locked,
++                GenerationMode::Sample { count, seed },
++                mutation,
++                self.format,
++                self.source_format,
++                Some(&self.source_bytes),
++                Some(check),
++            )
++        })
++    }
++    pub fn evaluate(
++        &self,
++        source_run: String,
++        variant_id: String,
++        mutation: MutationOptions,
++    ) -> Result<WorkflowReceipt, ArchyError> {
++        self.transact(|locked, check| {
++            let source = verify_locked(locked, &source_run)?;
++            if source.spec().project_id != self.spec.project_id {
++                return Err(artifact_invalid(
++                    "Evaluation source belongs to another project ID",
++                ));
++            }
++            evaluate_locked(
++                locked,
++                Some(source_run),
++                VariantSelection::One(variant_id),
++                mutation,
++                Some(check),
++            )
++        })
++    }
+ }
+ pub struct BoundReadSnapshot<'a> {
+     owner: &'a BoundProjectRead,
+diff --git a/crates/archy-core/src/storage.rs b/crates/archy-core/src/storage.rs
+index 61a3554..b803ecd 100644
+--- a/crates/archy-core/src/storage.rs
++++ b/crates/archy-core/src/storage.rs
+@@ -1048,12 +1048,22 @@ impl PendingRun<'_> {
+         Ok(())
+     }
+     pub fn commit(self, metadata: RunMetadata) -> Result<RunReceipt, ArchyError> {
+-        self.commit_inner(metadata, Interrupt::None)
++        self.commit_inner(metadata, Interrupt::None, None)
++    }
++    /// The callback checks an external binding at publication boundaries. It cannot
++    /// exclude a concurrent rename between a check and a filesystem operation.
++    pub fn commit_checked(
++        self,
++        metadata: RunMetadata,
++        check: &dyn Fn() -> Result<(), ArchyError>,
++    ) -> Result<RunReceipt, ArchyError> {
++        self.commit_inner(metadata, Interrupt::None, Some(check))
+     }
+     fn commit_inner(
+         self,
+         metadata: RunMetadata,
+         interrupt: Interrupt,
++        check: Option<&dyn Fn() -> Result<(), ArchyError>>,
+     ) -> Result<RunReceipt, ArchyError> {
+         self.locked.require_owner()?;
+         if self.artifacts.is_empty()
+@@ -1139,6 +1149,9 @@ impl PendingRun<'_> {
+                 .map_err(|e| ioerr("sync destination directory", e))?;
+         }
+         maybe_fault(FaultPoint::BeforeRunRename)?;
++        if let Some(check) = check {
++            check()?;
++        }
+         fs::renameat_with(
+             &self.staging_parent,
+             self.run_id.as_str(),
+@@ -1177,6 +1190,9 @@ impl PendingRun<'_> {
+             request_schema_version: RUN_REQUEST_SCHEMA_VERSION.into(),
+             receipt: receipt.clone(),
+         };
++        if let Some(check) = check {
++            check().map_err(|error| uncertain("binding changed after run publication", error))?;
++        }
+         publish_revision(&self.locked.store.root, &record, interrupt)?;
+         Ok(receipt)
+     }
+@@ -1186,7 +1202,9 @@ impl PendingRun<'_> {
+ mod interruption_tests {
+     use super::*;
+     use crate::MutationContext;
++    use std::cell::Cell;
+     use std::process::Command;
++    use std::sync::mpsc;
+ 
+     fn fixture() -> (std::path::PathBuf, ProjectStore) {
+         let root = std::env::temp_dir().join(format!("archy-interrupt-{}", uuid::Uuid::new_v4()));
+@@ -1221,6 +1239,80 @@ mod interruption_tests {
+         }
+     }
+     #[test]
++    fn binding_swap_at_publication_boundaries_never_returns_success() {
++        for replace_root in [false, true] {
++            for swap_at in [1, 2] {
++                let (root, store) = fixture();
++                let source = store.pin_source().unwrap();
++                let locked = store.lock().unwrap();
++                let mut pending = locked.begin(request("swap", 0)).unwrap().pending().unwrap();
++                pending
++                    .write("input.json", b"source", "application/json", "test")
++                    .unwrap();
++                let moved = root.with_extension("moved");
++                let replaced = root.with_extension("replacement");
++                let calls = Cell::new(0);
++                let (start_swap, swap_requested) = mpsc::channel();
++                let (swap_done, done) = mpsc::channel();
++                let worker_root = root.clone();
++                let worker_moved = moved.clone();
++                let worker_replaced = replaced.clone();
++                let worker = std::thread::spawn(move || {
++                    swap_requested.recv().unwrap();
++                    if replace_root {
++                        std::fs::rename(&worker_root, &worker_moved).unwrap();
++                        std::fs::create_dir(&worker_root).unwrap();
++                        std::fs::write(worker_root.join("project.json"), b"source").unwrap();
++                    } else {
++                        std::fs::write(&worker_replaced, b"changed").unwrap();
++                        std::fs::rename(&worker_replaced, worker_root.join("project.json"))
++                            .unwrap();
++                    }
++                    swap_done.send(()).unwrap();
++                });
++                let check = || {
++                    calls.set(calls.get() + 1);
++                    if calls.get() == swap_at {
++                        start_swap.send(()).unwrap();
++                        done.recv().unwrap();
++                    }
++                    if !store.matches_root_path(&root).unwrap_or(false)
++                        || !store.source_matches(&source).unwrap_or(false)
++                    {
++                        return Err(conflict("binding changed"));
++                    }
++                    Ok(())
++                };
++                let failure = pending.commit_checked(metadata(), &check).unwrap_err();
++                worker.join().unwrap();
++                assert_eq!(calls.get(), swap_at);
++                assert_eq!(failure.retriable, swap_at == 2);
++                assert_eq!(locked.revision().unwrap(), 0);
++                if replace_root {
++                    assert!(!root.join(".archy").exists());
++                    std::fs::remove_dir_all(&root).unwrap();
++                    std::fs::rename(&moved, &root).unwrap();
++                } else {
++                    std::fs::remove_file(root.join("project.json")).unwrap();
++                    std::fs::write(root.join("project.json"), b"source").unwrap();
++                }
++                let retry = locked.begin(request("swap", 0)).unwrap();
++                if swap_at == 1 {
++                    let mut retry = retry.pending().unwrap();
++                    retry
++                        .write("input.json", b"source", "application/json", "test")
++                        .unwrap();
++                    retry.commit(metadata()).unwrap();
++                } else {
++                    assert!(retry.receipt().is_some());
++                }
++                assert_eq!(locked.revision().unwrap(), 1);
++                assert_eq!(locked.receipts().unwrap().len(), 1);
++                std::fs::remove_dir_all(root).unwrap();
++            }
++        }
++    }
++    #[test]
+     fn injected_sync_and_publication_failures_preserve_history_and_replay_once() {
+         for (point, published, committed) in [
+             (FaultPoint::FileSync, false, false),
+@@ -1457,7 +1549,7 @@ mod interruption_tests {
+             .unwrap();
+         assert!(
+             pending
+-                .commit_inner(metadata(), Interrupt::AfterRunPublication)
++                .commit_inner(metadata(), Interrupt::AfterRunPublication, None)
+                 .is_err()
+         );
+         assert!(root.join("runs").join(&run_id).exists());
+@@ -1496,7 +1588,7 @@ mod interruption_tests {
+             .unwrap();
+         assert!(
+             pending
+-                .commit_inner(metadata(), Interrupt::AfterRevisionPublication)
++                .commit_inner(metadata(), Interrupt::AfterRevisionPublication, None)
+                 .is_err()
+         );
+         let receipt = locked
+@@ -1525,7 +1617,7 @@ mod interruption_tests {
+         pending
+             .write("input.json", b"source", "application/json", "test")
+             .unwrap();
+-        let result = pending.commit_inner(metadata(), Interrupt::AfterRunPublication);
++        let result = pending.commit_inner(metadata(), Interrupt::AfterRunPublication, None);
+         assert!(result.is_err());
+         std::process::abort();
+     }
+diff --git a/crates/archy-mcp/src/server.rs b/crates/archy-mcp/src/server.rs
+index fa6c79a..4282049 100644
+--- a/crates/archy-mcp/src/server.rs
++++ b/crates/archy-mcp/src/server.rs
+@@ -1,5 +1,5 @@
+ use crate::tools::*;
+-use archy_cli::{BoundProjectRead, render_verified_comparison};
++use archy_cli::{BoundProjectRead, MutationOptions, render_verified_comparison};
+ use archy_core::{ArchyError, ErrorCode, sha256_hex};
+ use archy_report::ComparisonDocument;
+ use rmcp::{
+@@ -13,19 +13,25 @@ use rmcp::{
+ };
+ use serde::{Serialize, de::DeserializeOwned};
+ use serde_json::Value;
+-use std::{borrow::Cow, collections::HashSet, sync::Arc};
++use std::{
++    borrow::Cow,
++    collections::HashSet,
++    sync::{Arc, Mutex},
++};
+ use tokio::sync::Semaphore;
+ 
+ #[derive(Clone)]
+ pub struct ArchyServer {
+     project: Arc<BoundProjectRead>,
+-    reads: Arc<Semaphore>,
++    slots: Arc<Semaphore>,
++    mutations: Arc<Mutex<()>>,
+ }
+ impl ArchyServer {
+     pub fn new(project: BoundProjectRead) -> Self {
+         Self {
+             project: Arc::new(project),
+-            reads: Arc::new(Semaphore::new(4)),
++            slots: Arc::new(Semaphore::new(4)),
++            mutations: Arc::new(Mutex::new(())),
+         }
+     }
+     fn call(&self, request: CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
+@@ -41,13 +47,13 @@ impl ArchyServer {
+         }
+         let args = Value::Object(request.arguments.unwrap_or_default());
+         validate_input_bounds(&args)?;
+-        let _permit = match self.reads.try_acquire() {
++        let _permit = match self.slots.try_acquire() {
+             Ok(permit) => permit,
+             Err(_) => {
+                 let mut error = ArchyError::new(
+                     ErrorCode::BackendUnavailable,
+-                    "read",
+-                    "Concurrent read limit reached",
++                    "tool",
++                    "Concurrent tool limit reached",
+                 );
+                 error.retriable = true;
+                 return Ok(error_tool::<PrerequisiteData>(error).into());
+@@ -57,16 +63,8 @@ impl ArchyServer {
+             "get_project" => self.get_project(parse(args)?),
+             "validate_project" => self.validate_project(parse(args)?),
+             "list_variants" => self.list_variants(parse(args)?),
+-            "generate_variants" => self.unavailable::<GenerateVariantsArgs>(
+-                args,
+-                name,
+-                "Shared generation transaction is not wired to MCP",
+-            ),
+-            "evaluate_variant" => self.unavailable::<EvaluateVariantArgs>(
+-                args,
+-                name,
+-                "Shared evaluation transaction is not wired to MCP",
+-            ),
++            "generate_variants" => self.generate_variants(parse(args)?),
++            "evaluate_variant" => self.evaluate_variant(parse(args)?),
+             "render_variant" => self.unavailable::<RenderVariantArgs>(
+                 args,
+                 name,
+@@ -98,6 +96,50 @@ impl ArchyServer {
+             ))
+         }
+     }
++    fn generate_variants(&self, args: GenerateVariantsArgs) -> CallToolResult {
++        result_tool((|| {
++            self.ensure_id(&args.project_id)?;
++            let seed = decimal(&args.seed, "seed")?;
++            let options = mutation_options(
++                args.idempotency_key,
++                args.expected_project_revision,
++                args.destination,
++            )?;
++            let _guard = self.mutations.lock().map_err(|_| {
++                ArchyError::new(
++                    ErrorCode::InternalError,
++                    "mutation",
++                    "Transaction gate is unavailable",
++                )
++            })?;
++            let receipt = self.project.generate(args.count, seed, options)?;
++            Ok(MutationData::from_receipt(args.project_id, receipt))
++        })())
++    }
++    fn evaluate_variant(&self, args: EvaluateVariantArgs) -> CallToolResult {
++        result_tool((|| {
++            self.ensure_id(&args.project_id)?;
++            if !valid_run_uuid(&args.source_run) {
++                return Err(ArchyError::schema("source_run", "Expected a run UUID"));
++            }
++            let options = mutation_options(
++                args.idempotency_key,
++                args.expected_project_revision,
++                args.destination,
++            )?;
++            let _guard = self.mutations.lock().map_err(|_| {
++                ArchyError::new(
++                    ErrorCode::InternalError,
++                    "mutation",
++                    "Transaction gate is unavailable",
++                )
++            })?;
++            let receipt = self
++                .project
++                .evaluate(args.source_run, args.variant_id, options)?;
++            Ok(MutationData::from_receipt(args.project_id, receipt))
++        })())
++    }
+     fn get_project(&self, args: GetProjectArgs) -> CallToolResult {
+         let result = (|| {
+             self.ensure_id(&args.project_id)?;
+@@ -430,6 +472,27 @@ impl ArchyServer {
+         error_tool::<PrerequisiteData>(error)
+     }
+ }
++fn mutation_options(
++    key: String,
++    revision: String,
++    destination: String,
++) -> Result<MutationOptions, ArchyError> {
++    Ok(MutationOptions {
++        idempotency_key: Some(key),
++        expected_project_revision: Some(decimal(&revision, "expected_project_revision")?),
++        destination,
++    })
++}
++fn valid_run_uuid(text: &str) -> bool {
++    text.len() == 36
++        && text.bytes().enumerate().all(|(index, byte)| {
++            if matches!(index, 8 | 13 | 18 | 23) {
++                byte == b'-'
++            } else {
++                byte.is_ascii_hexdigit()
++            }
++        })
++}
+ fn validate_input_bounds(args: &Value) -> Result<(), ErrorData> {
+     let Some(fields) = args.as_object() else {
+         return Err(ErrorData::invalid_params(
+diff --git a/crates/archy-mcp/src/tools.rs b/crates/archy-mcp/src/tools.rs
+index 1693394..8a00a93 100644
+--- a/crates/archy-mcp/src/tools.rs
++++ b/crates/archy-mcp/src/tools.rs
+@@ -1,3 +1,4 @@
++use archy_cli::WorkflowReceipt;
+ use archy_core::{ArchyError, NormalizedSpec};
+ use archy_report::ComparisonDocument;
+ use rmcp::model::{Tool, ToolAnnotations};
+@@ -142,6 +143,31 @@ pub struct PrerequisiteData {
+     pub status: String,
+ }
+ 
++#[derive(Debug, Serialize, Deserialize, JsonSchema)]
++#[serde(deny_unknown_fields)]
++pub struct MutationData {
++    pub project_id: String,
++    pub run_id: String,
++    pub revision: String,
++    pub path: String,
++    pub variant_ids: Vec<String>,
++    pub all_required_checks_passed: bool,
++    pub exhaustion_explanations: Vec<String>,
++}
++impl MutationData {
++    pub fn from_receipt(project_id: String, receipt: WorkflowReceipt) -> Self {
++        Self {
++            project_id,
++            run_id: receipt.run_id,
++            revision: receipt.revision.to_string(),
++            path: receipt.path,
++            variant_ids: receipt.variant_ids,
++            all_required_checks_passed: receipt.all_required_checks_passed,
++            exhaustion_explanations: receipt.exhaustion_explanations,
++        }
++    }
++}
++
+ pub const NAMES: [&str; 9] = [
+     "get_project",
+     "validate_project",
+@@ -345,14 +371,14 @@ pub fn definitions() -> Vec<Tool> {
+             "List verified variants from accepted runs",
+             true,
+         ),
+-        typed::<GenerateVariantsArgs, PrerequisiteData>(
++        typed::<GenerateVariantsArgs, MutationData>(
+             NAMES[3],
+-            "Unavailable until mutation integration",
++            "Generate accepted variants in a scoped transaction",
+             false,
+         ),
+-        typed::<EvaluateVariantArgs, PrerequisiteData>(
++        typed::<EvaluateVariantArgs, MutationData>(
+             NAMES[4],
+-            "Unavailable until mutation integration",
++            "Evaluate one accepted variant in a scoped transaction",
+             false,
+         ),
+         typed::<RenderVariantArgs, PrerequisiteData>(
+diff --git a/crates/archy-mcp/tests/mutations.py b/crates/archy-mcp/tests/mutations.py
+new file mode 100644
+index 0000000..b403ac6
+--- /dev/null
++++ b/crates/archy-mcp/tests/mutations.py
+@@ -0,0 +1,301 @@
++"""Live stdio transactions against the built archy-mcp binary."""
++import json
++import hashlib
++import os
++import pathlib
++import select
++import shutil
++import subprocess
++import tempfile
++import time
++
++from jsonschema import Draft202012Validator
++
++ROOT = pathlib.Path(__file__).resolve().parents[3]
++TARGET = pathlib.Path(os.environ.get('CARGO_TARGET_DIR', ROOT / 'target'))
++if not TARGET.is_absolute():
++    TARGET = ROOT / TARGET
++BIN = TARGET / 'debug/archy-mcp'
++SOURCE = ROOT / 'examples/courtyard-housing/project.yaml'
++META = {'io.modelcontextprotocol/protocolVersion': '2026-07-28',
++        'io.modelcontextprotocol/clientInfo': {'name': 'mutation-test', 'version': '0'},
++        'io.modelcontextprotocol/clientCapabilities': {}}
++SCHEMAS = {name: Draft202012Validator(json.loads((ROOT / 'schemas/mcp' / f'{name}.schema.json').read_text())['output'])
++           for name in ('generate_variants', 'evaluate_variant', 'get_project', 'compare_variants')}
++
++
++def start(project):
++    return subprocess.Popen([str(BIN), '--project', str(project)], stdin=subprocess.PIPE,
++                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
++
++
++def frame(name, args, ident):
++    return json.dumps({'jsonrpc': '2.0', 'id': ident, 'method': 'tools/call',
++                       'params': {'name': name, 'arguments': args, '_meta': META}},
++                      separators=(',', ':')).encode() + b'\n'
++
++
++def replies(p, requests):
++    p.stdin.write(b''.join(frame(*request) for request in requests))
++    p.stdin.flush()
++    out = {}
++    for _ in requests:
++        assert select.select([p.stdout], [], [], 15)[0], 'MCP response timeout'
++        answer = json.loads(p.stdout.readline())
++        assert answer['id'] not in out, answer
++        out[answer['id']] = answer
++    return out
++
++
++def call(p, name, args, ident):
++    return result(name, replies(p, [(name, args, ident)])[ident])
++
++
++def result(name, answer):
++    assert 'result' in answer, answer
++    response = answer['result']
++    data = response['structuredContent']
++    SCHEMAS[name].validate(data)
++    assert json.loads(response['content'][0]['text']) == data
++    assert response['isError'] == (not data['ok'])
++    return data
++
++
++def finish(p):
++    p.stdin.close()
++    p.wait(timeout=5)
++    assert p.returncode == 0, p.stderr.read().decode()
++
++
++def generate(key='generate-1', revision='0', destination='runs', seed='42', project_id='courtyard-demo'):
++    return {'project_id': project_id, 'count': 2, 'seed': seed,
++            'idempotency_key': key, 'expected_project_revision': revision,
++            'destination': destination}
++
++
++def evaluate(source_run, variant_id, key='evaluate-1', revision='1', destination='runs', project_id='courtyard-demo'):
++    return {'project_id': project_id, 'source_run': source_run, 'variant_id': variant_id,
++            'idempotency_key': key, 'expected_project_revision': revision,
++            'destination': destination}
++
++
++def error(data, code):
++    assert data['ok'] is False and data['data'] is None, data
++    assert data['error']['code'] == code, data
++
++
++with tempfile.TemporaryDirectory(prefix='archy-mcp-mutate-') as td:
++    root = pathlib.Path(td)
++    project = root / 'project.yaml'
++    shutil.copyfile(SOURCE, project)
++    original = project.read_bytes()
++    p = start(project)
++    initial = replies(p, [('generate_variants', generate(), 1),
++                          ('generate_variants', generate(), 2)])
++    first = result('generate_variants', initial[1])
++    duplicate = result('generate_variants', initial[2])
++    assert first['ok'] and duplicate == first
++    made = first['data']
++    assert made['revision'] == '1' and len(made['variant_ids']) == 2
++    assert pathlib.Path(td, made['path']).is_dir()
++    assert call(p, 'generate_variants', generate(), 3) == first
++    error(call(p, 'generate_variants', generate(seed='43'), 4), 'REVISION_CONFLICT')
++    error(call(p, 'generate_variants', generate(key='stale', revision='0'), 5), 'REVISION_CONFLICT')
++    error(call(p, 'generate_variants', generate(key='wrong', revision='1', project_id='other'), 6), 'PERMISSION_DENIED')
++    for index, field in enumerate(('seed', 'expected_project_revision'), 30):
++        invalid = {**generate(key=f'overflow-{index}', revision='1'), field: '18446744073709551616'}
++        assert replies(p, [('generate_variants', invalid, index)])[index]['error']['code'] == -32602
++    error(call(p, 'generate_variants', generate(key='max-seed', revision='0', seed='18446744073709551615'), 34), 'REVISION_CONFLICT')
++    for index, destination in enumerate(('../escape', '/tmp/escape', '.archy/x', 'runs/../escape', 'runs//escape'), 7):
++        error(call(p, 'generate_variants', generate(key=f'bad-{index}', revision='1', destination=destination), index), 'PERMISSION_DENIED')
++    outside = root / 'outside'
++    outside.mkdir()
++    (root / 'link').symlink_to(outside, target_is_directory=True)
++    error(call(p, 'generate_variants', generate(key='symlink', revision='1', destination='link'), 35), 'PERMISSION_DENIED')
++    assert list(outside.iterdir()) == []
++    evaluated = evaluate(made['run_id'], made['variant_ids'][0])
++    error(call(p, 'evaluate_variant', evaluate(made['run_id'], made['variant_ids'][0],
++                                              key='bad-eval-path', destination='link'), 36), 'PERMISSION_DENIED')
++    assert list(outside.iterdir()) == []
++    pair = replies(p, [('evaluate_variant', evaluated, 20), ('evaluate_variant', evaluated, 21)])
++    evaluation = result('evaluate_variant', pair[20])
++    assert evaluation['ok'] and result('evaluate_variant', pair[21]) == evaluation
++    assert evaluation['data']['revision'] == '2'
++    assert evaluation['data']['variant_ids'] == [made['variant_ids'][0]]
++    historical = call(p, 'get_project', {'project_id': 'courtyard-demo', 'revision': '1'}, 42)
++    assert historical['ok'] and historical['data']['revision'] == '1'
++    assert historical['data']['source_run'] == made['run_id']
++    compared = call(p, 'compare_variants', {'project_id': 'courtyard-demo',
++                      'run_ids': [made['run_id']], 'objective': 'absolute_target_gfa_delta'}, 43)
++    assert compared['ok'] and compared['data']['revision'] == '2'
++    assert len(compared['data']['comparisons']) == 1
++    assert compared['data']['comparisons'][0]['source_run_id'] == made['run_id']
++    error(call(p, 'evaluate_variant', evaluate(made['run_id'], made['variant_ids'][1]), 22), 'REVISION_CONFLICT')
++    error(call(p, 'evaluate_variant', evaluate(made['run_id'], made['variant_ids'][0], key='stale-eval'), 23), 'REVISION_CONFLICT')
++    assert call(p, 'evaluate_variant', evaluated, 24) == evaluation
++    staging_before = set((root / '.archy/staging').iterdir())
++    error(call(p, 'evaluate_variant', evaluate(made['run_id'], 'variant-absent',
++                                               key='bad-selector', revision='2'), 40), 'INVALID_SCHEMA')
++    assert set((root / '.archy/staging').iterdir()) == staging_before
++    assert len(list((root / '.archy/revisions').glob('*.json'))) == 2
++    invalid_count = generate(key='bad-count', revision='2')
++    invalid_count['count'] = 0
++    assert replies(p, [('generate_variants', invalid_count, 41)])[41]['error']['code'] == -32602
++    assert set((root / '.archy/staging').iterdir()) == staging_before
++    finish(p)
++    assert project.read_bytes() == original
++
++    p = start(project)
++    assert call(p, 'generate_variants', generate(), 25) == first
++    assert call(p, 'evaluate_variant', evaluated, 26) == evaluation
++    finish(p)
++
++    revision = root / '.archy/revisions/00000000000000000002.json'
++    revision.write_bytes(revision.read_bytes().replace(b'"revision":2', b'"revision":3'))
++    p = start(project)
++    error(call(p, 'generate_variants', generate(key='after-tamper', revision='2'), 27), 'ARTIFACT_INVALID')
++    finish(p)
++    assert len(list((root / '.archy/revisions').glob('*.json'))) == 2
++
++with tempfile.TemporaryDirectory(prefix='archy-mcp-orphan-') as td:
++    root = pathlib.Path(td)
++    project = root / 'project.yaml'
++    shutil.copyfile(SOURCE, project)
++    p = start(project)
++    original = call(p, 'generate_variants', generate(key='crash-window'), 1)
++    assert original['ok']
++    finish(p)
++    # Model interruption after the run rename but before revision publication.
++    # The run and manifest are produced by the real MCP transaction.
++    next((root / '.archy/revisions').glob('*.json')).unlink()
++    p = start(project)
++    recovered = call(p, 'generate_variants', generate(key='crash-window'), 2)
++    assert recovered == original
++    assert len(list((root / 'runs').iterdir())) == 1
++    assert len(list((root / '.archy/revisions').glob('*.json'))) == 1
++    finish(p)
++
++with tempfile.TemporaryDirectory(prefix='archy-mcp-duplicate-id-') as td:
++    root = pathlib.Path(td)
++    project = root / 'project.yaml'
++    shutil.copyfile(SOURCE, project)
++    p = start(project)
++    made = call(p, 'generate_variants', generate(key='first'), 1)['data']
++    finish(p)
++    manifest_path = root / made['path'] / 'manifest.json'
++    manifest = json.loads(manifest_path.read_bytes())
++    manifest['outcomes'][1] = manifest['outcomes'][0]
++    changed = json.dumps(manifest, separators=(',', ':')).encode()
++    manifest_path.write_bytes(changed)
++    revision_path = root / '.archy/revisions/00000000000000000001.json'
++    record = json.loads(revision_path.read_bytes())
++    record['receipt']['manifest_sha256'] = hashlib.sha256(changed).hexdigest()
++    revision_path.write_text(json.dumps(record, separators=(',', ':')))
++    p = start(project)
++    error(call(p, 'generate_variants', generate(key='second', revision='1'), 2), 'ARTIFACT_INVALID')
++    finish(p)
++    assert len(list((root / '.archy/revisions').glob('*.json'))) == 1
++
++with tempfile.TemporaryDirectory(prefix='archy-mcp-wrong-source-') as td:
++    root = pathlib.Path(td)
++    project = root / 'project.yaml'
++    shutil.copyfile(SOURCE, project)
++    p = start(project)
++    old = call(p, 'generate_variants', generate(key='old-project'), 1)['data']
++    finish(p)
++    project.write_bytes(project.read_bytes().replace(b'project_id: courtyard-demo', b'project_id: alternate-demo'))
++    cli = subprocess.run([str(TARGET / 'debug/archy'), 'generate', '--project', str(project),
++                          '--count', '1', '--seed', '43', '--json'], capture_output=True)
++    assert cli.returncode == 0, cli.stderr.decode()
++    p = start(project)
++    wrong = evaluate(old['run_id'], old['variant_ids'][0], key='wrong-source',
++                     revision='2', project_id='alternate-demo')
++    error(call(p, 'evaluate_variant', wrong, 2), 'ARTIFACT_INVALID')
++    finish(p)
++    assert len(list((root / '.archy/revisions').glob('*.json'))) == 2
++
++for replace_root in (False, True):
++    with tempfile.TemporaryDirectory(prefix='archy-mcp-replace-') as td:
++        parent = pathlib.Path(td)
++        root = parent / 'bound'
++        root.mkdir()
++        project = root / 'project.yaml'
++        shutil.copyfile(SOURCE, project)
++        p = start(project)
++        assert replies(p, [('validate_project', {'project_id': 'courtyard-demo'}, 1)])[1]['result']['structuredContent']['ok']
++        if replace_root:
++            moved = parent / 'original'
++            root.rename(moved)
++            root.mkdir()
++            shutil.copyfile(SOURCE, root / 'project.yaml')
++        else:
++            replacement = parent / 'replacement.yaml'
++            shutil.copyfile(SOURCE, replacement)
++            replacement.replace(project)
++        error(call(p, 'generate_variants', generate(), 2), 'REVISION_CONFLICT')
++        finish(p)
++        assert not (root / '.archy').exists()
++        if replace_root:
++            assert not (moved / '.archy').exists()
++
++for replace_root in (False, True):
++    with tempfile.TemporaryDirectory(prefix='archy-mcp-swap-active-') as td:
++        parent = pathlib.Path(td)
++        root = parent / 'bound'
++        root.mkdir()
++        project = root / 'project.yaml'
++        shutil.copyfile(SOURCE, project)
++        p = start(project)
++        request = generate(key='active-swap')
++        request['count'] = 100
++        p.stdin.write(frame('generate_variants', request, 1))
++        p.stdin.flush()
++        staging = root / '.archy/staging'
++        deadline = time.monotonic() + 15
++        while time.monotonic() < deadline and not (staging.exists() and any(staging.iterdir())):
++            assert not select.select([p.stdout], [], [], 0)[0], 'mutation finished before staging probe'
++            time.sleep(0.001)
++        assert staging.exists() and any(staging.iterdir()), 'staging phase not reached'
++        if replace_root:
++            moved = parent / 'moved'
++            root.rename(moved)
++            root.mkdir()
++            shutil.copyfile(SOURCE, project)
++            authoritative = moved
++        else:
++            replacement = parent / 'replacement.yaml'
++            replacement.write_bytes(project.read_bytes().replace(b'project_id: courtyard-demo',
++                                                                 b'project_id: alternate-demo'))
++            replacement.replace(project)
++            authoritative = root
++        assert select.select([p.stdout], [], [], 15)[0]
++        answer = result('generate_variants', json.loads(p.stdout.readline()))
++        assert not answer['ok'] and answer['error']['code'] in ('REVISION_CONFLICT', 'INTERNAL_ERROR'), answer
++        if replace_root:
++            assert not (root / '.archy/revisions').exists()
++        assert len(list((authoritative / '.archy/revisions').glob('*.json'))) <= 1
++        finish(p)
++        if replace_root:
++            shutil.rmtree(root)
++            moved.rename(root)
++        else:
++            project.write_bytes(SOURCE.read_bytes())
++        p = start(project)
++        retry = call(p, 'generate_variants', request, 2)
++        assert retry['ok'], retry
++        assert len(list((root / '.archy/revisions').glob('*.json'))) == 1
++        assert call(p, 'generate_variants', request, 3) == retry
++        finish(p)
++
++with tempfile.TemporaryDirectory(prefix='archy-mcp-partial-history-') as td:
++    root = pathlib.Path(td)
++    project = root / 'project.yaml'
++    shutil.copyfile(SOURCE, project)
++    managed = root / '.archy'
++    managed.mkdir(mode=0o700)
++    p = start(project)
++    error(call(p, 'generate_variants', generate(), 1), 'ARTIFACT_INVALID')
++    finish(p)
++    assert list(managed.iterdir()) == []
++
++print('MCP live generate/evaluate/compare, historical read, replay, conflict, scope, tamper and replacement: PASS')
+diff --git a/crates/archy-mcp/tests/stdio_contract.py b/crates/archy-mcp/tests/stdio_contract.py
+index bf899c9..1d91bbc 100644
+--- a/crates/archy-mcp/tests/stdio_contract.py
++++ b/crates/archy-mcp/tests/stdio_contract.py
+@@ -79,9 +79,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
+     assert call(p,'get_project',{'project_id':'other'},9)['result']['structuredContent']['error']['code']=='PERMISSION_DENIED'
+     assert call(p,'list_variants',{'project_id':'courtyard-demo','limit':101},10)['error']['code']==-32602
+     assert call(p,'list_variants',{'project_id':'courtyard-demo','cursor':'wrong:1:id'},11)['result']['structuredContent']['error']['code']=='REVISION_CONFLICT'
+-    for i,(name,extra) in enumerate(zip(NAMES[3:],[
+-        {'count':1,'seed':'1','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
+-        {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
++    for i,(name,extra) in enumerate(zip(NAMES[5:],[
+         {'source_run':'r','variant_id':'v','preset':'draft','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
+         {'run_ids':['r'],'objective':'area'},
+         {'source_run':'r','variant_id':'v','idempotency_key':'k','expected_project_revision':'0','destination':'runs'},
+@@ -109,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-stdio-') as td:
+     p.stdin.close(); p.wait(timeout=5)
+     assert p.returncode == 1 and b"MCP transport startup failed" in p.stderr.read()
+     assert sorted(x.name for x in pathlib.Path(td).iterdir())==['project.yaml']
+-print('MCP actual modern/legacy, nine schemas, three base reads, five prerequisite errors, bounds and no writes: PASS')
++print('MCP actual modern/legacy, nine schemas, three base reads, four typed errors, bounds and no writes: PASS')
+ with tempfile.TemporaryDirectory(prefix='archy-mcp-history-') as td:
+     project=pathlib.Path(td)/'project.yaml'; shutil.copyfile(SOURCE,project)
+     cli=TARGET/'debug/archy'
+@@ -191,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
+     mutation={'project_id':'courtyard-demo','source_run':'r','variant_id':'v',
+               'idempotency_key':'k','expected_project_revision':'0','destination':'runs'}
+     fields=[('compare_variants','objective',{'project_id':'courtyard-demo','run_ids':['r'],'objective':'area'}),
+-            ('generate_variants','destination',{'project_id':'courtyard-demo','count':1,'seed':'1',
++            ('generate_variants','destination',{'project_id':'wrong-project','count':1,'seed':'1',
+                                                'idempotency_key':'k','expected_project_revision':'0','destination':'runs'}),
+             ('evaluate_variant','destination',mutation),
+             ('render_variant','preset',{**mutation,'preset':'draft'}),
+@@ -221,7 +219,8 @@ with tempfile.TemporaryDirectory(prefix='archy-mcp-unicode-') as td:
+             second=json.dumps(request(2,tool,base)).encode()
+             replies=run_frames(first,second)
+             assert set(replies)==({1,2} if valid else {None,2}),(tool,field,label,replies)
+-            expected='INVALID_SCHEMA' if tool=='compare_variants' else 'BACKEND_UNAVAILABLE'
++            expected=('INVALID_SCHEMA' if tool in ('compare_variants','evaluate_variant') else
++                      'PERMISSION_DENIED' if tool=='generate_variants' else 'BACKEND_UNAVAILABLE')
+             assert replies[2]['result']['structuredContent']['error']['code']==expected
+             if valid:
+                 assert replies[1]['result']['structuredContent']['error']['code']==expected
+diff --git a/docs/mcp/README.md b/docs/mcp/README.md
+index bda7272..bb99b2b 100644
+--- a/docs/mcp/README.md
++++ b/docs/mcp/README.md
+@@ -1,8 +1,8 @@
+-# Local MCP read facade
++# Local MCP facade
+ 
+ `archy-mcp --project /trusted/path/project.yaml` starts a stdio MCP server. The launch operator supplies the fixed manifest path; tool arguments cannot choose a file or root. The server pins the project source and root descriptor at startup. Reads use the same noncreating accepted-history and semantic verification service as desktop status. A missing `.archy` history is revision `0`; corrupt managed history returns an Archy error without repair.
+ 
+-The server supports protocol versions `2026-07-28` and `2025-11-25`. The Rust SDK owns protocol dispatch and lifecycle. A bounded adapter screens complete lines for JSON syntax and serializes parse errors with SDK output. Incoming lines are capped at 1 MiB, JSON depth at 64, responses at 1 MiB, read tasks at four, and variant pages at 100. Large unsigned revisions are decimal strings at this boundary.
++The server supports protocol versions `2026-07-28` and `2025-11-25`. The Rust SDK owns protocol dispatch and lifecycle. A bounded adapter screens complete lines for JSON syntax and serializes parse errors with SDK output. Incoming lines are capped at 1 MiB, JSON depth at 64, responses at 1 MiB, concurrent tool calls at four, and variant pages at 100. Mutations also use an in-process mutex and the shared storage lock. Large unsigned revisions are decimal strings at this boundary.
+ 
+ Project, run, and variant IDs, idempotency keys, and cursors use ASCII. Accepted run IDs are UUIDs; accepted variant IDs contain an ASCII hash. Presets, objectives, destinations, and reasons may contain Unicode. Their existing UTF-8 byte ceilings remain 128, 128, 512, and 4096 bytes, respectively. To express these ceilings in standard JSON Schema, the server also limits the number of characters to the byte ceiling divided by the widest UTF-8 character in the string. This conservative rule can reject a mixed string even when its actual byte length is below the ceiling. The input schemas and wire handler apply the same rule.
+ 
+@@ -14,6 +14,10 @@ Unicode text must contain valid Unicode scalar values. An escaped UTF-16 surroga
+ 
+ `compare_variants` accepts explicit accepted generation/edit run IDs and the sole implemented objective, `absolute_target_gfa_delta`. Each returned comparison is the CLI's typed document for one run, with ranks **within that run**. It preserves source and evidence hashes, required-check results, subjective preferences, and uncomputed daylight/cost caveats. It does not claim a ranking across different runs. Pages default to one run and bind the cursor to the fixed project, source bytes, accepted revision/head, objective and ordered IDs. It neither persists a report nor acquires a writer lock. Unsupported objectives, duplicate/unaccepted IDs and non-generation/edit runs return typed errors. A comparison that exceeds the MCP response bound returns a bounded error.
+ 
+-All nine planned tools have strict advertised input and output schemas in [`schemas/mcp`](../../schemas/mcp). `generate_variants`, `evaluate_variant`, `render_variant`, `export_ifc`, and `propose_approval` return typed `BACKEND_UNAVAILABLE` prerequisite errors. They perform no mutation. There is no final approval, generic filesystem, shell, network listener, or client-selectable root tool.
++`generate_variants` and `evaluate_variant` are live mutations through the CLI's locked transaction service. Each requires an idempotency key, decimal expected revision, and project-relative destination. Exact same-key retry replays a verified receipt; a changed request or stale revision returns `REVISION_CONFLICT`. Evaluation accepts only a verified generation or edit source run and validates the selected variant before creating staging for a new key. The server checks the pinned root and source binding at entry, after locking, at publication boundaries, and after verifying the accepted run. A detected binding change before the staged run rename refuses publication. A detected change after run publication returns a retriable `REVISION_CONFLICT` with an uncertain outcome; retry the same key after restoring the binding to discover or recover the receipt. Storage writes use the pinned root descriptor and cannot be redirected to a replacement root.
+ 
+-Run the wire checks with `cargo build --locked -p archy-mcp -p archy-cli`, followed by `python3 crates/archy-mcp/tests/stdio_contract.py`, `python3 crates/archy-mcp/tests/parse_errors.py`, and `python3 crates/archy-mcp/tests/compare_stdio.py`. All three scripts honor `CARGO_TARGET_DIR` and run from the CI schema checker. `cargo test --locked -p archy-mcp` tests transport guards and writer backpressure. If Node.js is available, `node crates/archy-mcp/tests/unicode_regex.js` also checks the patterns in an ECMAScript UTF-16 regex engine.
++The binding checks do not lease the configured pathname. An uncooperative rename between a check and publication or response can escape detection. A success receipt describes the pinned project and the checks that were observed; it does not guarantee that the configured pathname continuously identified that project. The returned path is project-relative and may be unavailable under a replaced configured path. Do not infer atomic pathname identity from a successful response.
++
++All nine planned tools have strict advertised input and output schemas in [`schemas/mcp`](../../schemas/mcp). `render_variant`, `export_ifc`, and `propose_approval` return typed `BACKEND_UNAVAILABLE` prerequisite errors. There is no final approval, generic filesystem, shell, network listener, or client-selectable root tool.
++
++Run the wire checks with `cargo build --locked -p archy-mcp -p archy-cli`, followed by `python3 crates/archy-mcp/tests/stdio_contract.py`, `python3 crates/archy-mcp/tests/parse_errors.py`, `python3 crates/archy-mcp/tests/compare_stdio.py`, and `python3 crates/archy-mcp/tests/mutations.py`. All four scripts honor `CARGO_TARGET_DIR` and run from the CI schema checker. `cargo test --locked -p archy-mcp` tests transport guards and writer backpressure. If Node.js is available, `node crates/archy-mcp/tests/unicode_regex.js` also checks the patterns in an ECMAScript UTF-16 regex engine.
+diff --git a/schemas/mcp/evaluate_variant.schema.json b/schemas/mcp/evaluate_variant.schema.json
+index 20383aa..4c0cffa 100644
+--- a/schemas/mcp/evaluate_variant.schema.json
++++ b/schemas/mcp/evaluate_variant.schema.json
+@@ -106,15 +106,45 @@
+         ],
+         "type": "string"
+       },
+-      "PrerequisiteData": {
++      "MutationData": {
+         "additionalProperties": false,
+         "properties": {
+-          "status": {
++          "all_required_checks_passed": {
++            "type": "boolean"
++          },
++          "exhaustion_explanations": {
++            "items": {
++              "type": "string"
++            },
++            "type": "array"
++          },
++          "path": {
++            "type": "string"
++          },
++          "project_id": {
+             "type": "string"
++          },
++          "revision": {
++            "type": "string"
++          },
++          "run_id": {
++            "type": "string"
++          },
++          "variant_ids": {
++            "items": {
++              "type": "string"
++            },
++            "type": "array"
+           }
+         },
+         "required": [
+-          "status"
++          "project_id",
++          "run_id",
++          "revision",
++          "path",
++          "variant_ids",
++          "all_required_checks_passed",
++          "exhaustion_explanations"
+         ],
+         "type": "object"
+       }
+@@ -125,7 +155,7 @@
+         "additionalProperties": false,
+         "properties": {
+           "data": {
+-            "$ref": "#/$defs/PrerequisiteData"
++            "$ref": "#/$defs/MutationData"
+           },
+           "error": {
+             "type": "null"
+diff --git a/schemas/mcp/generate_variants.schema.json b/schemas/mcp/generate_variants.schema.json
+index 202c398..38ad72b 100644
+--- a/schemas/mcp/generate_variants.schema.json
++++ b/schemas/mcp/generate_variants.schema.json
+@@ -104,15 +104,45 @@
+         ],
+         "type": "string"
+       },
+-      "PrerequisiteData": {
++      "MutationData": {
+         "additionalProperties": false,
+         "properties": {
+-          "status": {
++          "all_required_checks_passed": {
++            "type": "boolean"
++          },
++          "exhaustion_explanations": {
++            "items": {
++              "type": "string"
++            },
++            "type": "array"
++          },
++          "path": {
++            "type": "string"
++          },
++          "project_id": {
+             "type": "string"
++          },
++          "revision": {
++            "type": "string"
++          },
++          "run_id": {
++            "type": "string"
++          },
++          "variant_ids": {
++            "items": {
++              "type": "string"
++            },
++            "type": "array"
+           }
+         },
+         "required": [
+-          "status"
++          "project_id",
++          "run_id",
++          "revision",
++          "path",
++          "variant_ids",
++          "all_required_checks_passed",
++          "exhaustion_explanations"
+         ],
+         "type": "object"
+       }
+@@ -123,7 +153,7 @@
+         "additionalProperties": false,
+         "properties": {
+           "data": {
+-            "$ref": "#/$defs/PrerequisiteData"
++            "$ref": "#/$defs/MutationData"
+           },
+           "error": {
+             "type": "null"
+diff --git a/scripts/check-schemas.py b/scripts/check-schemas.py
+index 9cdc91a..7f3b989 100644
+--- a/scripts/check-schemas.py
++++ b/scripts/check-schemas.py
+@@ -231,7 +231,7 @@ print('actual CLI desktop capabilities and genesis status conform')
+ 
+ subprocess.run(['python3', 'tests/decision_contract_schema.py'], cwd=ROOT, check=True)
+ subprocess.run(['cargo', 'build', '--locked', '-p', 'archy-mcp'], cwd=ROOT, check=True)
+-for test in ('stdio_contract.py', 'parse_errors.py', 'compare_stdio.py'):
++for test in ('stdio_contract.py', 'parse_errors.py', 'compare_stdio.py', 'mutations.py'):
+     subprocess.run([sys.executable, str(ROOT / 'crates' / 'archy-mcp' / 'tests' / test)],
+                    cwd=ROOT, timeout=120, check=True)
+ 

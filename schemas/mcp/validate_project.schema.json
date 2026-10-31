@@ -1,0 +1,469 @@
+{
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "project_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project_id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArchyError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "field": {
+            "description": "JSON-style dotted field path; `$` denotes the document itself.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field",
+          "retriable"
+        ],
+        "type": "object"
+      },
+      "ConstraintKind": {
+        "enum": [
+          "max_height",
+          "min_edge_setback"
+        ],
+        "type": "string"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_GEOMETRY",
+          "CONSTRAINT_FAIL",
+          "BACKEND_UNAVAILABLE",
+          "BACKEND_TIMEOUT",
+          "ARTIFACT_INVALID",
+          "REVISION_CONFLICT",
+          "PERMISSION_DENIED",
+          "INTERNAL_ERROR"
+        ],
+        "type": "string"
+      },
+      "Generation": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seed": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shapes": {
+            "items": {
+              "$ref": "#/$defs/Shape"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "seed",
+          "shapes"
+        ],
+        "type": "object"
+      },
+      "MeterUnit": {
+        "enum": [
+          "m"
+        ],
+        "type": "string"
+      },
+      "NormalizationVersion": {
+        "enum": [
+          "si-rectangle-v2"
+        ],
+        "type": "string"
+      },
+      "NormalizedBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "floor_to_floor_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "storeys": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "target_gfa_hard": {
+            "type": "boolean"
+          },
+          "target_gfa_m2": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "storeys",
+          "floor_to_floor_m",
+          "target_gfa_m2",
+          "target_gfa_hard"
+        ],
+        "type": "object"
+      },
+      "NormalizedConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "description": "User declaration only. Absent authority becomes `assumption`.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/ConstraintKind"
+          },
+          "source": {
+            "type": "string"
+          },
+          "value_m": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "value_m",
+          "source",
+          "authority"
+        ],
+        "type": "object"
+      },
+      "NormalizedConstraint2": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "bound": {
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/ConstraintKind"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/$defs/MeterUnit"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "bound",
+          "unit",
+          "source",
+          "authority"
+        ],
+        "type": "object"
+      },
+      "NormalizedProject": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/NormalizedSpec"
+          },
+          {
+            "$ref": "#/$defs/NormalizedSpec2"
+          }
+        ]
+      },
+      "NormalizedSite": {
+        "additionalProperties": false,
+        "properties": {
+          "north_angle_deg": {
+            "format": "double",
+            "type": "number"
+          },
+          "polygon_xy_m": {
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "type": "array"
+          }
+        },
+        "required": [
+          "polygon_xy_m",
+          "north_angle_deg"
+        ],
+        "type": "object"
+      },
+      "NormalizedSpec": {
+        "additionalProperties": false,
+        "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
+        "properties": {
+          "brief": {
+            "$ref": "#/$defs/NormalizedBrief"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/$defs/NormalizedConstraint"
+            },
+            "type": "array"
+          },
+          "generation": {
+            "$ref": "#/$defs/Generation"
+          },
+          "normalization_version": {
+            "type": "string"
+          },
+          "preferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "string"
+          },
+          "site": {
+            "$ref": "#/$defs/NormalizedSite"
+          },
+          "tolerance_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "units": {
+            "$ref": "#/$defs/Units"
+          }
+        },
+        "required": [
+          "schema_version",
+          "project_id",
+          "units",
+          "site",
+          "brief",
+          "constraints",
+          "preferences",
+          "generation",
+          "normalization_version",
+          "tolerance_m"
+        ],
+        "type": "object"
+      },
+      "NormalizedSpec2": {
+        "additionalProperties": false,
+        "properties": {
+          "brief": {
+            "$ref": "#/$defs/NormalizedBrief"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/$defs/NormalizedConstraint2"
+            },
+            "type": "array"
+          },
+          "generation": {
+            "$ref": "#/$defs/Generation"
+          },
+          "id": {
+            "type": "string"
+          },
+          "normalization_version": {
+            "$ref": "#/$defs/NormalizationVersion"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "type": "array"
+          },
+          "preferences": {
+            "items": {
+              "$ref": "#/$defs/Preference"
+            },
+            "maxItems": 8,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "schema_version": {
+            "$ref": "#/$defs/SchemaVersion"
+          },
+          "site": {
+            "$ref": "#/$defs/NormalizedSite"
+          },
+          "tolerance_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "units": {
+            "$ref": "#/$defs/MeterUnit"
+          }
+        },
+        "required": [
+          "schema_version",
+          "id",
+          "units",
+          "site",
+          "brief",
+          "constraints",
+          "preferences",
+          "notes",
+          "generation",
+          "normalization_version",
+          "tolerance_m"
+        ],
+        "type": "object"
+      },
+      "Preference": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/PreferenceKind"
+          },
+          "value": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "type": "object"
+      },
+      "PreferenceKind": {
+        "enum": [
+          "massing_character",
+          "landscape_intent",
+          "architectural_intent"
+        ],
+        "type": "string"
+      },
+      "SchemaVersion": {
+        "enum": [
+          "0.2.0"
+        ],
+        "type": "string"
+      },
+      "Shape": {
+        "enum": [
+          "rectangle",
+          "l_shape"
+        ],
+        "type": "string"
+      },
+      "Units": {
+        "enum": [
+          "m",
+          "mm",
+          "cm",
+          "ft"
+        ],
+        "type": "string"
+      },
+      "ValidateProjectData": {
+        "additionalProperties": false,
+        "properties": {
+          "normalized": {
+            "$ref": "#/$defs/NormalizedProject"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "source_sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "source_sha256",
+          "normalized"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/ValidateProjectData"
+          },
+          "error": {
+            "type": "null"
+          },
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "$ref": "#/$defs/ArchyError"
+          },
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

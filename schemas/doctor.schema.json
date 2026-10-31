@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archy.local/schemas/doctor.schema.json",
+  "title": "Archy doctor report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "host", "platform", "checks", "capabilities", "ready", "target_acceptance", "target_gates"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "host": {
+      "type": "object", "additionalProperties": false,
+      "required": ["os_id", "kernel", "architecture", "environment", "evidence_sources"],
+      "properties": {
+        "os_id": {"type": ["string", "null"]}, "kernel": {"type": ["string", "null"]},
+        "architecture": {"type": "string"},
+        "environment": {"enum": ["omarchy", "wsl", "other-linux", "unknown"]},
+        "evidence_sources": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "platform": {
+      "type": "object", "additionalProperties": false,
+      "required": ["supported_baseline", "compatibility", "raw_package_identity", "upstream_version", "development_override"],
+      "properties": {
+        "supported_baseline": {"type": "string"},
+        "compatibility": {"$ref": "#/$defs/statusOrNull"},
+        "raw_package_identity": {"type": ["string", "null"]},
+        "upstream_version": {"type": ["string", "null"]},
+        "development_override": {"type": "boolean"}
+      }
+    },
+    "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "capabilities": {
+      "type": "object", "additionalProperties": false,
+      "required": ["core", "blender", "ifc", "containment", "desktop"],
+      "properties": {
+        "core": {"$ref": "#/$defs/capability"}, "blender": {"$ref": "#/$defs/capability"},
+        "ifc": {"$ref": "#/$defs/capability"}, "containment": {"$ref": "#/$defs/capability"},
+        "desktop": {"$ref": "#/$defs/capability"}
+      }
+    },
+    "ready": {"type": "boolean"},
+    "target_acceptance": {"const": "deferred"},
+    "target_gates": {"type": "array", "items": {"$ref": "#/$defs/gate"}}
+  },
+  "$defs": {
+    "status": {"enum": ["available", "missing", "unsupported", "unavailable", "deferred"]},
+    "statusOrNull": {"anyOf": [{"$ref": "#/$defs/status"}, {"type": "null"}]},
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "required_for", "status", "observed", "expected", "evidence", "reason", "remedy"],
+      "properties": {
+        "id": {"type": "string"}, "required_for": {"type": "array", "items": {"type": "string"}},
+        "status": {"$ref": "#/$defs/status"}, "observed": {"type": ["string", "null"]},
+        "expected": {"type": ["string", "null"]}, "evidence": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string"}, "remedy": {"type": "string"}
+      }
+    },
+    "capability": {
+      "type": "object", "additionalProperties": false, "required": ["ready", "required_checks"],
+      "properties": {"ready": {"type": "boolean"}, "required_checks": {"type": "array", "items": {"type": "string"}}}
+    },
+    "gate": {
+      "type": "object", "additionalProperties": false, "required": ["id", "status", "reason"],
+      "properties": {"id": {"type": "string"}, "status": {"const": "deferred"}, "reason": {"type": "string"}}
+    }
+  }
+}

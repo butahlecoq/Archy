@@ -1,0 +1,3 @@
+342c3b9ec9849ef74ab002208b7479dc0a63a9899a0fe60977acaacb32fa71b2  authority/vendor/zbus-5.19.0/src/connection/socket/unix.rs
+8a60c99ac391bebccc385b9e0b447eb630a481adf5a371ffd10ccf96e5306350  authority/vendor/zbus-5.19.0/ARCHY-PATCH.md
+bebb33767c506266f1b1b59c3208acd18c0e0525bf09ec6844546e4079f2ea57  authority/tests/human_bus_boundary.rs

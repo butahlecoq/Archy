@@ -1,0 +1,7 @@
+/target/
+**/runs/
+*.blend1
+__pycache__/
+.venv/
+/.verification-python/
+.runtime-assets/

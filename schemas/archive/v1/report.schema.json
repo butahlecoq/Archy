@@ -1,0 +1,634 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_id": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "measured": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        }
+      },
+      "required": [
+        "constraint_id",
+        "result",
+        "explanation",
+        "required"
+      ],
+      "type": "object"
+    },
+    "CheckResult": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "WARN",
+        "UNKNOWN"
+      ],
+      "type": "string"
+    },
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "DimensionalTolerance": {
+      "additionalProperties": false,
+      "properties": {
+        "area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "method_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "length_m",
+        "area_m2",
+        "method_version"
+      ],
+      "type": "object"
+    },
+    "EvaluationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "type": "array"
+        },
+        "evaluation_version": {
+          "type": "string"
+        },
+        "geometry_parity_budget": {
+          "$ref": "#/$defs/GeometryParityBudget"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/Metric"
+          },
+          "type": "array"
+        },
+        "professional_limits": {
+          "type": "string"
+        },
+        "required_checks_passed": {
+          "type": "boolean"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/DimensionalTolerance"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant_id",
+        "evaluation_version",
+        "metrics",
+        "checks",
+        "tolerance",
+        "geometry_parity_budget",
+        "required_checks_passed",
+        "professional_limits"
+      ],
+      "type": "object"
+    },
+    "Generation": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
+    },
+    "GeometryParityBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "gross_floor_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "rigid_transform_policy_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_version",
+        "coordinate_length_m",
+        "footprint_area_m2",
+        "gross_floor_area_m2",
+        "rigid_transform_policy_version"
+      ],
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "method_version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "method_version"
+      ],
+      "type": "object"
+    },
+    "NormalizedBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target_gfa_hard": {
+          "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "storeys",
+        "floor_to_floor_m",
+        "target_gfa_m2",
+        "target_gfa_hard"
+      ],
+      "type": "object"
+    },
+    "NormalizedConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "description": "User declaration only. Absent authority becomes `assumption`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "value_m": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "value_m",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "NormalizedSite": {
+      "additionalProperties": false,
+      "properties": {
+        "north_angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ],
+      "type": "object"
+    },
+    "NormalizedSpec": {
+      "additionalProperties": false,
+      "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/NormalizedBrief"
+        },
+        "constraints": {
+          "items": {
+            "$ref": "#/$defs/NormalizedConstraint"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "$ref": "#/$defs/Generation"
+        },
+        "normalization_version": {
+          "type": "string"
+        },
+        "preferences": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/NormalizedSite"
+        },
+        "tolerance_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "units": {
+          "$ref": "#/$defs/Units"
+        }
+      },
+      "required": [
+        "schema_version",
+        "project_id",
+        "units",
+        "site",
+        "brief",
+        "constraints",
+        "preferences",
+        "generation",
+        "normalization_version",
+        "tolerance_m"
+      ],
+      "type": "object"
+    },
+    "ReportContext": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm_version": {
+          "type": "string"
+        },
+        "attempts": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "build_version": {
+          "type": "string"
+        },
+        "exhaustion_explanations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "input_sha256": {
+          "type": "string"
+        },
+        "normalized_sha256": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "parent_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parent_variant_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "run_id",
+        "operation",
+        "input_sha256",
+        "normalized_sha256",
+        "algorithm_version",
+        "build_version",
+        "exhaustion_explanations"
+      ],
+      "type": "object"
+    },
+    "ReportVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluation": {
+          "$ref": "#/$defs/EvaluationReport"
+        },
+        "variant": {
+          "$ref": "#/$defs/Variant"
+        }
+      },
+      "required": [
+        "variant",
+        "evaluation"
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "ShapeParameters": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "rectangle",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_width_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "l_shape",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m",
+            "notch_width_m",
+            "notch_depth_m"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "generation_algorithm": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/ShapeParameters"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shape": {
+          "$ref": "#/$defs/Shape"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "project_id",
+        "id",
+        "seed",
+        "generation_algorithm",
+        "shape",
+        "parameters",
+        "footprint_xy_m",
+        "storeys",
+        "floor_to_floor_m"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "$ref": "#/$defs/ReportContext"
+    },
+    "professional_limits": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "spec": {
+      "$ref": "#/$defs/NormalizedSpec"
+    },
+    "uncomputed": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/ReportVariant"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "context",
+    "spec",
+    "variants",
+    "uncomputed",
+    "professional_limits"
+  ],
+  "title": "ReportDocument",
+  "type": "object"
+}

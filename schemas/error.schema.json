@@ -1,0 +1,43 @@
+{
+  "$defs": {
+    "ErrorCode": {
+      "enum": [
+        "INVALID_SCHEMA",
+        "INVALID_GEOMETRY",
+        "CONSTRAINT_FAIL",
+        "BACKEND_UNAVAILABLE",
+        "BACKEND_TIMEOUT",
+        "ARTIFACT_INVALID",
+        "REVISION_CONFLICT",
+        "PERMISSION_DENIED",
+        "INTERNAL_ERROR"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/ErrorCode"
+    },
+    "field": {
+      "description": "JSON-style dotted field path; `$` denotes the document itself.",
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "retriable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "message",
+    "field",
+    "retriable"
+  ],
+  "title": "ArchyError",
+  "type": "object"
+}

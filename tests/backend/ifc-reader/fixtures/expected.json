@@ -1,0 +1,159 @@
+{
+  "schema_version": "ifc-reader-fixture-v1",
+  "cases": [
+    {
+      "file": "rectangle.ifc",
+      "source_file": "source/rectangle.json",
+      "shape": "rectangle",
+      "project_id": "courtyard-demo",
+      "variant_id": "variant-acf7a0e6f73485c63f672289dd7897f5a079e7120af8bb09f6e3df86029bd9c7",
+      "run_id": "run-rectangle",
+      "source_digest": "d7fb108848e058fc1a7ffd2510ac1474fd8a114aeb37c38676e525a0d87ce7e9",
+      "origin_xy_m": [
+        13.0,
+        -2.0
+      ],
+      "width_m": 10.0,
+      "depth_m": 20.0,
+      "notch_width_m": null,
+      "notch_depth_m": null,
+      "north_angle_deg": 17.0,
+      "footprint_xy_m": [
+        [
+          13.0,
+          -2.0
+        ],
+        [
+          23.0,
+          -2.0
+        ],
+        [
+          23.0,
+          18.0
+        ],
+        [
+          13.0,
+          18.0
+        ],
+        [
+          13.0,
+          -2.0
+        ]
+      ],
+      "footprint_area_m2": 200.0,
+      "approximate_gfa_m2": 600.0,
+      "mass_volume_m3": 1920.0,
+      "storeys": 3,
+      "floor_to_floor_m": 3.2,
+      "height_m": 9.6
+    },
+    {
+      "file": "l_shape.ifc",
+      "source_file": "source/l_shape.json",
+      "shape": "l_shape",
+      "project_id": "courtyard-demo",
+      "variant_id": "variant-539b437189ff1323cbeaf94224b18f323db6d30f15d9c206a362e76d7338c48e",
+      "run_id": "run-l_shape",
+      "source_digest": "a82d2d65d379f13219a5b15385385f07f52ab9276f3ea1a1e9cb83882a56690e",
+      "origin_xy_m": [
+        13.0,
+        -2.0
+      ],
+      "width_m": 10.0,
+      "depth_m": 10.0,
+      "notch_width_m": 5.0,
+      "notch_depth_m": 5.0,
+      "north_angle_deg": 17.0,
+      "footprint_xy_m": [
+        [
+          13.0,
+          -2.0
+        ],
+        [
+          23.0,
+          -2.0
+        ],
+        [
+          23.0,
+          3.0
+        ],
+        [
+          18.0,
+          3.0
+        ],
+        [
+          18.0,
+          8.0
+        ],
+        [
+          13.0,
+          8.0
+        ],
+        [
+          13.0,
+          -2.0
+        ]
+      ],
+      "footprint_area_m2": 75.0,
+      "approximate_gfa_m2": 225.0,
+      "mass_volume_m3": 720.0,
+      "storeys": 3,
+      "floor_to_floor_m": 3.2,
+      "height_m": 9.6
+    },
+    {
+      "file": "l_shape_repeat.ifc",
+      "source_file": "source/l_shape.json",
+      "shape": "l_shape",
+      "project_id": "courtyard-demo",
+      "variant_id": "variant-539b437189ff1323cbeaf94224b18f323db6d30f15d9c206a362e76d7338c48e",
+      "run_id": "run-l_shape_repeat",
+      "source_digest": "a82d2d65d379f13219a5b15385385f07f52ab9276f3ea1a1e9cb83882a56690e",
+      "origin_xy_m": [
+        13.0,
+        -2.0
+      ],
+      "width_m": 10.0,
+      "depth_m": 10.0,
+      "notch_width_m": 5.0,
+      "notch_depth_m": 5.0,
+      "north_angle_deg": 17.0,
+      "footprint_xy_m": [
+        [
+          13.0,
+          -2.0
+        ],
+        [
+          23.0,
+          -2.0
+        ],
+        [
+          23.0,
+          3.0
+        ],
+        [
+          18.0,
+          3.0
+        ],
+        [
+          18.0,
+          8.0
+        ],
+        [
+          13.0,
+          8.0
+        ],
+        [
+          13.0,
+          -2.0
+        ]
+      ],
+      "footprint_area_m2": 75.0,
+      "approximate_gfa_m2": 225.0,
+      "mass_volume_m3": 720.0,
+      "storeys": 3,
+      "floor_to_floor_m": 3.2,
+      "height_m": 9.6
+    }
+  ]
+}

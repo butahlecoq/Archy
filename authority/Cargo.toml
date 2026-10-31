@@ -1,0 +1,40 @@
+[package]
+name = "archy-authority"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+license = "MIT"
+
+[dependencies]
+archy-core = { path = "../crates/archy-core" }
+archy-cli = { path = "../crates/archy-cli" }
+rustix = { workspace = true, features = ["process"] }
+libc = "=0.2.191"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+sha2 = "=0.11.1"
+zbus = { version = "=5.19.0", features = ["blocking-api"] }
+async-io = "=2.6.0"
+futures-lite = "=2.6.1"
+futures-channel = "=0.3.34"
+
+[[bin]]
+name = "archy-authorityd"
+path = "src/bin/authorityd.rs"
+
+[[bin]]
+name = "archy-review"
+path = "src/bin/review.rs"
+
+[[bin]]
+name = "archy-propose"
+path = "src/bin/propose.rs"
+
+[[bin]]
+name = "archy-human-busd"
+path = "src/bin/human_busd.rs"
+
+[[bin]]
+name = "archy-journal-witness"
+path = "src/bin/journal_witness.rs"

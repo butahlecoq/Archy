@@ -1,0 +1,5 @@
+# MCP backpressure test on 3b87d82
+
+The frozen current-head test candidate, independently reviewed in `mcp-backpressure-current-head-review-sol.md`, was applied on 3b87d82 with all nine source and handoff hashes matching. The instrumented example reports actual `Poll::Pending` and later positive writes; it is a test executable and does not prove a kernel EAGAIN or atomic causation between drain and resume. The shipping binary also runs success and mixed-burst checks, including exact bounded overload errors, valid results and parse errors.
+
+On this combined checkout, formatting, strict MCP Clippy, the full schema script, and eight live test runs at four-way concurrency passed. The previous round-five candidate failed 3/8 runs on the prior integrated server because it expected the old overload message; the current candidate checks the published tool limit response. Schema log: `/home/butahlecoq/work/archy/.tools/mcp-current-3b87-schema.log`; stress logs: `/home/butahlecoq/work/archy/.tools/mcp-current-3b87-stress-*.log`.
