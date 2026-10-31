@@ -18,6 +18,12 @@ for arg in "$@"; do
 done
 if [ ! -f "$project" ]; then exit 2; fi
 case "$(cat /run/archy-desktop/mode)" in
+  invalid-selection-in-flight)
+    if [ "$(grep -c '^BEGIN$' /tmp/archy-desktop-argv)" -eq 2 ]; then
+      cat /run/archy-desktop/status.json; exit 0
+    fi
+    trap 'cat /run/archy-desktop/status.json && printf "done\n" > /tmp/archy-desktop-late-reply; exit $?' TERM
+    while :; do :; done ;;
   wrong-explicit)
     cat /run/archy-desktop/status.json; exit 0 ;;
   malformed) printf '{broken'; exit 0 ;;

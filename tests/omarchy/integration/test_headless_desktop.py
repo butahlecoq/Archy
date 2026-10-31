@@ -51,6 +51,7 @@ def run_case(mode, real_binary=False):
             "cp /workspace/integrations/omarchy/plugin/DesktopProcess.qml /workspace/integrations/omarchy/plugin/DesktopModel.js /tmp/archy-qml/; "
             "cp /workspace/tests/omarchy/integration/headless/desktop-shell.qml /tmp/archy-qml/shell.qml; "
             "quickshell --no-color -p /tmp/archy-qml/shell.qml; result=$?; "
+            "if [ -f /tmp/archy-desktop-late-reply ]; then printf 'ARCHY_DESKTOP_LATE_REPLY\n'; fi; "
             "if [ -f /tmp/archy-desktop-argv ]; then printf 'ARCHY_DESKTOP_ARGV '; base64 -w0 /tmp/archy-desktop-argv; printf '\n'; fi; exit $result",
         ]
         proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=12)
@@ -58,6 +59,8 @@ def run_case(mode, real_binary=False):
     logs = [line.split("ARCHY_DESKTOP_ARGV ", 1)[1] for line in proc.stdout.splitlines() if "ARCHY_DESKTOP_ARGV " in line]
     if proc.returncode or len(records) != 1:
         raise AssertionError(f"{mode}: exit={proc.returncode}, records={len(records)}\n{proc.stdout[-3000:]}")
+    if mode == "invalid-selection-in-flight" and "ARCHY_DESKTOP_LATE_REPLY" not in proc.stdout.splitlines():
+        raise AssertionError(f"{mode}: fixture did not emit late reply\n{proc.stdout[-3000:]}")
     args = base64.b64decode(logs[0]).decode().split("BEGIN\n")[1:] if logs else []
     return json.loads(records[0]), [a.strip("\n").split("\n") for a in args]
 
@@ -74,6 +77,23 @@ class NativeDesktop(unittest.TestCase):
         self.assertEqual(result["manifest"], "")
         self.assertEqual(result["selectedRunId"], "")
         self.assertTrue(result["error"])
+
+    def test_invalid_project_selection_ignores_in_flight_status_reply(self):
+        result, argv = run_case("invalid-selection-in-flight")
+        self.assertEqual(argv, [
+            ["desktop", "capabilities", "--json"],
+            ["desktop", "status", "--project", SELECTED, "--limit", "20", "--json"],
+            ["desktop", "status", "--project", SELECTED, "--limit", "20", "--json"],
+        ])
+        self.assertIsNone(result["status"])
+        self.assertEqual(result["manifest"], "")
+        self.assertEqual(result["selectedRunId"], "")
+        self.assertEqual(result["pageCursor"], "")
+        self.assertFalse(result["stale"])
+        self.assertFalse(result["busy"])
+        self.assertTrue(result["selectedWhileBusy"])
+        self.assertTrue(result["inFlightSettled"])
+        self.assertEqual(result["error"], "Enter an absolute local manifest path")
 
     def test_fixed_commands_and_path_with_spaces(self):
         result, argv = run_case("normal")
