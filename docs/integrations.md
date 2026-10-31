@@ -4,7 +4,7 @@ These projects are starting points for investigation, not installed dependencies
 
 ## Omarchy considerations
 
-The first integration work targets Omarchy. Check how Blender, IfcOpenShell, and their MCP servers are installed and launched on the target system, including Python environment and dependency compatibility. Verify headless rendering and GUI operation where each workflow requires them. Document the versions and setup that actually work; no Omarchy installation procedure has been validated yet.
+The full local workflow has been run on Omarchy with Python 3.14.8, PyYAML 6.0.3, Blender 5.2.2 LTS, and IfcOpenShell 0.9.0post1. It generates and independently verifies an IFC4 massing model in a separate Python process from Blender. The local MCP server uses stdio: evaluation and project creation accept brief text, while project operations use UUIDs and a configured storage directory instead of caller-supplied paths. The tested IfcOpenShell runtime and its Python dependencies were placed on `PYTHONPATH`; package installation through the system Python remains unavailable because it has no `pip` module. Blender MCP, IfcMCP, GUI operation, and their security properties remain unverified. Keep IFC generation in a separate worker environment rather than assuming packages installed for system Python are visible to Blender's embedded Python.
 
 ## Modeling and BIM
 
