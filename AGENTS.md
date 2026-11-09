@@ -8,6 +8,6 @@ The release baseline is `docs/specs/release-0.1.txt`, extracted from the founder
 - Do not silently discard failing designs. Preserve reproducible inputs, metrics, explanations and immutable run artifacts.
 - No arbitrary Python execution, unscoped output paths, silent overwrites, or agent self-approval.
 - Each bounded change needs a short plan, meaningful tests, dependency rationale, independent review and a handoff with exact validation evidence. Never call an unrun check passing.
-- Use Sol at medium reasoning for implementation and review when delegating, per founder instruction. The coordinating agent owns integration and research. Implementers must not spawn additional agents.
+- Use `~/.agents/pstack-models.md` for delegated implementation and review models and reasoning budgets. The coordinating agent owns integration and research. Implementers must not spawn additional agents.
 - Keep backend dependencies optional for core unit tests; test real backends as explicit integration/release gates.
 - License choices and third-party obligations must be recorded before distribution. Do not imply GPL/LGPL tools are relicensed by the core license.
