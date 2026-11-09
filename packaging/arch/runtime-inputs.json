@@ -1,0 +1,42 @@
+{
+  "files": {
+    "packaging/arch/runtime-verifier/reader.cjs": "ac49cd744f9d85e59d3f83c3907ef10fb7c215958e024568da47c002ec649555",
+    "packaging/arch/runtime-verifier/step-scope.cjs": "1673ce64df0c8154ee4b7222b38e47612b33b6c48643eb2ad7a18730e7c53857",
+    "packaging/arch/runtime-verifier/verify-stdin.cjs": "71abb0c0050f2980d6c94c858ceb75796b11ab5e011c2867d7050c0ae362ef4c",
+    "workers/blender/LICENSE": "c9dae6279ac2171148aac839fcbb882b3c227498396ac5ac78614a47289d3891",
+    "workers/blender/README.md": "cd8efb4906052bff958cff69bad893783fe7551b9a14f072466117a6931b327a",
+    "workers/blender/protocol.py": "f058d2ae91625fd9cdce0b15e6ed3edd485f1b911db790dce8b3f2a68e9b49f8",
+    "workers/blender/scene.py": "892b57c1cf92976bdc4862942c630c900b181413a00e6fc147e96a3c42ddaabc",
+    "workers/blender/smoke.py": "03c911903b9cc43f4372951de7bc84feee4e0f0f0410f0947844be500fd17ddd",
+    "workers/blender/versions.json": "f3a01c42ad6667363053a66953a69c99dc4e3b1bc8c00d8379a1e19443ac002c",
+    "workers/blender/worker.py": "13297733dad0f68762ae50e1442074ee6deb1db65f5ee7521b2da488f4ae7b8e",
+    "workers/ifc/LICENSE": "d5fcc21f650d453ceb5525526eb8b76d44878657120d3c8395b1ed4d813e694d",
+    "workers/ifc/README.md": "ba1024d50f81f3bf6fa035c938a299e6fc56e8e4ed98904df8cca648fb4e7cb9",
+    "workers/ifc/archy_ifc_worker/__init__.py": "58efbc6973be784fe8d3c3ab02505a4113ffb53bd43eaffaefb0e8f0cde64451",
+    "workers/ifc/archy_ifc_worker/__main__.py": "a5d2c7f4be87af6bcf50c4dbb2d8595ad6e840e8e56db624322bd5dcb8806418",
+    "workers/ifc/archy_ifc_worker/geometry.py": "9423f3529492e060f1c4d69a16ac249191677d48ab679e888065ee7b9ecb5dba",
+    "workers/ifc/archy_ifc_worker/hierarchy.py": "27b83d1e56f37d1ca817e7ae91cedaeea3fb37b90f755d70d2cf37130c2e7fe7",
+    "workers/ifc/archy_ifc_worker/properties.py": "88a8ffc62207c0efdeaa4943afe6e01bc2626a9227e8bed8ca71181c7d7c907f",
+    "workers/ifc/archy_ifc_worker/protocol.py": "2692592cc9edecb3317d76c424cba3c7ed9b6547abf441a18d4cc868c93b525f",
+    "workers/ifc/archy_ifc_worker/verify.py": "9cc09fdae0693766cfefb7a5f2ff09086994d5555be8b2fa8050500727161c3a",
+    "workers/ifc/archy_ifc_worker/worker.py": "bb1cf33347ad9b46429c4a136697938401164a81238e5e60870637fae7b59f3c",
+    "workers/ifc/build-requirements.in": "2dffe14e1b5181d58f02bb0714be8b5fc2b7934efc5fbb44800b85b3c699aec5",
+    "workers/ifc/build-requirements.lock": "079eec1deec846c9beaaa1402e1409151dbf70df85e00a61ec354a4776e19288",
+    "workers/ifc/pyproject.toml": "61ef5aa4df1cc5cf0fb0f98e8874e90ee2109c785a4522c5c9d246c2ed65b8cd",
+    "workers/ifc/requirements.in": "651a836c530b650b38b7a7b926e6860fe2dc7921890d6791f1ef2c1b7b4fe0d9",
+    "workers/ifc/requirements.lock": "2218b2dc0ab2376a9f63b7868cc3bbff6c98972dd8973c021bb393c89ad985d1"
+  },
+  "reviews": {
+    "a12": {
+      "evidence_path": null,
+      "sha256": null,
+      "status": "pending"
+    },
+    "distribution": {
+      "evidence_path": null,
+      "sha256": null,
+      "status": "pending"
+    }
+  },
+  "schema_version": 1
+}

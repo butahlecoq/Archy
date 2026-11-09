@@ -1,0 +1,75 @@
+{
+  "brief": {
+    "floor_to_floor_m": 3.2,
+    "storeys": 3,
+    "target_gfa_hard": false,
+    "target_gfa_m2": 900.0
+  },
+  "constraints": [
+    {
+      "authority": "assumption",
+      "bound": 12.0,
+      "id": "height",
+      "kind": "max_height",
+      "source": "user_brief",
+      "unit": "m"
+    },
+    {
+      "authority": "assumption",
+      "bound": 3.0,
+      "id": "setback",
+      "kind": "min_edge_setback",
+      "source": "user_brief",
+      "unit": "m"
+    }
+  ],
+  "generation": {
+    "count": 3,
+    "seed": 42,
+    "shapes": [
+      "rectangle",
+      "l_shape"
+    ]
+  },
+  "id": "courtyard-demo",
+  "normalization_version": "si-rectangle-v2",
+  "notes": [],
+  "preferences": [
+    {
+      "kind": "massing_character",
+      "value": "courtyard"
+    },
+    {
+      "kind": "landscape_intent",
+      "value": "retain_trees"
+    }
+  ],
+  "schema_version": "0.2.0",
+  "site": {
+    "north_angle_deg": 0.0,
+    "polygon_xy_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        20.0,
+        0.0
+      ],
+      [
+        20.0,
+        35.0
+      ],
+      [
+        0.0,
+        35.0
+      ],
+      [
+        0.0,
+        0.0
+      ]
+    ]
+  },
+  "tolerance_m": 1e-06,
+  "units": "m"
+}

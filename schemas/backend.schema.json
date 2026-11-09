@@ -1,0 +1,1312 @@
+{
+  "$defs": {
+    "ArchyError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "field": {
+          "description": "JSON-style dotted field path; `$` denotes the document itself.",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retriable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "field",
+        "retriable"
+      ],
+      "type": "object"
+    },
+    "BlenderFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ClaimedArtifact"
+          },
+          "type": "array"
+        },
+        "error": {
+          "$ref": "#/$defs/ArchyError"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ErrorStatus"
+        }
+      },
+      "required": [
+        "status",
+        "schema_version",
+        "error",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "BlenderGeometry": {
+      "additionalProperties": false,
+      "properties": {
+        "bounds_m": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "cap_area_error_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "volume_m3": {
+          "format": "double",
+          "type": "number"
+        },
+        "world_coordinate_max_error_m": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "storeys",
+        "footprint_area_m2",
+        "volume_m3",
+        "bounds_m",
+        "world_coordinate_max_error_m",
+        "cap_area_error_m2"
+      ],
+      "type": "object"
+    },
+    "BlenderPreset": {
+      "additionalProperties": false,
+      "properties": {
+        "adaptive_sampling": {
+          "type": "boolean"
+        },
+        "axis_conversion": {
+          "type": "string"
+        },
+        "cameras": {
+          "$ref": "#/$defs/Cameras"
+        },
+        "denoising": {
+          "type": "boolean"
+        },
+        "device": {
+          "type": "string"
+        },
+        "display_device": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "exposure": {
+          "format": "double",
+          "type": "number"
+        },
+        "film_transparent": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string"
+        },
+        "frame": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gamma": {
+          "format": "double",
+          "type": "number"
+        },
+        "glb_export": {
+          "$ref": "#/$defs/GlbExport"
+        },
+        "image_compression": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "light": {
+          "$ref": "#/$defs/Light"
+        },
+        "look": {
+          "type": "string"
+        },
+        "material": {
+          "$ref": "#/$defs/Material"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/MassingObject"
+          },
+          "type": "array"
+        },
+        "preset_id": {
+          "type": "string"
+        },
+        "resolution": {
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "resolution_percentage": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "samples": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "saved_render_path": {
+          "type": "string"
+        },
+        "seed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threads": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "threads_mode": {
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "view_bounds_m": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "view_transform": {
+          "type": "string"
+        },
+        "world": {
+          "$ref": "#/$defs/World"
+        }
+      },
+      "required": [
+        "preset_id",
+        "engine",
+        "device",
+        "threads",
+        "threads_mode",
+        "samples",
+        "seed",
+        "adaptive_sampling",
+        "denoising",
+        "resolution",
+        "resolution_percentage",
+        "format",
+        "image_compression",
+        "film_transparent",
+        "display_device",
+        "view_transform",
+        "look",
+        "exposure",
+        "gamma",
+        "axis_conversion",
+        "frame",
+        "unit",
+        "world",
+        "material",
+        "cameras",
+        "objects",
+        "light",
+        "glb_export",
+        "view_bounds_m",
+        "saved_render_path"
+      ],
+      "type": "object"
+    },
+    "BlenderResponse": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BlenderSuccess"
+        },
+        {
+          "$ref": "#/$defs/BlenderFailure"
+        }
+      ]
+    },
+    "BlenderSuccess": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ClaimedArtifact"
+          },
+          "type": "array"
+        },
+        "blender_version": {
+          "type": "string"
+        },
+        "build_hash": {
+          "type": "string"
+        },
+        "geometry": {
+          "$ref": "#/$defs/BlenderGeometry"
+        },
+        "preset": {
+          "$ref": "#/$defs/BlenderPreset"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "python_version": {
+          "type": "string"
+        },
+        "request_digest": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/OkStatus"
+        },
+        "variant_id": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "worker_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "schema_version",
+        "request_id",
+        "project_id",
+        "variant_id",
+        "run_id",
+        "request_digest",
+        "worker_version",
+        "blender_version",
+        "build_hash",
+        "python_version",
+        "warnings",
+        "preset",
+        "geometry",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "BlenderWire": {
+      "properties": {
+        "input_digest": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "output_dir": {
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/$defs/Variant"
+        },
+        "preset_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/NormalizedSite"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation",
+        "request_id",
+        "project_id",
+        "variant_id",
+        "run_id",
+        "params",
+        "site",
+        "input_digest",
+        "preset_id",
+        "output_dir"
+      ],
+      "type": "object"
+    },
+    "Camera": {
+      "additionalProperties": false,
+      "properties": {
+        "clip_end": {
+          "format": "double",
+          "type": "number"
+        },
+        "clip_start": {
+          "format": "double",
+          "type": "number"
+        },
+        "matrix_world": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ortho_scale": {
+          "format": "double",
+          "type": "number"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "matrix_world",
+        "ortho_scale",
+        "clip_start",
+        "clip_end"
+      ],
+      "type": "object"
+    },
+    "Cameras": {
+      "additionalProperties": false,
+      "properties": {
+        "front": {
+          "$ref": "#/$defs/Camera"
+        },
+        "iso": {
+          "$ref": "#/$defs/Camera"
+        },
+        "top": {
+          "$ref": "#/$defs/Camera"
+        }
+      },
+      "required": [
+        "top",
+        "front",
+        "iso"
+      ],
+      "type": "object"
+    },
+    "ClaimedArtifact": {
+      "additionalProperties": false,
+      "description": "A worker claim only. A09 must open the file independently and recompute size/hash.",
+      "properties": {
+        "media_type": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "producer": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "media_type",
+        "producer",
+        "size_bytes"
+      ],
+      "type": "object"
+    },
+    "ErrorCode": {
+      "enum": [
+        "INVALID_SCHEMA",
+        "INVALID_GEOMETRY",
+        "CONSTRAINT_FAIL",
+        "BACKEND_UNAVAILABLE",
+        "BACKEND_TIMEOUT",
+        "ARTIFACT_INVALID",
+        "REVISION_CONFLICT",
+        "PERMISSION_DENIED",
+        "INTERNAL_ERROR"
+      ],
+      "type": "string"
+    },
+    "ErrorStatus": {
+      "enum": [
+        "error"
+      ],
+      "type": "string"
+    },
+    "ErrorStatus2": {
+      "enum": [
+        "error"
+      ],
+      "type": "string"
+    },
+    "ExpressValidation": {
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "failure": {
+          "type": "null"
+        },
+        "findings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stderr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "exit_code",
+        "findings",
+        "stderr",
+        "failure"
+      ],
+      "type": "object"
+    },
+    "GlbExport": {
+      "additionalProperties": false,
+      "properties": {
+        "animations": {
+          "type": "boolean"
+        },
+        "cameras": {
+          "type": "boolean"
+        },
+        "compression": {
+          "type": "boolean"
+        },
+        "export_yup": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string"
+        },
+        "lights": {
+          "type": "boolean"
+        },
+        "selected_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "format",
+        "selected_only",
+        "export_yup",
+        "animations",
+        "cameras",
+        "lights",
+        "compression"
+      ],
+      "type": "object"
+    },
+    "IfcFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ClaimedArtifact"
+          },
+          "type": "array"
+        },
+        "error": {
+          "$ref": "#/$defs/ArchyError"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "source_digest": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ErrorStatus2"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "schema_version",
+        "request_id",
+        "project_id",
+        "variant_id",
+        "run_id",
+        "source_digest",
+        "error",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "IfcResponse": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IfcSuccess"
+        },
+        {
+          "$ref": "#/$defs/IfcFailure"
+        }
+      ]
+    },
+    "IfcSuccess": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ClaimedArtifact"
+          },
+          "type": "array"
+        },
+        "backend_version": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "python_version": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "source_digest": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/OkStatus2"
+        },
+        "validation": {
+          "$ref": "#/$defs/IfcValidation"
+        },
+        "variant_id": {
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "worker_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "schema_version",
+        "request_id",
+        "project_id",
+        "variant_id",
+        "run_id",
+        "source_digest",
+        "worker_version",
+        "backend_version",
+        "python_version",
+        "warnings",
+        "validation",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "IfcValidation": {
+      "additionalProperties": false,
+      "properties": {
+        "approximate_gfa_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "expected_footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "express_validation": {
+          "$ref": "#/$defs/ExpressValidation"
+        },
+        "footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "fresh_process_reopen": {
+          "type": "boolean"
+        },
+        "height_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "reopen_process": {
+          "$ref": "#/$defs/ReopenProcess"
+        },
+        "schema": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tessellation": {
+          "items": {
+            "$ref": "#/$defs/Tessellation"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "schema",
+        "storeys",
+        "footprint_area_m2",
+        "expected_footprint_area_m2",
+        "approximate_gfa_m2",
+        "height_m",
+        "tessellation",
+        "draft",
+        "engine",
+        "fresh_process_reopen",
+        "reopen_process",
+        "express_validation"
+      ],
+      "type": "object"
+    },
+    "IfcWire": {
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "output_dir": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/NormalizedSite"
+        },
+        "source_artifacts": {
+          "items": {
+            "$ref": "#/$defs/SourceArtifact"
+          },
+          "type": "array"
+        },
+        "source_digest": {
+          "type": "string"
+        },
+        "variant": {
+          "$ref": "#/$defs/Variant"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation",
+        "request_id",
+        "project_id",
+        "variant_id",
+        "run_id",
+        "variant",
+        "site",
+        "source_digest",
+        "source_artifacts",
+        "output_dir"
+      ],
+      "type": "object"
+    },
+    "Light": {
+      "additionalProperties": false,
+      "properties": {
+        "color_rgb": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "energy": {
+          "format": "double",
+          "type": "number"
+        },
+        "location": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "matrix_world": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "rotation_euler": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "size": {
+          "format": "double",
+          "type": "number"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "shape",
+        "color_rgb",
+        "location",
+        "rotation_euler",
+        "matrix_world",
+        "energy",
+        "size"
+      ],
+      "type": "object"
+    },
+    "MassingObject": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "matrix_world": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rotation_euler": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "scale": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "location",
+        "rotation_euler",
+        "scale",
+        "matrix_world"
+      ],
+      "type": "object"
+    },
+    "Material": {
+      "additionalProperties": false,
+      "properties": {
+        "base_color_rgba": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "diffuse_rgba": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "roughness": {
+          "format": "double",
+          "type": "number"
+        },
+        "use_nodes": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "use_nodes",
+        "diffuse_rgba",
+        "base_color_rgba",
+        "roughness"
+      ],
+      "type": "object"
+    },
+    "NormalizedSite": {
+      "additionalProperties": false,
+      "properties": {
+        "north_angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ],
+      "type": "object"
+    },
+    "OkStatus": {
+      "enum": [
+        "ok"
+      ],
+      "type": "string"
+    },
+    "OkStatus2": {
+      "enum": [
+        "ok"
+      ],
+      "type": "string"
+    },
+    "ReopenProcess": {
+      "additionalProperties": false,
+      "properties": {
+        "failure": {
+          "type": "null"
+        },
+        "returncode": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "stderr": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "returncode",
+        "stderr",
+        "failure"
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "ShapeParameters": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "rectangle",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_depth_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "notch_width_m": {
+              "format": "double",
+              "type": "number"
+            },
+            "origin_xy_m": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "shape": {
+              "const": "l_shape",
+              "type": "string"
+            },
+            "width_m": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "shape",
+            "origin_xy_m",
+            "width_m",
+            "depth_m",
+            "notch_width_m",
+            "notch_depth_m"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SourceArtifact": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "Tessellation": {
+      "additionalProperties": false,
+      "properties": {
+        "bounds_m": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "triangles": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "volume_m3": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bounds_m",
+        "volume_m3",
+        "triangles"
+      ],
+      "type": "object"
+    },
+    "Unit": {
+      "additionalProperties": false,
+      "properties": {
+        "scale_length": {
+          "format": "double",
+          "type": "number"
+        },
+        "system": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "scale_length"
+      ],
+      "type": "object"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "generation_algorithm": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "parameters": {
+          "$ref": "#/$defs/ShapeParameters"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shape": {
+          "$ref": "#/$defs/Shape"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "project_id",
+        "id",
+        "seed",
+        "generation_algorithm",
+        "shape",
+        "parameters",
+        "footprint_xy_m",
+        "storeys",
+        "floor_to_floor_m"
+      ],
+      "type": "object"
+    },
+    "World": {
+      "additionalProperties": false,
+      "properties": {
+        "color_rgba": {
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "strength": {
+          "format": "double",
+          "type": "number"
+        },
+        "use_nodes": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "use_nodes",
+        "color_rgba",
+        "strength"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "blender_request": {
+      "$ref": "#/$defs/BlenderWire"
+    },
+    "blender_response": {
+      "$ref": "#/$defs/BlenderResponse"
+    },
+    "ifc_request": {
+      "$ref": "#/$defs/IfcWire"
+    },
+    "ifc_response": {
+      "$ref": "#/$defs/IfcResponse"
+    }
+  },
+  "required": [
+    "blender_request",
+    "ifc_request",
+    "blender_response",
+    "ifc_response"
+  ],
+  "title": "BackendContract",
+  "type": "object"
+}

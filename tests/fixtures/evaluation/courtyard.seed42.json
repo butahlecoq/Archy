@@ -1,0 +1,118 @@
+{
+  "checks": [
+    {
+      "constraint_id": "site_containment",
+      "explanation": "Minimum signed clearance to declared site; length tolerance applies",
+      "limit": 0.0,
+      "measured": 3.690059696190918,
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "constraint_id": "height",
+      "explanation": "Declared MaxHeight; source=user_brief; authority=assumption (unverified); geometric measurement only",
+      "limit": 12.0,
+      "measured": 9.600000000000001,
+      "required": true,
+      "result": "PASS"
+    },
+    {
+      "constraint_id": "setback",
+      "explanation": "Declared MinEdgeSetback; source=user_brief; authority=assumption (unverified); geometric measurement only",
+      "limit": 3.0,
+      "measured": 3.690059696190918,
+      "required": true,
+      "result": "PASS"
+    }
+  ],
+  "evaluation_version": "planar-massing-v1",
+  "geometry_parity_budget": {
+    "coordinate_length_m": 1e-06,
+    "footprint_area_m2": 6.692269547052616e-05,
+    "gross_floor_area_m2": 0.00020076808641157848,
+    "policy_version": "polygon-coordinate-parity-v1",
+    "rigid_transform_policy_version": "rigid-xy-ordered-v1"
+  },
+  "metrics": [
+    {
+      "method_version": "planar-massing-v1",
+      "name": "footprint_area",
+      "unit": "m2",
+      "value": 191.90055545249083
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "gross_floor_area",
+      "unit": "m2",
+      "value": 575.7016663574725
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "height",
+      "unit": "m",
+      "value": 9.600000000000001
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "xmin",
+      "unit": "m",
+      "value": 5.052881875657741
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "ymin",
+      "unit": "m",
+      "value": 6.26847896731718
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "xmax",
+      "unit": "m",
+      "value": 13.47276527442892
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "ymax",
+      "unit": "m",
+      "value": 31.309940303809082
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "clearance_west",
+      "unit": "m",
+      "value": 5.052881875657741
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "clearance_east",
+      "unit": "m",
+      "value": 6.5272347255710805
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "clearance_south",
+      "unit": "m",
+      "value": 6.26847896731718
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "clearance_north",
+      "unit": "m",
+      "value": 3.690059696190918
+    },
+    {
+      "method_version": "planar-massing-v1",
+      "name": "target_gfa_delta",
+      "unit": "m2",
+      "value": -324.2983336425275
+    }
+  ],
+  "professional_limits": "Measures declared geometric bounds only; not legal compliance or professional certification. Sources and authority are unverified declarations. GFA approximates repeated footprint area; daylight, structure, access, cost and local regulations are uncomputed.",
+  "required_checks_passed": true,
+  "tolerance": {
+    "area_m2": 1e-06,
+    "length_m": 1e-06,
+    "method_version": "absolute-si-v1"
+  },
+  "variant_id": "variant-053ead22ad72f8b2b6e2f3fca065cf371feedd6623a3f31edc2dd8ee3902dc3b"
+}

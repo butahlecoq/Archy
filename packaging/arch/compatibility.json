@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "omarchy": {
+    "approved_upstream_version": "4.0.6",
+    "evidence_status": "documented_baseline",
+    "source": "https://github.com/omacom/omarchy/releases/tag/v4.0.6"
+  },
+  "backends": {
+    "blender": { "proposed_version": "4.5.15", "evidence_status": "unverified", "artifact_sha256": null, "runtime_supported": false },
+    "ifc": { "proposed_python": "3.12.16", "proposed_ifcopenshell": "0.9.0.post1", "evidence_status": "unverified", "complete_lock_sha256": null, "runtime_supported": false }
+  }
+}

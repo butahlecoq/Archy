@@ -1,0 +1,1644 @@
+{
+  "historical_inventory_sha256": "2cb7c672f6a1866cc9b0214522b9e6f26b669a47db135f6a4fca86d90857afb4",
+  "historical_system_file_count": 54,
+  "libraries": [
+    {
+      "alias": "/usr/lib/ld-linux-x86-64.so.2",
+      "mode": "0o755",
+      "needed": [],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/ld-linux-x86-64.so.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "f5e11cc62f8f2c24dff532982559f4303dba3b17e7450551372a88c8e7ea8757",
+      "soname": [
+        "ld-linux-x86-64.so.2"
+      ],
+      "version_requirements": {}
+    },
+    {
+      "alias": "/usr/lib/libEGL.so.1.1.0",
+      "mode": "0o755",
+      "needed": [
+        "libGLdispatch.so.0",
+        "libc.so.6"
+      ],
+      "owner": "libglvnd",
+      "package_version": "1.7.0-3",
+      "resolved_path": "/usr/lib/libEGL.so.1.1.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "89d5d0f68f7e42397544db26347c24a893be2e08b81406e8e8714803c29db03b",
+      "soname": [
+        "libEGL.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libGL.so.1.7.0",
+      "mode": "0o755",
+      "needed": [
+        "libGLX.so.0",
+        "libGLdispatch.so.0",
+        "libc.so.6"
+      ],
+      "owner": "libglvnd",
+      "package_version": "1.7.0-3",
+      "resolved_path": "/usr/lib/libGL.so.1.7.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "185fa8c5a729e2e30d01a3015d53b1aaa953dffca41e59bf1c025ed5d0d5737f",
+      "soname": [
+        "libGL.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libGLX.so.0.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libGLdispatch.so.0",
+        "libX11.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libglvnd",
+      "package_version": "1.7.0-3",
+      "resolved_path": "/usr/lib/libGLX.so.0.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "4eca76728c640b67b1ed656a22b53d3734c100ba4f992aecd705d2e70bfe743a",
+      "soname": [
+        "libGLX.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libGLdispatch.so.0.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libglvnd",
+      "package_version": "1.7.0-3",
+      "resolved_path": "/usr/lib/libGLdispatch.so.0.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "b6d068112d4fd36750b6fedcddea0df7719b707495611cbe6fd92f6887eda467",
+      "soname": [
+        "libGLdispatch.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libICE.so.6.3.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libice",
+      "package_version": "1.1.2-1",
+      "resolved_path": "/usr/lib/libICE.so.6.3.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "71c71c05e3cbd25d19460ef5bdf3b3a4538c95a86473a4e4222bf85c2c419a9c",
+      "soname": [
+        "libICE.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.11",
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.36",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libSM.so.6.0.1",
+      "mode": "0o755",
+      "needed": [
+        "libICE.so.6",
+        "libc.so.6",
+        "libuuid.so.1"
+      ],
+      "owner": "libsm",
+      "package_version": "1.2.6-1",
+      "resolved_path": "/usr/lib/libSM.so.6.0.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "1366597b21814c4290eda5f83d8bd63144273f99ab15197f49fc26037459d4c3",
+      "soname": [
+        "libSM.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libuuid.so.1": [
+          "UUID_1.0"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libX11.so.6.4.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libxcb.so.1"
+      ],
+      "owner": "libx11",
+      "package_version": "1.8.14-1",
+      "resolved_path": "/usr/lib/libX11.so.6.4.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "8c202bd93c4f4f3967ac66a20588da1e8f44a17b57ecc292d5cce51aa1168b74",
+      "soname": [
+        "libX11.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.15",
+          "GLIBC_2.2.5",
+          "GLIBC_2.26",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXau.so.6.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libxau",
+      "package_version": "1.0.12-1",
+      "resolved_path": "/usr/lib/libXau.so.6.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "3e229dba702d7b56f1c58ac0e004ae691ae2ad5ede7b50968e1cd7d8b2ccdecc",
+      "soname": [
+        "libXau.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXdmcp.so.6.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libxdmcp",
+      "package_version": "1.1.5-2",
+      "resolved_path": "/usr/lib/libXdmcp.so.6.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "0c572ba75de0f967c9c4d088161d3e435ea721bd99c169aae707aba6870a71b1",
+      "soname": [
+        "libXdmcp.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.36",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXext.so.6.4.0",
+      "mode": "0o755",
+      "needed": [
+        "libX11.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libxext",
+      "package_version": "1.3.7-1",
+      "resolved_path": "/usr/lib/libXext.so.6.4.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "e131bd58bb319d99a19ea280232e4bd982abc70775bb1a7a832c64e5c69f739f",
+      "soname": [
+        "libXext.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.26",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXfixes.so.3.1.0",
+      "mode": "0o755",
+      "needed": [
+        "libX11.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libxfixes",
+      "package_version": "6.0.2-1",
+      "resolved_path": "/usr/lib/libXfixes.so.3.1.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "81c569776401b91d9fdc8678337b034687e77ef17c359ef98adfef07ed31ab49",
+      "soname": [
+        "libXfixes.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXi.so.6.1.0",
+      "mode": "0o755",
+      "needed": [
+        "libX11.so.6",
+        "libXext.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libxi",
+      "package_version": "1.8.4-1",
+      "resolved_path": "/usr/lib/libXi.so.6.1.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "5f6ee4a60cdc091c1cd4b32c0151a4fd9924a28cd26ddce5b8faed3841dac9b3",
+      "soname": [
+        "libXi.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libXrender.so.1.3.0",
+      "mode": "0o755",
+      "needed": [
+        "libX11.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libxrender",
+      "package_version": "0.9.13-1",
+      "resolved_path": "/usr/lib/libXrender.so.1.3.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "8b45aa817b4850ec0762c1540e060bb2eb145827f12ae0d95f28d8b8bbb7e13b",
+      "soname": [
+        "libXrender.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libb2.so.1.0.4",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libgomp.so.1"
+      ],
+      "owner": "libb2",
+      "package_version": "0.98.1-3",
+      "resolved_path": "/usr/lib/libb2.so.1.0.4",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "2e1b5045b932561e84fa4e9fe141b462d23134f145ec12e4b65f7fe40d51a93e",
+      "soname": [
+        "libb2.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libgcc_s.so.1": [
+          "GCC_3.3.1"
+        ],
+        "libgomp.so.1": [
+          "GOMP_4.0",
+          "OMP_1.0"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libbrotlicommon.so.1.2.1",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "brotli",
+      "package_version": "1.2.1-1",
+      "resolved_path": "/usr/lib/libbrotlicommon.so.1.2.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "98826693f4a8c563890f89ed04ab255d871948e07eabf314d10f79c895e0f03c",
+      "soname": [
+        "libbrotlicommon.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libbrotlidec.so.1.2.1",
+      "mode": "0o755",
+      "needed": [
+        "libbrotlicommon.so.1",
+        "libc.so.6"
+      ],
+      "owner": "brotli",
+      "package_version": "1.2.1-1",
+      "resolved_path": "/usr/lib/libbrotlidec.so.1.2.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "380ec042c35705a2dbfcb3e0ed392ce7e1262d62b7e626252cd8bce4adad43f2",
+      "soname": [
+        "libbrotlidec.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libbrotlienc.so.1.2.1",
+      "mode": "0o755",
+      "needed": [
+        "libbrotlicommon.so.1",
+        "libc.so.6",
+        "libm.so.6"
+      ],
+      "owner": "brotli",
+      "package_version": "1.2.1-1",
+      "resolved_path": "/usr/lib/libbrotlienc.so.1.2.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "036fd3cac00bc8a28de8b9e01380a8872e034203b81222ee3c4f92510593805f",
+      "soname": [
+        "libbrotlienc.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.29"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libbz2.so.1.0.8",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "bzip2",
+      "package_version": "1.0.8-6",
+      "resolved_path": "/usr/lib/libbz2.so.1.0.8",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "3265f0647d9157aaa820c5094eba03c5be0f101c49e9ffd21289978b8e1875af",
+      "soname": [
+        "libbz2.so.1.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libc.so.6",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libc.so.6",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "02c8c3d06180beee9c7d0392aa85736c7d19f274a81e7f8f0b3d9e28e0641524",
+      "soname": [
+        "libc.so.6"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.35",
+          "GLIBC_PRIVATE"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libcap.so.2.78",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libcap",
+      "package_version": "2.78-1",
+      "resolved_path": "/usr/lib/libcap.so.2.78",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "5a9cb7758c22aee29eb8d5ee5ca1e887bceb3fb399272ffb9fbbfd44dc36c6a1",
+      "soname": [
+        "libcap.so.2"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_2.8",
+          "GLIBC_2.9",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libcom_err.so.2.1",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "e2fsprogs",
+      "package_version": "1.47.4-1",
+      "resolved_path": "/usr/lib/libcom_err.so.2.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "67ed8a11c44542ffdbaa04b3521f48729afddf936568632b6aa9d04c595316cd",
+      "soname": [
+        "libcom_err.so.2"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libcrypt.so.2.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libxcrypt",
+      "package_version": "4.5.2-1",
+      "resolved_path": "/usr/lib/libcrypt.so.2.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "98c939a7c3c1db9b51e52b7f7e2383ce200af4190c9f761b568883b4d79706db",
+      "soname": [
+        "libcrypt.so.2"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3.4",
+          "GLIBC_2.36",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libcrypto.so.3",
+      "mode": "0o755",
+      "needed": [
+        "libbrotlidec.so.1",
+        "libbrotlienc.so.1",
+        "libc.so.6",
+        "libz.so.1",
+        "libzstd.so.1"
+      ],
+      "owner": "openssl",
+      "package_version": "3.6.5-1",
+      "resolved_path": "/usr/lib/libcrypto.so.3",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "a75a864dcda6ef9e4dc29fad4b7988ca832b904c3915a63c920062c40763dae1",
+      "soname": [
+        "libcrypto.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.12",
+          "GLIBC_2.14",
+          "GLIBC_2.15",
+          "GLIBC_2.16",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libdl.so.2",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libdl.so.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "9b3812e7f6b766e2d0a1d9eeca1a58c1272392859e8b04f708b2f86b2256d03c",
+      "soname": [
+        "libdl.so.2"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libffi.so.8.5.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libffi",
+      "package_version": "3.8.0-1",
+      "resolved_path": "/usr/lib/libffi.so.8.5.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "b38bb3a55ba04dfbb5be68e881a72385d6c30010afffb1cf1dfc373b72c2278c",
+      "soname": [
+        "libffi.so.8"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.27",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libgcc_s.so.1",
+      "mode": "0o644",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "libgcc",
+      "package_version": "16.2.1+r23+gd564253eb6c8-1",
+      "resolved_path": "/usr/lib/libgcc_s.so.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "e618cb9c90c2eb3a1dad1cfea5b6c1eebcf2e799ad805976f4ae47bdd61c716a",
+      "soname": [
+        "libgcc_s.so.1"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.35",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libgdbm.so.6.0.0",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "gdbm",
+      "package_version": "1.26-2",
+      "resolved_path": "/usr/lib/libgdbm.so.6.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "4c8c45943941ec2202873d6ae74e5c6a5c6ba7ea0d53e1de00e09e581cf8fcd2",
+      "soname": [
+        "libgdbm.so.6"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libgdbm_compat.so.4.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libgdbm.so.6"
+      ],
+      "owner": "gdbm",
+      "package_version": "1.26-2",
+      "resolved_path": "/usr/lib/libgdbm_compat.so.4.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "07a686ec2c63a2875d36b4c997e716c40484c35c74e7fd580a94fb65de9ab302",
+      "soname": [
+        "libgdbm_compat.so.4"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libgomp.so.1.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libgomp",
+      "package_version": "16.2.1+r23+gd564253eb6c8-1",
+      "resolved_path": "/usr/lib/libgomp.so.1.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "d6c6309ee83dbe9b50bf38342489799a4822ee22451677730ff5542aa74bdefc",
+      "soname": [
+        "libgomp.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.32",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.6",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libgssapi_krb5.so.2.2",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libcom_err.so.2",
+        "libk5crypto.so.3",
+        "libkeyutils.so.1",
+        "libkrb5.so.3",
+        "libkrb5support.so.0",
+        "libresolv.so.2"
+      ],
+      "owner": "krb5",
+      "package_version": "1.22.2-1",
+      "resolved_path": "/usr/lib/libgssapi_krb5.so.2.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "db71de39831ad557f7c75fadf772575f1180c4e1e7f83ec7318fabd78e129296",
+      "soname": [
+        "libgssapi_krb5.so.2"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.27",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libk5crypto.so.3": [
+          "k5crypto_3_MIT"
+        ],
+        "libkrb5.so.3": [
+          "krb5_3_MIT"
+        ],
+        "libkrb5support.so.0": [
+          "krb5support_0_MIT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libk5crypto.so.3.1",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libkeyutils.so.1",
+        "libkrb5support.so.0",
+        "libresolv.so.2"
+      ],
+      "owner": "krb5",
+      "package_version": "1.22.2-1",
+      "resolved_path": "/usr/lib/libk5crypto.so.3.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "e9ea7950674f25a6951b830036f95a595e1fc112247a69d11bc0003124ab7338",
+      "soname": [
+        "libk5crypto.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libkrb5support.so.0": [
+          "krb5support_0_MIT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libkeyutils.so.1.10",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "keyutils",
+      "package_version": "1.6.3-4",
+      "resolved_path": "/usr/lib/libkeyutils.so.1.10",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "a82e692581b6215475c03538fa4b25681b5c71e8554c67afa7e34074b968b0d7",
+      "soname": [
+        "libkeyutils.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libkrb5.so.3.3",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libcom_err.so.2",
+        "libk5crypto.so.3",
+        "libkeyutils.so.1",
+        "libkrb5support.so.0",
+        "libresolv.so.2"
+      ],
+      "owner": "krb5",
+      "package_version": "1.22.2-1",
+      "resolved_path": "/usr/lib/libkrb5.so.3.3",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "eb8369680ba30529b30abeaca57429b67f9af42ac43efdd5d95ca1901bb9c44c",
+      "soname": [
+        "libkrb5.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.16",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.7",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libk5crypto.so.3": [
+          "k5crypto_3_MIT"
+        ],
+        "libkeyutils.so.1": [
+          "KEYUTILS_0.3",
+          "KEYUTILS_1.0",
+          "KEYUTILS_1.5"
+        ],
+        "libkrb5support.so.0": [
+          "krb5support_0_MIT"
+        ],
+        "libresolv.so.2": [
+          "GLIBC_2.9"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libkrb5support.so.0.1",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libkeyutils.so.1",
+        "libresolv.so.2"
+      ],
+      "owner": "krb5",
+      "package_version": "1.22.2-1",
+      "resolved_path": "/usr/lib/libkrb5support.so.0.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "941f17df15bc3ed160b392dee2930bd68565f445b8fe8d87ad522256c972967f",
+      "soname": [
+        "libkrb5support.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/liblzma.so.5.8.4",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "xz",
+      "package_version": "5.8.4-1",
+      "resolved_path": "/usr/lib/liblzma.so.5.8.4",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "6e4dae5b099ec0e40a56beead2e51f858535aa794b5a8574a6723dfc1da8a3c1",
+      "soname": [
+        "liblzma.so.5"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.32",
+          "GLIBC_2.34",
+          "GLIBC_2.4",
+          "GLIBC_2.6",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libm.so.6",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libm.so.6",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "965106704753eefe8c31ae7da6daba3ead3d18c52b19b5fcc41178bcc4aa999d",
+      "soname": [
+        "libm.so.6"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_PRIVATE"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.2",
+          "GLIBC_2.34",
+          "GLIBC_2.35",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT",
+          "GLIBC_PRIVATE"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libncursesw.so.6.6",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "ncurses",
+      "package_version": "6.6-2",
+      "resolved_path": "/usr/lib/libncursesw.so.6.6",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "7498a0b0f75deb5417e109d1853679f1a6b201e52e03b247c914fec0a36e3a5b",
+      "soname": [
+        "libncursesw.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.16",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.42",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libnsl.so.3.0.0",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libtirpc.so.3"
+      ],
+      "owner": "libnsl",
+      "package_version": "2.0.1-2",
+      "resolved_path": "/usr/lib/libnsl.so.3.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "71f1cd670627024110e10dcdf7366a518329fbd8bb7ad875eeec33cb1888ade5",
+      "soname": [
+        "libnsl.so.3"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libtirpc.so.3": [
+          "TIRPC_0.3.0"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libpanelw.so.6.6",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libncursesw.so.6"
+      ],
+      "owner": "ncurses",
+      "package_version": "6.6-2",
+      "resolved_path": "/usr/lib/libpanelw.so.6.6",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "1f932ace8abb83fe76e7d4e87ceec2ad253d317c07a55c311f6cd644d1fadd4c",
+      "soname": [
+        "libpanelw.so.6"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libncursesw.so.6": [
+          "NCURSES6_TINFO_5.0.19991023",
+          "NCURSES6_TINFO_5.7.20081102",
+          "NCURSESW6_5.1.20000708",
+          "NCURSESW6_5.8.20110226"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libpthread.so.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libpthread.so.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "839b91403f89fa4c6888d50deb2b59cd0612f8cfe3d57dd9d6314832b4cb31ab",
+      "soname": [
+        "libpthread.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libreadline.so.8.3",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libncursesw.so.6"
+      ],
+      "owner": "readline",
+      "package_version": "8.3.6-1",
+      "resolved_path": "/usr/lib/libreadline.so.8.3",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "c55b53a98e218df23f2f90ca1015974e122be2ee1d5fc93db1cc097440699b65",
+      "soname": [
+        "libreadline.so.8"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.11",
+          "GLIBC_2.14",
+          "GLIBC_2.15",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libncursesw.so.6": [
+          "NCURSES6_TINFO_5.0.19991023"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libresolv.so.2",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libresolv.so.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "ee828b251a61761a9e529a791758ec8a1fbefd85693e2dc23501fedb8cf2f31d",
+      "soname": [
+        "libresolv.so.2"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT",
+          "GLIBC_PRIVATE"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/librt.so.1",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/librt.so.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "e06e12b8a78494908d08376838c380fb3817bfd7d54f6a86ef050016f7ade5f8",
+      "soname": [
+        "librt.so.1"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_PRIVATE"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT",
+          "GLIBC_PRIVATE"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libsqlite3.so.3.54.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libm.so.6"
+      ],
+      "owner": "sqlite",
+      "package_version": "3.54.0-1",
+      "resolved_path": "/usr/lib/libsqlite3.so.3.54.0",
+      "rpath": [],
+      "runpath": [
+        "/usr/lib"
+      ],
+      "sha256": "758544266d5060aff683efcc94ee9abf2625c6ff9d02b70bb6d1296e0ee9128f",
+      "soname": [
+        "libsqlite3.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.28",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_2.29",
+          "GLIBC_2.38",
+          "GLIBC_2.44"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libssl.so.3",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libcrypto.so.3"
+      ],
+      "owner": "openssl",
+      "package_version": "3.6.5-1",
+      "resolved_path": "/usr/lib/libssl.so.3",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "f6409e9f083faae79a622c9534be6ed2456d0102cd8ea2b52eb18c9d72f1f41e",
+      "soname": [
+        "libssl.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libcrypto.so.3": [
+          "OPENSSL_3.0.0",
+          "OPENSSL_3.0.3",
+          "OPENSSL_3.2.0",
+          "OPENSSL_3.3.0",
+          "OPENSSL_3.4.0",
+          "OPENSSL_3.6.0"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libstdc++.so.6.0.36",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libm.so.6"
+      ],
+      "owner": "libstdc++",
+      "package_version": "16.2.1+r23+gd564253eb6c8-1",
+      "resolved_path": "/usr/lib/libstdc++.so.6.0.36",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "f5fc7380f2ae46fa4053a64be04e7b98109f1066a4bbfff3c37042488aa0be0e",
+      "soname": [
+        "libstdc++.so.6"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.18",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.26",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.32",
+          "GLIBC_2.33",
+          "GLIBC_2.34",
+          "GLIBC_2.36",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.6",
+          "GLIBC_2.7",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libgcc_s.so.1": [
+          "GCC_3.0",
+          "GCC_3.3",
+          "GCC_3.4",
+          "GCC_4.2.0",
+          "GCC_4.3.0"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.2.5"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libtirpc.so.3.0.0",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6",
+        "libgssapi_krb5.so.2"
+      ],
+      "owner": "libtirpc",
+      "package_version": "1.3.8-1",
+      "resolved_path": "/usr/lib/libtirpc.so.3.0.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "39d2abfe9d4acce2e7418c67363051f51124960491667d679afb37994f8e7b06",
+      "soname": [
+        "libtirpc.so.3"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.15",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.32",
+          "GLIBC_2.34",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ],
+        "libgssapi_krb5.so.2": [
+          "gssapi_krb5_2_MIT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libutil.so.1",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "glibc",
+      "package_version": "2.44+r50+g1848099f063e-1",
+      "resolved_path": "/usr/lib/libutil.so.1",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "8c2cbf01f52acb42478b9ab10506af9878b7e8d47aefacc8896bb5b37384c222",
+      "soname": [
+        "libutil.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.2.5",
+          "GLIBC_ABI_DT_RELR",
+          "GLIBC_ABI_DT_X86_64_PLT"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libuuid.so.1.3.0",
+      "mode": "0o755",
+      "needed": [
+        "ld-linux-x86-64.so.2",
+        "libc.so.6"
+      ],
+      "owner": "util-linux-libs",
+      "package_version": "2.42.4-1",
+      "resolved_path": "/usr/lib/libuuid.so.1.3.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "7881e0279d5ce79b0d8ace923e94df9b543bc8dd8152df0894358b862e1725be",
+      "soname": [
+        "libuuid.so.1"
+      ],
+      "version_requirements": {
+        "ld-linux-x86-64.so.2": [
+          "GLIBC_2.3"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.25",
+          "GLIBC_2.3",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libxcb.so.1.1.0",
+      "mode": "0o755",
+      "needed": [
+        "libXau.so.6",
+        "libXdmcp.so.6",
+        "libc.so.6"
+      ],
+      "owner": "libxcb",
+      "package_version": "1.17.0-1",
+      "resolved_path": "/usr/lib/libxcb.so.1.1.0",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "40df5eff95408b67d969e559f2689b3e50e6151251b1f4e03608ce5cd9c9a133",
+      "soname": [
+        "libxcb.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libxkbcommon.so.0.13.2",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "libxkbcommon",
+      "package_version": "1.13.2-1",
+      "resolved_path": "/usr/lib/libxkbcommon.so.0.13.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "e475adbf5abd181b1bdfdeba70ad4d501cb296bbf05b13e8649fd71b3989ee07",
+      "soname": [
+        "libxkbcommon.so.0"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.17",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.33",
+          "GLIBC_2.38",
+          "GLIBC_2.4",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libz.so.1.3.2",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "zlib",
+      "package_version": "1:1.3.2-4",
+      "resolved_path": "/usr/lib/libz.so.1.3.2",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "6c78c5e58c3bb49a1cd151a95cdf1a17fe07a91a57a59e0279b984c533075ca9",
+      "soname": [
+        "libz.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.4",
+          "GLIBC_2.4",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    },
+    {
+      "alias": "/usr/lib/libzstd.so.1.5.7",
+      "mode": "0o755",
+      "needed": [
+        "libc.so.6"
+      ],
+      "owner": "zstd",
+      "package_version": "1.5.7-3",
+      "resolved_path": "/usr/lib/libzstd.so.1.5.7",
+      "rpath": [],
+      "runpath": [],
+      "sha256": "f023d49e85fb22057bfdd21857263d2638b73356c06f3b342f678a75212379f8",
+      "soname": [
+        "libzstd.so.1"
+      ],
+      "version_requirements": {
+        "libc.so.6": [
+          "GLIBC_2.14",
+          "GLIBC_2.2.5",
+          "GLIBC_2.3.2",
+          "GLIBC_2.3.4",
+          "GLIBC_2.34",
+          "GLIBC_2.4",
+          "GLIBC_2.8",
+          "GLIBC_ABI_DT_RELR"
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "scope": "historical system_files"
+}

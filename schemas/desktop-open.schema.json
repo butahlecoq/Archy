@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "DesktopOpenKind": {
+      "enum": [
+        "report",
+        "preview",
+        "blender"
+      ],
+      "type": "string"
+    },
+    "DesktopOpenStatus": {
+      "enum": [
+        "handed_to_viewer"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifact_id": {
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/DesktopOpenKind"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/DesktopOpenStatus"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "run_id",
+    "artifact_id",
+    "kind",
+    "sha256"
+  ],
+  "title": "DesktopOpenReceipt",
+  "type": "object"
+}

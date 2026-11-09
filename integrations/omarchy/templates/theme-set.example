@@ -1,0 +1,3 @@
+#!/bin/sh
+# Optional user-owned hook. It refreshes an already loaded panel only.
+omarchy-shell shell call archy.status refresh '' >/dev/null 2>&1 || :

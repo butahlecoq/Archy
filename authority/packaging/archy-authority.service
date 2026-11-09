@@ -1,0 +1,35 @@
+[Unit]
+Description=Archy proposal authority (approval disabled)
+Requires=archy-authority-agent.socket archy-authority-human.socket
+After=archy-authority-agent.socket archy-authority-human.socket
+
+[Service]
+Type=exec
+User=archy-broker
+Group=archy-broker
+Sockets=archy-authority-agent.socket archy-authority-human.socket
+ExecStart=/usr/lib/archy/archy-authorityd
+StateDirectory=archy-authority
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+MemoryMax=256M
+TasksMax=32
+LimitNOFILE=128
+KillMode=control-group
+TimeoutStopSec=5s
+
+# No [Install]: administrator must enroll the human and verify the target
+# before enabling the two socket units.

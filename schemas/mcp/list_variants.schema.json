@@ -1,0 +1,189 @@
+{
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "cursor": {
+        "maxLength": 256,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limit": {
+        "format": "uint32",
+        "maximum": 100,
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "project_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "source_run": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "project_id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArchyError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "field": {
+            "description": "JSON-style dotted field path; `$` denotes the document itself.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field",
+          "retriable"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_GEOMETRY",
+          "CONSTRAINT_FAIL",
+          "BACKEND_UNAVAILABLE",
+          "BACKEND_TIMEOUT",
+          "ARTIFACT_INVALID",
+          "REVISION_CONFLICT",
+          "PERMISSION_DENIED",
+          "INTERNAL_ERROR"
+        ],
+        "type": "string"
+      },
+      "ListVariantsData": {
+        "additionalProperties": false,
+        "properties": {
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/$defs/VariantSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "revision",
+          "variants"
+        ],
+        "type": "object"
+      },
+      "VariantSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_count": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "required_checks_passed": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "variant_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "revision",
+          "variant_id",
+          "required_checks_passed",
+          "artifact_count"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/ListVariantsData"
+          },
+          "error": {
+            "type": "null"
+          },
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "$ref": "#/$defs/ArchyError"
+          },
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

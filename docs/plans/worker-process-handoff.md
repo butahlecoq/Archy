@@ -1,0 +1,43 @@
+# A09 first process lifecycle slice handoff
+
+Date: 2026-10-29. Scope: `crates/archy-adapters/src/process.rs`, private `lib.rs` registration, adapter `Cargo.toml` and this handoff. The original first-slice evidence below is preserved; the round1 addendum at the end is the current source status after [Hume's review](worker-process-review-final.md). `Cargo.lock` received the adapter's existing rustix dependency entry while the shared lock also contains other in-progress workspace changes. No new dependency version was selected by this slice. No request, response, schema, CLI, storage, Python worker, A13 reader, commit, push or agent change was made.
+
+## Boundary and implementation
+
+This is a **test-only Linux module** registered as `#[cfg(all(test, target_os = "linux"))] mod process;`. There is no production caller or public arbitrary-execution interface. The fixture-only calls use the current test executable or fixed absolute `/bin/sh` arguments. The test environment selector is compiled only in the test module; it is not a production bypass. Promoting the mechanism to production requires a separate typed, fixed-launch integration review.
+
+The private capture loop starts one child with `CommandExt::process_group(0)`, null stdin and piped stdout/stderr. It attempts a rustix pidfd for the direct child, uses it for direct-child signaling when available, and uses the child's process group for descendant TERM/KILL escalation. Both pipes are made nonblocking and drained in one alternating bounded loop; each stream retains at most its configured byte cap and counts omitted bytes. The loop uses `Child::try_wait`, a monotonic wall deadline, cancellation flag, TERM grace and final drain deadline. It neither calls unbounded `wait`/`wait_with_output` nor joins a worker thread. A pipe that fails nonblocking setup or reading is closed and recorded without claiming EOF. The result distinguishes clean exit, nonzero exit, signal, timeout, cancellation, output overflow, launch unavailable and I/O failure. Its evidence records pidfd availability, group TERM/KILL delivery, direct-child reaping and separate pipe EOF states. If teardown cannot be established before the final deadline, the report leaves reaping/EOF false rather than claiming containment.
+
+Stable code mapping in this slice: nonzero exit, signal, overflow and I/O failure → `ARTIFACT_INVALID`; timeout and explicit cancellation → `BACKEND_TIMEOUT`; launch failure → `BACKEND_UNAVAILABLE`; exit 0 has no error code. These are internal lifecycle classifications, not validated worker responses.
+
+The adapter adds `rustix` 1.1.4 only as a development dependency with its existing `fs` workspace feature plus `process`. No new version, Tokio, nix, wait-timeout, custom syscall binding or event dependency was added. Rustix's selectable MIT licensing and runtime lock status remain as recorded in the repository dependency inventory; distribution notice review stays open.
+
+## Exact local evidence
+
+The initial `cargo test -p archy-adapters --lib process::tests::fast_exit_reaps_and_captures_both_streams` exited 101 at the intentional `todo!()` implementation stub. The later read-error regression exited 101 because the erroring pipe remained open. Both turned green after implementation. A preliminary strict clippy run also caught a test fixture child that was intentionally dropped without waiting; the descendant-held-pipe fixture was changed to a fixed absolute shell command, removing that lint and keeping the test-only scenario.
+
+Final commands on this source snapshot:
+
+| Command | Exit and result |
+| --- | --- |
+| `cargo test -p archy-adapters --locked` | 0; 9 process unit tests passed, 8 protocol integration tests passed, one existing pinned-backend integration test ignored, 0 doc tests. |
+| `cargo fmt --all -- --check` | 0; no diff. |
+| `cargo clippy -p archy-adapters --all-targets --locked -- -D warnings` | 0; no warnings. |
+
+The process tests exercise fast exit, nonzero exit, signal, spawn failure, hung child, TERM-ignoring child requiring KILL, stdout/stderr flood and omitted-byte accounting, direct-child exit with a descendant holding pipes, cancellation, and a pipe read error. The descendant test checks that the captured descendant PID is gone or a zombie after teardown; no live fixture descendant was observed. Tests run on rustc/cargo 1.99.1 and WSL2 kernel `6.6.87.2-microsoft-standard-WSL2`. This is native development evidence, not Omarchy or production supervisor acceptance.
+
+Source SHA-256: `process.rs` `b609de8ea06ce71985bee4c8740cd3509347938982413dccb40af93da0fdc63d`; `lib.rs` `5eb12ef1d99b797b891bd28eb5ab4ee2257b2c7dc150e4c4d233565deace123e`; adapter `Cargo.toml` `cb5af72dd5029e6c916dd0a62914f133fc0b6d24392c5e697d43552bb71b1dbc`. The current shared `Cargo.lock` SHA-256 is `2aafab1d89f82313136acd56466d10295669c8404c4a6eecc9ac5016485f36c0`; its broad uncommitted diff predates this slice apart from the adapter rustix dependency entry, so that hash is a snapshot identity rather than an isolated process change.
+
+## Open gates
+
+Process groups and a direct-child pidfd do not contain `setsid`, double-fork or cgroup escape. This slice does not launch production backends, establish a transient systemd service, verify effective cgroup limits, apply bwrap namespaces, cap whole-process memory/CPU/disk, verify artifacts, or publish through storage. Those require the fixed-launch/isolation/quota/artifact slices in [worker-supervisor-plan.md](worker-supervisor-plan.md) and independent review. Actual Omarchy execution remains deferred. No A09-complete claim follows from these tests.
+
+## Round1 fixes and current evidence
+
+Hume found two gaps in the initial snapshot. For the P1 numeric group-ID race, the capture loop now polls `rustix::process::waitid(Pid, EXITED|NOHANG|NOWAIT)` and retains the direct child unreaped through all group TERM/KILL attempts. That waitable leader pins its numeric PID while the group is signaled. `Child::try_wait` is called only after the final group signal, when no further numeric group operation can occur. A pidfd remains a stable direct-child signal reference; it does **not** authorize numeric group signals. If `waitid` loses the child identity, the group signal helper refuses the numeric operation and reports I/O failure/uncertain teardown. The escaped-session pipeholder fixture, which keeps pipes open after the leader exits, checks the unreaped-leader signal path and waits for the escaped test child to exit; a separate fixture confirms no group signal is issued when the identity-pinned flag is false. These tests do not supply cgroup containment or guarantee cleanup of arbitrary escaped sessions.
+
+For the P2 completion race, classification now checks a fully observed direct-child exit plus both pipe EOFs before assigning a *new* cancellation or deadline reason. A previously recorded I/O failure or output overflow remains a failure, and an overflow observed in the completion iteration still wins. The boundary regression checks both completion precedence and preservation of those failures. Existing timeout, cancellation, TERM-resistant, output-flood and same-group descendant tests remain passing.
+
+The new regression source initially exited 101 at compile time because `leader_pinned_at_group_signal`, `signal_group_if_pinned`, and `new_reason` were absent. After the fix, `cargo test -p archy-adapters --locked` exited 0: **12 process unit tests passed**, 8 protocol integration tests passed, one existing pinned-backend integration test ignored, and 0 doc tests. `cargo fmt -p archy-adapters -- --check` exited 0. `cargo fmt --all -- --check` exited 1 on currently unformatted desktop/core files outside this slice. `cargo clippy -p archy-adapters --all-targets --locked -- -D warnings` exited 101 in `archy-core/src/storage.rs:481` on `clippy::type_complexity` before adapter lint completed. Neither shared failure was suppressed or edited here, and strict workspace/adapter clippy is **not claimed green** on this snapshot.
+
+An initial `cargo test -p archy-adapters --locked` during shared workspace edits exited 101 because `Cargo.lock` lacked a CLI `schemars` dependency entry. An offline lock refresh added only that existing entry, with no new package version; the subsequent locked tests passed. The shared lock remains coordinator-owned. Current process source SHA-256 is `b1e4aa6c8071f4ed55f3776d937c862baf2e2ce69fb67c223fe32bb3b9179251`; shared `Cargo.lock` snapshot SHA-256 is `13db31ddb6926b096eb0e16714ae0a8c83dac68bc6b9e472733f22934035dc40`. The original hashes above identify the pre-review snapshot only. Round1 process source is frozen for Hume rereview; the artifact-capture plan remains paused.

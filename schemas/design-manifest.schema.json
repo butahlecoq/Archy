@@ -1,0 +1,279 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_id": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "measured": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        }
+      },
+      "required": [
+        "constraint_id",
+        "result",
+        "explanation",
+        "required"
+      ],
+      "type": "object"
+    },
+    "CheckResult": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "WARN",
+        "UNKNOWN"
+      ],
+      "type": "string"
+    },
+    "DimensionalTolerance": {
+      "additionalProperties": false,
+      "properties": {
+        "area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "method_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "length_m",
+        "area_m2",
+        "method_version"
+      ],
+      "type": "object"
+    },
+    "EvaluationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "type": "array"
+        },
+        "evaluation_version": {
+          "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$",
+          "type": "string"
+        },
+        "geometry_parity_budget": {
+          "$ref": "#/$defs/GeometryParityBudget"
+        },
+        "metrics": {
+          "items": {
+            "$ref": "#/$defs/Metric"
+          },
+          "type": "array"
+        },
+        "professional_limits": {
+          "type": "string"
+        },
+        "required_checks_passed": {
+          "type": "boolean"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/DimensionalTolerance"
+        },
+        "variant_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant_id",
+        "evaluation_version",
+        "metrics",
+        "checks",
+        "tolerance",
+        "geometry_parity_budget",
+        "required_checks_passed",
+        "professional_limits"
+      ],
+      "type": "object"
+    },
+    "GeometryParityBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "gross_floor_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "rigid_transform_policy_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_version",
+        "coordinate_length_m",
+        "footprint_area_m2",
+        "gross_floor_area_m2",
+        "rigid_transform_policy_version"
+      ],
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "method_version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "method_version"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://archy.local/schemas/design-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_state": {
+      "const": "DRAFT",
+      "type": "string"
+    },
+    "backend_version": {
+      "const": "0.9.0.post1",
+      "type": "string"
+    },
+    "evaluation": {
+      "$ref": "#/$defs/EvaluationReport"
+    },
+    "evaluation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "export_run_id": {
+      "type": "string"
+    },
+    "limitations": {
+      "const": "Conceptual storey mass proxies only; no walls, slabs, spaces, regulatory or professional approval.",
+      "type": "string"
+    },
+    "model_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "python_version": {
+      "const": "3.12.16",
+      "type": "string"
+    },
+    "required_checks_passed": {
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "archy-design-manifest-v1",
+      "type": "string"
+    },
+    "scope": {
+      "const": "SCHEMATIC_MASSING_ONLY",
+      "type": "string"
+    },
+    "source_input_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source_normalized_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source_run_id": {
+      "type": "string"
+    },
+    "validation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "variant_id": {
+      "type": "string"
+    },
+    "variant_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "worker_response_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "worker_version": {
+      "const": "ifc-worker-v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "scope",
+    "approval_state",
+    "project_id",
+    "source_run_id",
+    "export_run_id",
+    "variant_id",
+    "source_input_sha256",
+    "source_normalized_sha256",
+    "variant_sha256",
+    "evaluation_sha256",
+    "required_checks_passed",
+    "evaluation",
+    "worker_response_sha256",
+    "model_sha256",
+    "validation_sha256",
+    "worker_version",
+    "backend_version",
+    "python_version",
+    "limitations"
+  ],
+  "title": "Archy draft schematic IFC design manifest",
+  "type": "object"
+}

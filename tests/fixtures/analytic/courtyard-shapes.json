@@ -1,0 +1,31 @@
+{
+  "site_bounds_m": [0.0, 0.0, 20.0, 35.0],
+  "storeys": 3,
+  "floor_to_floor_m": 3.2,
+  "cases": [
+    {
+      "shape": "rectangle",
+      "origin_xy_m": [3.0, 3.0],
+      "width_m": 10.0,
+      "depth_m": 20.0,
+      "footprint_xy_m": [[3.0, 3.0], [13.0, 3.0], [13.0, 23.0], [3.0, 23.0], [3.0, 3.0]],
+      "footprint_area_m2": 200.0,
+      "gross_floor_area_m2": 600.0,
+      "height_m": 9.6,
+      "clearances_m": [3.0, 7.0, 3.0, 12.0]
+    },
+    {
+      "shape": "l_shape",
+      "origin_xy_m": [3.0, 3.0],
+      "width_m": 10.0,
+      "depth_m": 10.0,
+      "notch_width_m": 5.0,
+      "notch_depth_m": 5.0,
+      "footprint_xy_m": [[3.0, 3.0], [13.0, 3.0], [13.0, 8.0], [8.0, 8.0], [8.0, 13.0], [3.0, 13.0], [3.0, 3.0]],
+      "footprint_area_m2": 75.0,
+      "gross_floor_area_m2": 225.0,
+      "height_m": 9.6,
+      "clearances_m": [3.0, 7.0, 3.0, 22.0]
+    }
+  ]
+}

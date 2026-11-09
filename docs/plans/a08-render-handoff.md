@@ -1,0 +1,40 @@
+# A08 camera, material and render preset handoff
+
+Date: 2026-10-29. Source worktree: `/home/butahlecoq/work/archy/.worktrees/a08-render`, branch `codex/a08-render`, base HEAD `d4b6ca835a6af8577ff25f5966bdd9ea690e9b84`. This is an isolated WSL/CPU implementation and review handoff. No main checkout, schema, Cargo, worker binary, host configuration, or Omarchy installation was changed. No commit or push was made.
+
+## Audit and decision
+
+Read `docs/plans/backend-research.md`, `docs/plans/blender-worker-handoff.md`, the A08 backlog and release spec, `workers/blender`, and the existing OSS artifact-reader research. The published worker already creates three `top`/`front`/`iso` orthographic cameras, aims them at the union of massing and site bounds, sets fixed Cycles CPU material/light/color settings, renders three PNGs, and records camera/object/light transforms plus all preset settings. Existing real-Blender tests already exercise rectangle/L exports, decoded 512 × 512 PNGs, scene reopen, source transform and north metadata, and two-run semantic/preset equality. A08's real gaps were explicit extreme-aspect camera-space tests, a documented render reproducibility boundary, and retained inspectable A08 evidence. The current worker passed the additional six-case tests, so `workers/blender/**`, protocol/schema, and Cargo were left unchanged. The proposed backlog split into `cameras.py`, `materials.py`, and `render.py` did not justify moving working code solely for file layout.
+
+## Frozen source and artifact evidence
+
+`/home/butahlecoq/work/archy/.tools/targets/a08-render-evidence/source-manifest.tsv` lists 21 exact source, fixture, research, and documentation inputs with byte lengths and SHA-256; manifest SHA-256 `d6af2e03d3254db9b50206b907394d39fc8e25844ba7a8e42d24c14fa8ada3a9`. It includes the unchanged worker source/GPL license and new `tests/backend/blender/test_render_presets.py` and `docs/render-reproducibility.md`. This is a development file inventory, not a release source identity. `/home/butahlecoq/work/archy/.tools/targets/a08-render-evidence/artifact-manifest.tsv` lists all 27 retained request, response, PNG, GLB, blend, stdout, and stderr files for three jobs, with byte lengths and SHA-256; manifest SHA-256 `bad7cc29344adb14b3708dfdbc3ddc8f8fe05220a7a4146b01a8485c6afa8a61`. The manifests are disposable SSD evidence outside Git. Each response JSON contains the exact camera matrices/scales/clips, material/world/light values, object transforms, engine/samples/seed/resolution/color settings, and worker provenance for its job.
+
+The pinned executable `/home/butahlecoq/work/archy/.tools/blender-4.5.15-linux-x64/blender --version` reported Blender 4.5.15 LTS, build `5afeabba6097`. `workers/blender/versions.json` and the published handoff pin official archive SHA-256 `0d2b8bb2efe97e6c8eb57de6b7322f8800e1984e3125b60decca5f6771e4773e`. The existing development reader is CPython 3.12.13 with Pillow 13.0.0, NumPy 2.5.4, and trimesh 5.2.0. No dependencies were installed for A08. Blender's bundled Python handles `bpy`; Pillow and NumPy decode/check previews in an external reader; trimesh remains in the established backend tests for independent GLB transforms. [Render reproducibility](../render-reproducibility.md) records the dependency rationale and the worker's GPL boundary.
+
+## Exact checks
+
+| Check | Observed result |
+| --- | --- |
+| Pinned Blender camera-only probe of wide 200 × 10 × 3.2 m, deep 10 × 200 × 3.2 m and tall 10 × 10 × 200 m bounds, plus larger site bounds, all three views | Exit 0; all eight bound corners had camera-space half-frame ratio about 0.90909, with depth inside clip ranges. This isolated the camera model before real rendering. |
+| First six-case real Blender test | Six renders completed, then the test failed only on assuming JSON object key order (`front, iso, top` versus intended label set). The corrected label-set check followed. |
+| Second six-case real Blender test | Six renders completed, then the test failed only on exact decimal equality for Blender float32 world strength `0.6000000238418579` versus `0.6`. The corrected test uses six-decimal comparison, consistent with the existing response validator. |
+| Six-case real Blender test after correcting those assertions | Exit 0, one test with six rectangle/L × wide/deep/tall subcases, 21.911 s. All recorded camera matrices framed every massing top/bottom vertex and site corner inside projection and clipping. PNGs decoded at 512 × 512 and passed the initial visible-color check. |
+| Full established Blender backend suite plus new case | Exit 0, 16 tests in 104.323 s. Existing repeat and GLB/Pillow tests passed; every new aspect case passed. This run preceded the final stronger projected-region pixel check. |
+| Final focused six-case test with projected-region foreground check | Exit 0, one test with six subcases in 25.778 s. Every view had more than 32 changed pixels inside its projected massing bounds. Each worker invocation had a 120 s timeout and each five-artifact output was checked under 64 MiB. |
+
+The six cases were rectangle and concave L, each at wide 200 × 2 m, deep 2 × 200 m, and tall 2 × 2 m with 200 m height. Wide/deep cases were 3.2 m high; tall cases used ten 20 m storeys. Site outlines were 2 m beyond footprint on every side. The test invokes the actual pinned worker, validates the typed request and response, checks labels and fixed preset settings, projects both site and all massing corners through each response matrix, checks clipping, decodes every PNG with Pillow, and checks color difference inside the projected massing region. It uses the established test-only fixture ID for changed synthetic shapes; Rust canonical identity is outside this worker test.
+
+Retained jobs under `/home/butahlecoq/work/archy/.tools/targets/a08-render-evidence/`:
+
+| Job | Result and measured preview evidence | Key hashes |
+| --- | --- | --- |
+| `rectangle-wide` | Worker exit 0, `status: ok`; top/front/iso changed pixels 2,185 / 3,654 / 6,161; maximal observed camera half-frame ratio 0.90909216. | `response.json` `95bb6824e00c9279a9d79b1e99a62ecbdc837458bbece04b2944cccd5dfe60ef`; top PNG `40b353f829f56d8630f23070074efdfc49a10566f978e9f144c7d7c59aab93e3`. |
+| `l-deep` | Worker exit 0, `status: ok`; top/front/iso changed pixels 2,016 / 38,688 / 6,020; maximal observed ratio 0.90909209. | `response.json` `0cf1e4c9532422175e98839e59931bb0595f4caab7682694cfd5fa01868343b7`; top PNG `20f61ab1554aeaac183f0d4d5fbec8d8b79691f7ec975a69350748501a4eb014`. |
+| `l-source` | Worker exit 0, `status: ok`; top/front/iso changed pixels 34,526 / 43,904 / 41,296; maximal observed ratio 0.90909093. | `response.json` `14c8e4c3b69db23774cc9d70b318bffa0c4aebe90de792a354f9dfda723ccf82`; top PNG `f1fc529d56d14a89946d5aa26793e20520d01238768bbe90b013580de1d06874`. |
+
+All retained PNGs are valid 512 × 512 images; the manifest pins all three views and the scene/GLB for every job. Direct visual inspection of the retained source L top/iso PNGs showed a visible notch and complete massing; front showed a centered dark silhouette. At 100:1 aspect, top/iso still show the full mass as a thin silhouette, but the L notch cannot be distinguished at this overview resolution. The site affects framing but is not rendered as geometry. No pixel-equivalence tolerance across GPUs was invented; this is explicitly unvalidated until matched hardware renders are measured. The `>8/255` image and `>12/255` projected-region thresholds are CPU smoke visibility heuristics only, not GPU tolerance or geometry proof. The original source/geometry parity budget remains 1e-6 m.
+
+## Review boundary
+
+Changed source paths are only `tests/backend/blender/test_render_presets.py`, `docs/render-reproducibility.md`, and this handoff. The worker's existing GPL-3.0-or-later source and license remain intact. Actual Omarchy rendering, cross-GPU pixel comparison, A09 artifact acceptance, Rust canonical variant binding, and production distribution remain open. No release, install, or performance claim follows from WSL preview evidence.

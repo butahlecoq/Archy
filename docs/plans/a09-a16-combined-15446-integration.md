@@ -1,0 +1,5 @@
+# A09 and A16 on 15446ee
+
+Prepared the frozen A09/A15 patch on the later A16 integration head in this isolated worktree. The original 21-file patch SHA-256 is `da5644ad8c9b490c176c9c8ffc1582e79cda14b27e6d9bfb7f0d2f785fec34cb`. It applied without conflict except for the workspace manifest, where the existing `authority` member and new `crates/archy-service-gate` member were both retained. Nineteen of 21 A09 source freeze hashes match. The expected `Cargo.toml` and `Cargo.lock` differences preserve A16's existing authority member and local package. Locked offline Cargo metadata passes. The live MCP mutations, comparison, process fixture and authority source remain at the published head.
+
+Combined format, strict Clippy, adapter/gate/authority tests, accepted-worker tests, packaging, and live MCP mutation/comparison checks are running. The original A09/A15 integration and this combined result require their own independent reviews; installed runtime, trusted direct adapter calls and artifact publication are not established.

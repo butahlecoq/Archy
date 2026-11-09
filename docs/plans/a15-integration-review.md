@@ -1,0 +1,41 @@
+# A15 MCP integration review
+
+29 October 2026. Reviewed the provisional integration at `d356133b7311bb05104837be6a356ee3574fe581` in `.worktrees/a15-integration-20261029` against the frozen A15 first slice in `../a15-mcp`. **Verdict: the MCP integration passes the focused behavior and wire checks, but the integrated snapshot is not package ready.** The existing CLI notice admission fails, and the previously reviewed notice pair is stale for the current admission graph. This is a provisional read-only slice, not completion of A15/A16, backend operations, or approval.
+
+## Frozen identity and merge
+
+The freeze manifest has 31 entries (manifest SHA-256 `eb22a4240529c03a7d37121d39ec23eabb984ee7ab898c7ba76329f8c7e55106`). `sha256sum -c ../a15-mcp/docs/plans/mcp-first-slice-freeze.sha256` from the integration worktree returned 28 `OK` and three expected `FAILED` entries. All MCP crate files, checked-in MCP schemas, lockfile, workspace manifest, `project_read.rs`, desktop status and reader tests, and MCP documentation match the freeze byte-for-byte. The three differences are:
+
+| Shared file | Integrated difference from A15 freeze | Review |
+| --- | --- | --- |
+| `crates/archy-core/src/storage.rs` | Retains upstream `f4aed22` fork-safe lock owner identity, owner checks, and drop behavior alongside A15 pinned-source helpers. | The upstream lock behavior is present; it is exercised by `fork_lock` and desktop reader checks below. |
+| `crates/archy-cli/src/lib.rs` | Retains upstream `compare` module/export and versioned generation `attempt_diagnostics` report context alongside A15 `BoundProjectRead` export. | No export or report-context branch was lost. The comparison and workflow tests below exercise both. |
+| `scripts/check-schemas.py` | Retains upstream A14 `tests/decision_contract_schema.py` invocation before A15's MCP build and two live stdio scripts. | Both checks remain in the integrated checker. The 50-case A14 contract probe and both stdio scripts passed independently. |
+
+`Cargo.lock` matches the A15 freeze exactly. Relative to `d356133`, it adds 40 package name/version pairs, including the local `archy-mcp` package, `rmcp`/`rmcp-macros` 3.8.0 and Tokio 1.54.1, and removes none. The workspace additions pin `rmcp =3.8.0` with `server`, `macros`, `transport-io` and Tokio `=1.54.1` with limited runtime/I/O features. `cargo metadata --offline --locked --no-deps` resolves the seven workspace packages. There is no lockfile conflict from the three-way application.
+
+## Finding: current Arch notice admission fails
+
+**Release packaging blocker.** The reviewed 89-crate notice inventory (`.tools/targets/a21-packaging-notices-admitted/third-party-notices.json`, SHA-256 `e4d95486832a64364e38fe4b565369ad8d075b6529edbf4d84973e69110cffd6`) differs from the integrated snapshot's 91-crate `normal_registry_graph` computed from locked, offline, x86_64 Cargo metadata. The exact set delta is `chrono 0.4.45` and `iana-time-zone 0.1.65` added, none removed. The reviewed bundle SHA-256 is `ea7019a4ff8e69a9b0d49c4e54ab5869c1c2a0726997c7c9e30cd425402da710`.
+
+The actual integrated admission command, with fresh `CARGO_TARGET_DIR=/home/butahlecoq/work/archy/.tools/targets/a15-integration-independent-20261029`, `CARGO_NET_OFFLINE=true`, and `RUSTUP_AUTO_INSTALL=0`, was:
+
+```sh
+python3 packaging/arch/notices.py --source . --vendor /tmp/archy-core-arch-source/vendor --output-dir /tmp/archy-a15-integration-notices.<fresh>
+```
+
+It exited **1**: `notices: [Errno 2] No such file or directory: 'chrono-0.4.45'`. The fresh output directory remained empty. Both new crate directories are absent from that reviewed vendor tree, although their sources are in the local Cargo registry cache. `schemars` has a `chrono` edge in the workspace metadata after MCP is added; Chrono has the `iana-time-zone` edge. `cargo tree --offline --locked -p archy-cli -i chrono` reports no Chrono package in the package-specific CLI feature graph. Thus this is a real failure of the current notice admission method on the integrated workspace, while the evidence does not establish that Chrono is linked into the packaged CLI binary. Cargo metadata reports `MIT OR Apache-2.0` for both added crates; their exact notice texts still require admission if this graph definition is retained. MCP's direct new SDK crates report Apache-2.0 (`rmcp`, `rmcp-macros`) and MIT (Tokio); the workspace's MIT license does not replace those separate obligations.
+
+I also ran the real `packaging/arch/package.py stage` against the integrated files and fresh-target CLI binary while supplying the *old* reviewed notice pair. Stage exited **0** and installed its 89-row inventory. Stage checks the notice text against the inventory's `bundle_sha256`, but does not compare inventory rows to current locked metadata. The normal recipe calls admission before stage, so its current path stops at the failure above; a direct stage with the old pair can still produce a stale package tree. Refresh the vendor/admitted notices for the integrated graph or change and verify the graph selection before treating this source as package ready. A separate `archy-mcp` distribution would also need its own dependency and license notice review; the current package manifest ships only `usr/bin/archy` and no MCP binary or schemas.
+
+## Retained behavior, authority, and wire evidence
+
+All Rust checks used a new SSD target at `/home/butahlecoq/work/archy/.tools/targets/a15-integration-independent-20261029`, with `RUSTUP_AUTO_INSTALL=0`, `CARGO_NET_OFFLINE=true`, and two build jobs. `cargo test --locked -p archy-mcp --test bounds --test framing -p archy-cli --test desktop_readers` passed **6 bounds, 3 framing, and 7 desktop reader tests**. The desktop cases cover held-lock passive reads, verified pages, stale cursors, tampered accepted evidence, symlink/corrupt history refusal, and root/source replacement. A second focused command, `cargo test --locked -p archy-cli --test core_workflow --test compare -p archy-core --test decision_contract --test fork_lock`, passed **20 workflow, 4 comparison, 4 decision contract**, and the fork-lock lifecycle checks. The workflow tests include legacy normalization, versioned generation diagnostics, report propagation, replay, and forged-evidence refusal. `node crates/archy-mcp/tests/unicode_regex.js` passed all eight Unicode field checks. `python3 tests/decision_contract_schema.py`, with that same target, passed **50** A14 serde/domain and schema cases.
+
+The fresh-target binary passed `stdio_contract.py`: modern and legacy stdio, nine advertised schemas, three verified reads, six typed `BACKEND_UNAVAILABLE` prerequisites, wrong-project refusal, paging/cursor conflicts, corrupted or symlinked history, pinned-source replacement, revision-zero refusal after acceptance, Unicode bounds, and unchanged inventories. `parse_errors.py` passed malformed frames, explicit `-32700`/`id:null`, fragmentation, oversize recovery, depth ordering, backpressure, legacy wire, EOF, and nonmutation. The server opens one configured `--project` source, rejects a mismatched `project_id`, and has no tool-selectable root or write handler. `BoundProjectRead` pins root/source identity and rechecks source bytes before reading accepted history; the read path does not call lock, bootstrap, or recovery. This proves passive authority for the exercised paths, subject to ordinary concurrent filesystem race limits.
+
+`python3 scripts/check-schemas.py` also exited **0** against the same fresh target. It validated the existing core/CLI schemas and fixtures, invoked the 50-case A14 decision contract probe, compared all nine MCP input/output pairs to SDK descriptors, and ran both live stdio suites. This confirms the integrated checker retained both sides of the merge.
+
+The pinned SDK's previously documented behavior remains: a parseable invalid RPC shape can produce `-32600` without an `id` member; the syntax adapter's explicit null applies to unparseable `-32700` frames. This is an interoperability limit, not an integration regression. Full fresh-target workspace verification is being run separately and is not claimed here.
+
+No implementation, lockfile, other worktree, commit, push, or installation was changed for this review.

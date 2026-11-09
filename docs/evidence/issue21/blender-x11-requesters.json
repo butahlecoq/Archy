@@ -1,0 +1,355 @@
+{
+  "archive_sha256": "0d2b8bb2efe97e6c8eb57de6b7322f8800e1984e3125b60decca5f6771e4773e",
+  "elf_count": 212,
+  "requesters": [
+    {
+      "path": "4.5/python/lib/python3.11/lib-dynload/_uuid.cpython-311-x86_64-linux-gnu.so",
+      "needed": [
+        "libuuid.so.1"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/MaterialX/PyMaterialXRenderGlsl.cpython-311-x86_64-linux-gnu.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6",
+        "libXt.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Ar/_ar.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/CameraUtil/_cameraUtil.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Garch/_garch.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/GeomUtil/_geomUtil.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Gf/_gf.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Glf/_glf.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Kind/_kind.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Ndr/_ndr.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Pcp/_pcp.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Plug/_plug.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/PxOsd/_pxOsd.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Sdf/_sdf.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Sdr/_sdr.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Tf/_tf.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Trace/_trace.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Ts/_ts.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Usd/_usd.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdAppUtils/_usdAppUtils.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdGeom/_usdGeom.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdHydra/_usdHydra.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdImagingGL/_usdImagingGL.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdLux/_usdLux.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdMedia/_usdMedia.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdMtlx/_usdMtlx.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdPhysics/_usdPhysics.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdProc/_usdProc.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdRender/_usdRender.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdRi/_usdRi.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdSemantics/_usdSemantics.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdShade/_usdShade.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdSkel/_usdSkel.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdUI/_usdUI.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdUtils/_usdUtils.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdValidation/_usdValidation.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/UsdVol/_usdVol.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Vt/_vt.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "4.5/python/lib/python3.11/site-packages/pxr/Work/_work.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "blender",
+      "needed": [
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "lib/libMaterialXRenderGlsl.so.1.39.2",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6",
+        "libXt.so.6"
+      ]
+    },
+    {
+      "path": "lib/libMaterialXRenderHw.so.1.39.2",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6",
+        "libXt.so.6"
+      ]
+    },
+    {
+      "path": "lib/libusd_ms.so",
+      "needed": [
+        "libICE.so.6",
+        "libSM.so.6",
+        "libX11.so.6"
+      ]
+    },
+    {
+      "path": "lib/mesa/libGL.so.1.5.0",
+      "needed": [
+        "libX11.so.6"
+      ]
+    }
+  ]
+}

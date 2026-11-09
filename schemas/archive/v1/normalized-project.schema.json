@@ -1,0 +1,196 @@
+{
+  "$defs": {
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "Generation": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
+    },
+    "NormalizedBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "storeys": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target_gfa_hard": {
+          "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "storeys",
+        "floor_to_floor_m",
+        "target_gfa_m2",
+        "target_gfa_hard"
+      ],
+      "type": "object"
+    },
+    "NormalizedConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "description": "User declaration only. Absent authority becomes `assumption`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "type": "string"
+        },
+        "value_m": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "value_m",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "NormalizedSite": {
+      "additionalProperties": false,
+      "properties": {
+        "north_angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ],
+      "type": "object"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    },
+    "Units": {
+      "enum": [
+        "m",
+        "mm",
+        "cm",
+        "ft"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Canonical SI project produced by core normalization, preserving declarations\nand textual preferences without certifying regulatory compliance.",
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/NormalizedBrief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/NormalizedConstraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation"
+    },
+    "normalization_version": {
+      "type": "string"
+    },
+    "preferences": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "site": {
+      "$ref": "#/$defs/NormalizedSite"
+    },
+    "tolerance_m": {
+      "format": "double",
+      "type": "number"
+    },
+    "units": {
+      "$ref": "#/$defs/Units"
+    }
+  },
+  "required": [
+    "schema_version",
+    "project_id",
+    "units",
+    "site",
+    "brief",
+    "constraints",
+    "preferences",
+    "generation",
+    "normalization_version",
+    "tolerance_m"
+  ],
+  "title": "NormalizedSpec",
+  "type": "object"
+}

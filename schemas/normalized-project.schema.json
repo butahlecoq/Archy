@@ -1,0 +1,257 @@
+{
+  "$defs": {
+    "ConstraintKind": {
+      "enum": [
+        "max_height",
+        "min_edge_setback"
+      ],
+      "type": "string"
+    },
+    "Generation": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "seed": {
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/$defs/Shape"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "count",
+        "seed",
+        "shapes"
+      ],
+      "type": "object"
+    },
+    "MeterUnit": {
+      "enum": [
+        "m"
+      ],
+      "type": "string"
+    },
+    "NormalizationVersion": {
+      "enum": [
+        "si-rectangle-v2"
+      ],
+      "type": "string"
+    },
+    "NormalizedBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "floor_to_floor_m": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "storeys": {
+          "format": "uint32",
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "target_gfa_hard": {
+          "type": "boolean"
+        },
+        "target_gfa_m2": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "storeys",
+        "floor_to_floor_m",
+        "target_gfa_m2",
+        "target_gfa_hard"
+      ],
+      "type": "object"
+    },
+    "NormalizedConstraint": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "bound": {
+          "exclusiveMinimum": 0,
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "pattern": "^(?!site_containment$|target_gfa$)[A-Za-z0-9_-]{1,128}$",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ConstraintKind"
+        },
+        "source": {
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/MeterUnit"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "bound",
+        "unit",
+        "source",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "NormalizedSite": {
+      "additionalProperties": false,
+      "properties": {
+        "north_angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "polygon_xy_m": {
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        }
+      },
+      "required": [
+        "polygon_xy_m",
+        "north_angle_deg"
+      ],
+      "type": "object"
+    },
+    "Preference": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PreferenceKind"
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f<>`$;{}]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "PreferenceKind": {
+      "enum": [
+        "massing_character",
+        "landscape_intent",
+        "architectural_intent"
+      ],
+      "type": "string"
+    },
+    "SchemaVersion": {
+      "enum": [
+        "0.2.0"
+      ],
+      "type": "string"
+    },
+    "Shape": {
+      "enum": [
+        "rectangle",
+        "l_shape"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "brief": {
+      "$ref": "#/$defs/NormalizedBrief"
+    },
+    "constraints": {
+      "items": {
+        "$ref": "#/$defs/NormalizedConstraint"
+      },
+      "type": "array"
+    },
+    "generation": {
+      "$ref": "#/$defs/Generation"
+    },
+    "id": {
+      "pattern": "^[A-Za-z0-9_-]{1,128}$",
+      "type": "string"
+    },
+    "normalization_version": {
+      "$ref": "#/$defs/NormalizationVersion"
+    },
+    "notes": {
+      "items": {
+        "maxLength": 512,
+        "type": "string"
+      },
+      "maxItems": 4,
+      "type": "array"
+    },
+    "preferences": {
+      "items": {
+        "$ref": "#/$defs/Preference"
+      },
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "site": {
+      "$ref": "#/$defs/NormalizedSite"
+    },
+    "tolerance_m": {
+      "format": "double",
+      "type": "number"
+    },
+    "units": {
+      "$ref": "#/$defs/MeterUnit"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "units",
+    "site",
+    "brief",
+    "constraints",
+    "preferences",
+    "notes",
+    "generation",
+    "normalization_version",
+    "tolerance_m"
+  ],
+  "title": "NormalizedSpec",
+  "type": "object"
+}

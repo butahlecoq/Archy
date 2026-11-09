@@ -1,0 +1,19 @@
+# IFC verifier publication and deadline follow-on
+
+This follow-on starts at audit candidate tree 4c41fca9d6d7453a440e8a2f736823748038e8ac based on published 54bc0b80aaf1635112f6a3d2c79b5bd9c499b1ef. Published a1e5b3807082848a527ef113c3707369a4ad02fd later added v1/YAML orphan tests and a handoff; preserve those files during integration. This candidate and the independent system-closure candidate overlap in ifc_verifier.rs and must be reconciled and jointly tested. No production review allowlist is changed.
+
+## Publication result and retry
+
+In an author-run native WSL development fixture, a test-only injection of BackendUnavailable into the actual post-publication verify_locked call caused the original implementation to return a non-retriable error after the revision advanced. The caller with a default key had not been given that key. The regression test used the separately reviewed WSL IFC interpreter and pinned JS fixture; the injection models a failed audit or verifier and does not simulate a production package.
+
+After normal commit, recorded replay, or orphan recovery, a verification or project-binding failure now identifies the already-published run and revision. Runtime-unavailable, timeout, and binding-conflict errors are marked retriable and include the actual resolved idempotency key and original expected revision. Other errors retain their prior retriable status rather than asserting that bad artifact content is safe to retry. A retriable storage error also includes retry identity. The test confirms both normal and orphan publication advance the revision and that retrying the supplied identity returns the same receipt without rerunning the worker.
+
+## Bounded verifier pipes
+
+A disposable network-disabled Arch-container probe used the real production verifier branch and gate with synthetic root-owned inventory and verifier fixtures. A fake bwrap exited while a descendant retained stdout; the old verifier returned after 24.11 seconds despite its 20-second deadline. A first marker probe was inconclusive because a file write hit RLIMIT_FSIZE=0; the corrected probe creates a directory marker and is the reported red case.
+
+The new verifier uses nonblocking stdin/stdout and checks the deadline while sending the frame, waiting for the process, and receiving EOF; there are no blocking pipe-thread joins. Output remains limited to 8192 bytes. On error it closes both pipes and uses the existing bounded child cleanup; an uninterruptible child can outlive that cleanup and a background reaper waits. An arbitrary surviving descendant is not proven terminated by this code. A short unit test exercises child exit with a descendant retaining each pipe and a 9 MiB input frame; a separate disposable-container test exercises the actual verifier with a 20-second deadline. The measured complete green container probe was 21.95 seconds including gate/test overhead, not a production service budget or target measurement.
+
+Author checks: focused runtime-trust tests passed 3/3 (three separate container cases ignored by that unit invocation); strict offline CLI/gate Clippy passed; the native normal-and-recovered fault-injection/retry test passed 1/1 after the final pipe change. The first frozen probe failed its overly strict 22-second whole-call assertion at 22.05 seconds: its timer included the separate inventory audit. The fixture now allows 30 seconds for the combined test while the verifier itself retains the 20-second deadline. Rerun the tracked container probe independently. Initial strict Clippy flagged one collapsible if; it was fixed and the final rerun passed.
+
+No installed Arch package, systemd timing, GPU, Omarchy target, complete dynamic dependency or distribution proof follows. Packaging and distribution reviews remain pending. The fault injection exists only under Rust cfg(test).

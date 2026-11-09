@@ -1,0 +1,17 @@
+# A14/A16 witness crash restart recovery
+
+30 October 2026. Base: combined candidate `5d593961fbbcfc3a9b7aa557bcea988f165a9ed9`, including published A17 addition `15108bad8a187ad838eca5b0c524836a2ebd4175`. This follow-on addresses the availability finding in `.tools/github-updates/a14-a16-bus-witness-combined-security-review-sol.md` and preserves the A17/A23/schema/current-contract compatibility scope described in `.tools/github-updates/a14-a16-bus-witness-combined-compat-review-sol.md`.
+
+## Plan and authority
+
+The root witness writes `state-N`, then `.head-pending`, then renames it over `head`, syncing after each durable step. Startup formerly required `head` to name the last state and forbade `.head-pending`, so either interrupted window prevented restart. Startup now holds the root state-directory lock, checks the bound project source, ancestor and lock identities, takes the project lock, and scans the broker journal under its directory lock. It verifies the root binding and genesis, every state file's owner, mode, shape and sequence, and every persisted digest against the journal's verified previous-hash chain. Only a contiguous single state ahead of `head` can be completed. A pending head must name exactly that state. The existing `write_head` path creates and syncs a new pending head when absent; an existing pending head is renamed and the directory synced. Repeated startup sees an ordinary committed head. All other layouts and mismatches refuse startup before socket binding.
+
+The broker can erase a never-extended tail before observation and can ignore its advisory project lock; this change does not grant human or agent approval. Root-owned state and a root-owned nonwritable journal parent remain trust anchors. No public crash hook or state repair command was added. A physical power-loss claim requires separate testing.
+
+## Validation and freeze
+
+The existing separate-UID Docker fixture models the two reachable durable disk layouts from exact committed bytes and verifies recovery on restart. It also checks stale journal, corrupted next state, wrong pending head, unexpected entry, changed bound source and multi-step rollback refusal. These are **simulated reachable crash states**, not timed process kills. The pre-fix binary (`c286b2b36e728346b71958377ffe26cf11e8564b8d7115f179035a588e46d5cb`) was rerun with the reviewer's crash probe and refused both windows. The new binary (`3cd8e474398311d94fe795997e463b3be423ff20048380f36c936d6e0a55deb7`) passed the expanded fixture in disposable ext4 Docker with root state, broker UID/GID 2001, and agent UID 2002. `cargo +1.99.1 test --locked --offline -p archy-authority --quiet` passed all authority targets, including real private-bus Review and restart, journal, protected project, and receive-bound tests. Cargo used `TMPDIR=/home/butahlecoq/work/archy`, two jobs, and the dedicated ext4 target `.tools/targets/a14-a16-witness-recovery-20261030`.
+
+The exact follow-on commit and remaining check results are recorded in `.tools/github-updates/a14-a16-witness-recovery-handoff-codex.md` outside the Git tree. The source digest manifest `docs/plans/a14-a16-witness-recovery-source.sha256` includes the changed authority paths and unchanged A17 paths.
+
+Authority packaging, third-party notice admission, native system-bus policy and installed supervision, sustained flood fairness, and human approval remain separate gates. `authority/packaging/HUMAN-BUS-RECOVERY.md` now reflects the reviewed bounded oversize discard behavior.

@@ -1,0 +1,2 @@
+ifcopenshell==0.9.0.post1
+pytest==9.0.0 # IfcOpenShell EXPRESS rule executor imports _pytest at runtime.

@@ -1,0 +1,340 @@
+Archy Initial Development Specification
+Agent native architectural design platform | Product and engineering handoff | Version 0.1 | 29 October 2026
+Audience: founding developer, AI coding agents, reviewers, and future open source contributors.
+Executive decision
+Build Archy as a local-first, agent-native architectural workflow system. In the first month it will convert a structured residential massing brief into several editable design alternatives, generate geometry and render previews through Blender, evaluate explicit geometric constraints deterministically, and produce a machine-readable report plus a basic IFC handoff. Rust owns the CLI, project state, evaluation pipeline, and tool contracts. Existing Python and modeling systems own geometry production and BIM encoding. Do not build a new viewport, CAD kernel, foundation model, or general-purpose node editor in Month 1.
+The critical product test is whether an agent can complete the workflow without hand-modeling while every result remains reproducible, inspectable, reversible, and subject to human approval. Architectural validity is not equivalent to building-code compliance or licensed professional sign-off.
+1 Product thesis and boundaries
+1.1 Intended user
+An architect or computational designer familiar with Rhino/Grasshopper, SketchUp, Revit, and architectural rendering, now working on Omarchy or another Linux desktop. The first user operates an existing coding agent and is comfortable reviewing YAML, terminal output, and 3D previews. GUI accessibility is desirable later but is not a Month 1 prerequisite.
+1.2 Product principles
+Agent first: any operation needed for the golden workflow is a typed command or MCP-callable tool; no hidden mouse sequence is required.
+Determinism at the boundary: language models may propose and rank, but dimensions, quantities, geometry checks, and status come from deterministic tools.
+Structured source of truth: project brief, constraints, parameters, provenance, and iteration records live in versionable files; Blender is a derived representation.
+Backend flexibility: an adapter may use Blender, IfcOpenShell, FreeCAD, or future Truck without leaking backend implementation into the core specification.
+Local first and auditable: a project sandbox, explicit artifact paths, run manifests, logs, approvals, and rollback define agent authority.
+Progressive disclosure: start with box-like massing that is measurable; defer detailed BIM authoring and aesthetic sophistication.
+1.3 In scope for release 0.1
+Initialize and validate a versioned project from a YAML or JSON brief.
+Generate at least three distinct rectangular or L-shaped massing variants from bounded parameters and seeded sampling.
+Create a Blender scene, camera, material presets, preview renders, and exchangeable geometry exports.
+Compute footprint, gross floor area (simple storey-sum), height, and setbacks using explicit site coordinates.
+Persist design variants, metrics, validation reports, provenance, and run logs; support repeat and compare.
+Export a basic IFC with project/site/building/storey hierarchy and correctly typed conceptual elements, clearly marked as schematic.
+Expose a small stable CLI and a small MCP tool surface to existing agents.
+1.4 Explicitly out of scope
+Detailed apartment layouts, fire egress, structural calculations, daylight compliance, true construction cost prediction, local planning-law determination, permitting, fabrication, and stamp-ready drawings.
+Production-ready Revit/RVT interoperability; automatic reverse conversion of arbitrary Blender meshes into semantic BIM.
+New NURBS/B-rep kernel, custom Rust viewport, generic visual node editor, multi-agent scheduler, cloud service, or autonomous code execution against arbitrary paths.
+Guaranteed BIM semantics beyond the audited subset; imported third-party IFC editing and detailed round-trip correctness are later milestones.
+2 Golden user journey
+Architect supplies project.yaml with dimensions, units, setbacks, height cap, requested storeys, target area, and preferences. Unknown regulatory inputs must be declared assumptions, never inferred as law.
+Agent runs archy validate and requests missing required values; the project is normalized into canonical SI units.
+Agent runs archy generate --count 3 --seed 42; generator creates parametric alternatives with unique IDs and immutable parameter snapshots.
+Archy computes metrics and constraint statuses before rendering. Invalid variants are retained with failure explanations, not silently discarded.
+Blender adapter creates geometry and three camera views per variant; output paths and rendering engine settings are recorded.
+Agent asks Archy to compare results; a report lists tradeoffs and evidence, with a warning that daylight/cost are not quantitatively evaluated in 0.1.
+Human selects one alternative; Archy exports schematic IFC and a design manifest. Approval is recorded as a local decision event.
+3 System architecture
+The core pipeline is Brief → Normalized design specification → Parametric variants → Geometry and IFC adapters → Deterministic evaluation → Rendered evidence → Review and approval. Agents call Archy tools; Archy does not directly give an LLM unrestricted Python execution. The first implementation can invoke a local Blender process in background mode and a Python IfcOpenShell worker through subprocesses with strict argument and directory policies.
+Module
+Responsibilities
+Implementation
+archy-cli
+Commands, output format, progress, nonzero exits
+Rust clap
+archy-core
+Types, units, variant ID, provenance, state machine
+Rust serde, schemars, uuid
+archy-generate
+Seeded massing candidates, bounds, deduplication
+Rust
+archy-eval
+Geometric tests, metrics, pass/warn/fail
+Rust + test fixtures
+archy-adapters
+Backend traits, typed request/response, process isolation
+Rust; JSON protocol
+blender-worker
+Scene build, camera setup, GLB and PNG output
+Python bpy; Blender binary
+ifc-worker
+Schematic IFC project and element creation
+Python IfcOpenShell
+archy-mcp
+Read-only and scoped mutation tools
+Rust MCP SDK if viable; fallback Python MCP wrapper
+archy-report
+Machine-readable JSON + human-readable Markdown
+Rust templates
+
+3.1 Why Rust and Python
+Rust offers strong type safety, reproducible CLI workflows, and narrow capability boundaries. Python is the documented extension language for Blender and IfcOpenShell. Use JSON-lines or request/response files across the subprocess boundary; do not make a PyO3 embedding strategy a prerequisite. Validate the exact dependency versions against official documentation at implementation time and commit lockfiles.
+3.2 Backend contract
+Each backend receives a bounded request with project_id, variant_id, schema_version, params, output_dir, and run_id. It returns backend_version, produced files with hashes, warnings, and status. The adapter must never claim an artifact exists without checking its file, size, and parsing/rendering success. A job timeout and cancellation mechanism terminate a stalled backend process.
+3.3 Geometry semantics
+V0.1 models boxes and planar footprints in a local right-handed coordinate system with Z up and meters as canonical units. A footprint is a closed 2D polygon, explicitly non-self-intersecting, ordered consistently. Floors are repeated volumes with floor_to_floor_m; building_height_m is explicitly defined. A clearance checker calculates minimum distances to the rectangular site edges, not arbitrary cadastral boundaries. IFC exported objects are schematic masses/storey containers, not asserted to be detailed walls or slabs.
+4 Data model and schemas
+Entity
+Required fields
+Rules
+Project
+id, schema_version, site, brief, constraints
+Immutable input snapshot per run
+Site
+polygon_xy_m, north_angle_deg
+Closed, simple polygon; V0.1 rectangle only
+Constraint
+id, kind, bound, unit, source, authority
+Missing source cannot be called legal requirement
+Variant
+id, seed, footprint, storeys, floor_to_floor_m
+Unique deterministic identifier
+Metric
+name, value, unit, method_version
+Measured by deterministic evaluator
+Check
+constraint_id, result, measured, limit, explanation
+PASS, FAIL, WARN, UNKNOWN
+Artifact
+path, sha256, media_type, producer
+Relative path rooted in project output
+Approval
+variant_id, actor, timestamp, decision
+Human review event, never implied
+
+4.1 Suggested project manifest
+Illustrative YAML, not yet a finalized API:
+schema_version: 0.1.0
+project_id: courtyard-demo
+units: m
+site: {width_m: 20, depth_m: 35, north_deg: 0}
+brief: {storeys: 3, target_gfa_m2: 900}
+constraints:
+  - {id: height, kind: max_height, value_m: 12, source: user_brief}
+  - {id: setback, kind: min_edge_setback, value_m: 3, source: user_brief}
+generation: {count: 3, seed: 42, shapes: [rectangle, l_shape]}
+4.2 Numeric and validation rules
+Reject negative, zero, NaN, infinite, or contradictory dimensions with actionable error messages.
+Store lengths in meters internally; display units are presentation only. Record tolerance (e.g., 1e-6 m for analytic coordinate tests) and the algorithm version.
+Gross floor area for MVP means footprint area multiplied by storeys; this is an approximation, explicitly not net rentable area.
+Use geometric predicates for setbacks and polygon validity; test boundary touching and floating-point edge cases.
+A run with any UNKNOWN required check cannot be marked compliant or automatically approved.
+5 Command and MCP contracts
+Command
+Inputs
+Outputs
+archy init
+--name, --dir
+Project skeleton, schema
+archy validate
+--project, --json
+Normalized spec or field errors
+archy generate
+--project, --count, --seed
+Variant manifests
+archy evaluate
+--project, --variant or --all
+Metrics and checks JSON
+archy render
+--project, --variant or --all
+PNG, GLB, render manifest
+archy compare
+--project
+Markdown/JSON rankings
+archy export-ifc
+--project, --variant
+Schematic IFC, validation
+archy approve
+--project, --variant, --reason
+Append-only approval event
+
+MCP tools should initially wrap the same core APIs: get_project, validate_project, list_variants, generate_variants, evaluate_variant, render_variant, compare_variants, export_ifc, and propose_approval. The final approve step should require a human or explicitly configured approval mechanism; an agent cannot self-authorize. Every mutating tool accepts idempotency_key, expected_project_revision, and a project-relative destination.
+5.1 Error contract
+Return stable error codes and structured details: INVALID_SCHEMA, INVALID_GEOMETRY, CONSTRAINT_FAIL, BACKEND_UNAVAILABLE, BACKEND_TIMEOUT, ARTIFACT_INVALID, REVISION_CONFLICT, PERMISSION_DENIED, and INTERNAL_ERROR. Retriable status must be explicit. Never make a failed render look like successful design generation.
+5.2 Agent instructions
+First inspect project and declared constraints. Never invent site zoning rules, structural capacity, energy performance, or code compliance.
+Use deterministic tools for all numerical claims and cite the metric source in the report.
+Prefer small, reversible changes; commit or snapshot before a destructive overwrite.
+Propose three alternatives and explain tradeoffs; do not silently discard a candidate because it looks unattractive.
+Use only project-scoped output paths and approved MCP tools. Do not directly execute arbitrary Blender Python from untrusted prompts.
+Stop and ask for review before releasing final BIM assets or making unverified professional claims.
+6 Month 1 delivery plan
+Assumptions: one principal developer supported by coding agents, roughly 20 working days, Linux workstation with working Blender and Python, and no external customer data. Dates are relative to project kickoff. Each day ends with automated checks and a short run log.
+Week
+Goal
+Exit artifact
+1
+Core specification, CLI, data model, seeded generator, geometry evaluator
+Three reproducible variants and JSON reports; unit tests
+2
+Blender worker and artifact management
+Three variant previews and GLB exports from headless Blender
+3
+IfcOpenShell worker, review workflow, MCP facade
+Schematic IFC, approval event, scoped MCP calls
+4
+Hardening, benchmark examples, documentation, demo
+One-command golden-path demo, CI, traceable release candidate
+
+6.1 Week 1 detailed backlog
+D1: Create repository, license decision, formatter/linter CI, architectural decision records, first schema draft.
+D2: Implement archy init and validate; unit normalization; schema fixtures and negative cases.
+D3: Implement rectangle/L-shape footprint generator with seeded reproducibility and duplicate suppression.
+D4: Implement area, height, site-bound and setback evaluators; tolerance tests and failure explanations.
+D5: Integrate generate/evaluate/report; golden demo without Blender; gate on reproducibility across two runs.
+6.2 Week 2 detailed backlog
+D6: Pin compatible Blender version and run background-mode proof of concept on target Linux hardware.
+D7: Implement typed Blender worker request and scene builder with naming and project origin.
+D8: Add orthographic/isometric camera presets, basic materials and lighting, deterministic render settings.
+D9: Export GLB and PNG with checked output manifests, hashes, timeout and process stderr capture.
+D10: End-to-end render for three variants; compare generated geometry bounds with core evaluator.
+6.3 Week 3 detailed backlog
+D11: Pin IfcOpenShell version; create a minimal IFC4 project/site/building/storey structure.
+D12: Map selected variant massing to schematic IFC geometry with clear classification limitations.
+D13: Reopen IFC and verify schema, structure, element counts, transforms and quantities.
+D14: Implement compare and approve (append-only event); ensure reports distinguish measured from subjective criteria.
+D15: Add MCP facade for scoped calls, schema validation, idempotency and approval gating.
+6.4 Week 4 detailed backlog
+D16: Security pass: subprocess isolation, path traversal tests, file overwrite policy, injected prompt handling.
+D17: Reliability pass: invalid briefs, backend crash, interruption, stale revision and deterministic reruns.
+D18: Install guide for Omarchy, one-command sample, developer documentation, ADRs and contributors guide.
+D19: Test on a clean target machine; evaluate artifacts visually and validate IFC with independent parser.
+D20: Release candidate with known limitations, issue backlog, reproducibility evidence and demo walkthrough.
+7 Definition of done and acceptance tests
+Test
+Acceptance criterion
+Reproducibility
+Same project + seed + pinned versions produce identical parametric variant manifests and metric JSON; render pixels may differ by GPU and are compared with documented tolerance.
+Validity
+Invalid site dimensions, self-intersecting footprints, impossible setbacks and oversized height return stable failure states.
+Variation
+At least three feasible geometrically distinct options from demo brief, or explicit explanation that constraints permit fewer.
+Measurement
+Area, height, bounding boxes, setbacks match analytic fixtures within specified tolerance.
+Artifact integrity
+All outputs exist, parse successfully, are stored under run ID, and match recorded hashes.
+Blender
+Headless worker successfully exports GLB and at least one preview per variant on target Omarchy machine.
+IFC
+Schematic IFC reopens in IfcOpenShell; hierarchy and geometry bounds match selected massing.
+Agent autonomy
+Agent completes generation → evaluation → render → compare using typed operations without manual 3D editing.
+Human control
+No approved variant exists until explicit human approval is recorded; unapproved exports are tagged draft.
+Resilience
+Timeout, crash, malformed response, and duplicate tool calls do not corrupt previously accepted run artifacts.
+
+7.1 Demo test scenario
+Use a 20 × 35 m rectangular parcel, three storeys, 3.2 m floor-to-floor height, 12 m maximum building height, 3 m minimum clearance to site edges, and 900 m² approximate GFA target. The agent produces three options if feasible, evaluates them, renders previews, compares them, and exports the selected option as an IFC. The GFA target is an objective rather than a hard requirement unless explicitly marked hard.
+7.2 Gate for release 0.1
+Release only if every required acceptance test passes, a clean installation can reproduce the demo, no unrestricted code execution is exposed to agents by default, and the README accurately describes the limitations. Open failures are triaged as release blockers or documented exclusions.
+8 Repository structure and working practices
+archy/
+  Cargo.toml
+  crates/archy-cli/
+  crates/archy-core/
+  crates/archy-generate/
+  crates/archy-eval/
+  crates/archy-adapters/
+  crates/archy-mcp/
+  workers/blender/
+  workers/ifc/
+  schemas/
+  examples/courtyard-housing/
+  tests/golden/
+  docs/adr/
+  docs/agent-playbooks/
+  .github/workflows/
+Use trunk-based development with small PRs, protected main, Rust format/clippy/test, Python lint/test, schema fixtures, and a reproducible demo. Commit a lockfile. Store large rendered artifacts as CI artifacts or release assets rather than indefinitely bloating Git. Keep generated runs out of source-control unless they are deliberately curated golden fixtures.
+8.1 Agentic development protocol
+Each issue has problem, intended behavior, scope, file boundaries, tests, dependencies, and acceptance evidence.
+Agent creates a short implementation plan and identifies risks before editing. No new dependency without rationale.
+Agent writes tests before or alongside implementation, changes only the assigned bounded scope, and runs local checks.
+Reviewer verifies diff, security implications, reproducibility, and user-visible evidence; the agent does not merge its own PR by default.
+Every work session ends with a handoff note: completed, changed files, commands/tests, blockers, next action, and unresolved decisions.
+9 Security, governance and professional boundaries
+Execute generated geometry operations only via typed API requests; arbitrary code execution is a privileged developer-only escape hatch, disabled in production configurations.
+Use project-scoped paths, canonical path checks, process resource limits, explicit network policy, and isolation for untrusted assets.
+Separate read operations, reversible design mutations, local exports, and external/publishing operations into distinct authority levels.
+Never silently overwrite user design files. Use run IDs, atomic writes, and recoverable snapshots.
+Every numerical report distinguishes exact geometry metrics, heuristic scores, uncomputed criteria, and legal/professional claims.
+Local planning constraints require explicit user-supplied values or verified external sources; Archy 0.1 cannot certify regulatory compliance.
+Respect licenses of Blender, IfcOpenShell, MCP integrations, assets, and dependencies; verify compatibility before distribution.
+Treat MCP responses, imported models, and project descriptions as untrusted input; tool output cannot expand agent permissions.
+10 Dependencies and open source integration decisions
+Dependency
+Initial choice
+Fallback / decision gate
+Blender
+Headless Python adapter
+Use native Blender scripting; MCP only if interaction demands a live session
+IfcOpenShell
+Direct Python API and optional IfcMCP
+IFC exporter must be independently testable without an LLM
+MCP
+Thin wrapper around core operations
+Rust implementation if maintained crate fits; Python wrapper acceptable
+FreeCAD
+Not required for MVP
+Add when precise CAD constraints exceed Blender geometry
+Truck
+Not required for MVP
+Experiment after validated need for B-rep/NURBS operations
+Sverchok
+Optional reference/integration
+Use for interactive visual workflows, not core state
+Agent runtime
+Existing Codex/Claude/OpenCode client
+Avoid framework lock-in through stable tool schemas
+
+Relevant repositories and documentation: Blender MCP https://github.com/ahujasid/mcp-for-blender ; IfcMCP https://docs.ifcopenshell.org/ifcmcp.html ; IfcOpenShell https://github.com/IfcOpenShell/IfcOpenShell ; FreeCAD MCP https://github.com/neka-nat/freecad-mcp ; Truck https://github.com/ricosjp/truck ; Blender Python background mode https://docs.blender.org/api/current/info_tips_and_tricks.html . Repository APIs, compatibility and licensing must be rechecked when dependencies are pinned.
+11 Risk register
+Risk
+Likelihood / impact
+Mitigation
+Agent produces plausible but invalid geometry
+High / high
+Deterministic tests, rejection of invalid polygon, independently measured exports
+Blender API/version drift
+Medium / medium
+Pinned version, isolated worker, smoke tests, compatibility matrix
+IFC semantic mismatch
+High / high
+Schematic-only contract, independent reopen test, explicit mapping document
+MCP arbitrary-code exposure
+Medium / high
+Typed capabilities, isolate processes, reject direct Python tools by default
+Scope creep into full BIM
+High / high
+Release gate limited to massing; parking-lot backlog
+Non-deterministic renders
+High / low
+Separate geometry acceptance from perceptual render checks
+Unclear legal constraints
+High / high
+User-supplied constraints with provenance; mark unverified as unknown
+Single developer throughput
+High / medium
+Small vertical slices, daily demo, cut optional features first
+
+12 Post month roadmap
+Month 2: richer footprints, courtyard forms, parametric facade modules, explicit design objectives, better scenario comparison and Pareto-front selection.
+Month 3: room and circulation graph, preliminary space planning, IFC semantic coverage, stronger test fixtures and interoperability.
+Later: independently validated daylight/energy analysis, cost database provenance, more CAD backends, interactive review UI, collaboration, and professional approval workflows.
+13 Open decisions for the founder
+License: MIT/Apache-2.0 for the Rust core is attractive; review GPL/LGPL effects of distributed integrations.
+Agent runtime: select an initial client for local development while preserving provider-agnostic MCP contracts.
+Blender version and Linux GPU target: pin a known-good pair before Week 2.
+IFC geometry representation: agree on basic massing proxy and semantic labels before implementation.
+Name: Archy is provisional pending trademark, project namespace and domain checks.
+Approval policy: decide whether local IFC export is permitted preapproval as a clearly marked draft or only postapproval.
+14 Day zero kickoff checklist
+Create public or private Git repository and choose license after dependency review.
+Record ADR 0001 on source of truth: structured brief and variant manifests, not Blender scene.
+Record ADR 0002 on Python geometry workers controlled by typed Rust interfaces.
+Create golden sample brief and analytic expected metric fixtures.
+Install Rust toolchain, Blender, Python worker environment and IfcOpenShell, then pin versions.
+Define CI checks and issue labels: spec, core, adapter, testing, security, documentation.
+Start first coding task: archy validate with failure fixtures and stable JSON output.
+End of specification. This is an implementation baseline for release 0.1; changes should be recorded in ADRs and reflected in acceptance tests before scope expands.

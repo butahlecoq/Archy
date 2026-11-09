@@ -1,0 +1,15 @@
+[Unit]
+Description=Archy read-only human proposal review
+
+[Socket]
+ListenSequentialPacket=/run/archy/human.sock
+FileDescriptorName=human
+SocketUser=root
+SocketGroup=archy-review
+SocketMode=0660
+DirectoryMode=0755
+RemoveOnStop=yes
+Service=archy-authority.service
+
+# Only the enrolled human should be a member of archy-review. authorityd also
+# checks SO_PEERCRED against root-owned enrollment before reading a packet.

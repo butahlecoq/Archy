@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "constraint_id": {
+          "type": "string"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "measured": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/CheckResult"
+        }
+      },
+      "required": [
+        "constraint_id",
+        "result",
+        "explanation",
+        "required"
+      ],
+      "type": "object"
+    },
+    "CheckResult": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "WARN",
+        "UNKNOWN"
+      ],
+      "type": "string"
+    },
+    "DimensionalTolerance": {
+      "additionalProperties": false,
+      "properties": {
+        "area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "method_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "length_m",
+        "area_m2",
+        "method_version"
+      ],
+      "type": "object"
+    },
+    "GeometryParityBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_length_m": {
+          "format": "double",
+          "type": "number"
+        },
+        "footprint_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "gross_floor_area_m2": {
+          "format": "double",
+          "type": "number"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "rigid_transform_policy_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_version",
+        "coordinate_length_m",
+        "footprint_area_m2",
+        "gross_floor_area_m2",
+        "rigid_transform_policy_version"
+      ],
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "method_version": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "value",
+        "unit",
+        "method_version"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "type": "array"
+    },
+    "evaluation_version": {
+      "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$",
+      "type": "string"
+    },
+    "geometry_parity_budget": {
+      "$ref": "#/$defs/GeometryParityBudget"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/Metric"
+      },
+      "type": "array"
+    },
+    "professional_limits": {
+      "type": "string"
+    },
+    "required_checks_passed": {
+      "type": "boolean"
+    },
+    "tolerance": {
+      "$ref": "#/$defs/DimensionalTolerance"
+    },
+    "variant_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "variant_id",
+    "evaluation_version",
+    "metrics",
+    "checks",
+    "tolerance",
+    "geometry_parity_budget",
+    "required_checks_passed",
+    "professional_limits"
+  ],
+  "title": "EvaluationReport",
+  "type": "object"
+}

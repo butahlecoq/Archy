@@ -1,0 +1,16 @@
+[package]
+name = "archy-eval"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+archy-core = { path = "../archy-core" }
+serde.workspace = true
+schemars.workspace = true
+geo.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

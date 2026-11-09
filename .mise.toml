@@ -1,6 +1,25 @@
 [tools]
 python = "3.14.8"
+rust = "1.99.1"
+
+[settings]
+auto_install = false
+
+[env]
+RUSTUP_AUTO_INSTALL = "0"
+
+[tasks.fmt]
+run = ["sh scripts/check-rust-toolchain.sh", "cargo fmt --all -- --check"]
+
+[tasks.lint]
+run = ["sh scripts/check-rust-toolchain.sh", "cargo clippy --workspace --all-targets --locked -- -D warnings"]
+
+[tasks."test:core"]
+run = ["sh scripts/check-rust-toolchain.sh", "cargo test --workspace --locked"]
+
+[tasks.build]
+run = ["sh scripts/check-rust-toolchain.sh", "cargo build -p archy-cli --release --locked"]
 
 [tasks.setup]
-description = "Create a local virtual environment with Archy MCP and IFC dependencies"
+description = "Set up the Python massing prototype"
 run = "python -m venv .venv && .venv/bin/python -m pip install -e '.[mcp,ifc]'"

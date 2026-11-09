@@ -1,0 +1,3 @@
+{
+  "archy.status": {"label": "Archy status", "action": "omarchy-shell shell toggle archy.status '{}'"}
+}

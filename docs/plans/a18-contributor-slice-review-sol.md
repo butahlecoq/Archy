@@ -1,0 +1,24 @@
+# A18 contributor handoff slice — independent review, 30 October 2026
+
+**Disposition: PASS for this frozen, partial documentation slice. Issue #18 remains OPEN.** This is source CLI and handoff evidence on Ubuntu/WSL2, not release or Omarchy acceptance.
+
+## Freeze and scope
+
+- Candidate: `/home/butahlecoq/work/archy/.worktrees/a18-contributor-handoff-20261030-1e2313`; HEAD/base `1e2313fe0bf20f69f246836334adb761276d2390`; eight staged documentation files and no unstaged changes. No candidate edits were made during review.
+- Frozen manifest: `docs/plans/a18-contributor-slice-freeze.sha256`, SHA-256 **`00bcea245f06627efa8d6a401585ecd8de3c4c5766db8c16f34b084d821ae63f`**. `sha256sum -c` passed for all seven listed payload files before and after testing. The eighth staged file is the freeze manifest itself. `git diff --cached --check` passed.
+- The staged diff adds a source quickstart, a session handoff template, a bounded plan, artifact and freeze manifests, and links from README/CONTRIBUTING. It changes no runtime, package, worker, CLI, or demo driver code. Local Markdown links in the four entry documents resolve. The quickstart's Rust 1.99.1 pin and Omarchy/Blender/IFC values match `rust-toolchain.toml`, `.mise.toml`, and `packaging/arch/compatibility.json`.
+- Compared the quickstart and handoff with `docs/specs/release-0.1.txt`, `docs/cli.md`, `docs/omarchy/install.md`, `docs/omarchy/package.md`, and [issue #18](https://github.com/butahlecoq/Archy/issues/18), which was OPEN at review. The docs accurately limit the slice to the source CLI and explicitly defer target install, supervised render/IFC, visual and backend evidence, selection, and human approval.
+
+## Independent execution
+
+- Review workspace `/var/tmp/archy-a18-review-sol-hC8ArH3B` is on `/` ext4 (`/dev/sdd`). Effective versions: `rustc 1.99.1`, `cargo 1.99.1`, Python `3.14.4`; kernel `6.6.87.2-microsoft-standard-WSL2`. No Omarchy target or backend was used.
+- `RUSTUP_AUTO_INSTALL=0 CARGO_NET_OFFLINE=true CARGO_TARGET_DIR=/var/tmp/archy-a18-review-sol-hC8ArH3B/target cargo build --offline --locked -p archy-cli`: exit 0, `Finished dev profile` in 1m 37s. This is build time, not a performance benchmark.
+- `ARCHY_BIN=/var/tmp/archy-a18-review-sol-hC8ArH3B/target/debug/archy TMPDIR=/var/tmp/archy-a18-review-sol-hC8ArH3B python3 -m unittest discover -s tests/demo -v`: exit 0, six tests passed in 24.416s.
+- `python3 scripts/demo.py --archy /var/tmp/archy-a18-review-sol-hC8ArH3B/target/debug/archy --project-dir /var/tmp/archy-a18-review-sol-hC8ArH3B/project`: exit **2**. Actual CLI help, init, validate, seeded generate, evaluate, and JSON/Markdown compare each exited 0. Final message: `DEMO STOPPED: UNAVAILABLE: archy render is absent from this CLI. Existing runs and comparison remain in the project.` The CLI help has no render or export-ifc command. `archy doctor --json` exited 1 on this WSL host, consistent with the documented prerequisite boundary.
+- The fresh project has 32 regular files, two run manifests (`0550be5a-69b5-4743-97db-d82b000bc6d3` generate; `6e743e73-005e-4f8d-bffb-e53c37a1972e` evaluate), three comparison candidates, and no `.glb`, `.png`, or `.ifc`. `python3 -m json.tool` accepted `comparison.json`. Fresh project SHA-256: `project.yaml` 486 bytes, `c534bf5f9c4c459b4e06171b0d3969e07d7f4e83a6791010fc83b2abe78a611a`; `comparison.json` 19,324 bytes, `8a68f59c010088591ee8ccf8e293616ec53276855152edf7c7118876bd0d62f8`; `comparison.md` 6,737 bytes, `95d2afecf829497b1a8ac63682374f90e5dad202f25d59691c21ce599c32b5bd`. The comparison hashes differ from the handoff run because generated run IDs differ; no byte-for-byte reproducibility claim is made for separate runs.
+- In the contributor's retained project, `sha256sum -c docs/plans/a18-contributor-demo-artifacts.sha256` passed for all 32 files. Its transcript is 29,819 bytes with the handoff's SHA-256 `c111f3f7c966de4bea1329802641bdb69f2e73d44933e19a5bc9c291a02b34dd`. Those `/var/tmp` files are local review evidence, not published assets.
+- Fresh collision probes passed: an occupied file, occupied project directory, symlink to the project, and a project with a missing parent each caused demo exit 2 before init. The occupied file's `KEEP_ME` content, symlink, and existing project comparison remained intact. `scripts/demo.py` checks existence and symlinks before invoking `init`; `init` uses atomic `create_dir` and new-file creation.
+
+## Remaining gates
+
+This review accepts only the bounded documentation handoff. Issue #18 still requires a complete single-command rendered review, target Omarchy install/version checks, worker setup and smoke tests, backend artifacts and visual/IFC inspection, containment/recovery evidence, complete playbook and benchmark evidence where required, and an explicit human selection/approval boundary. WSL and the available source CLI cannot close those gates. No false full-demo success or issue closure is claimed.

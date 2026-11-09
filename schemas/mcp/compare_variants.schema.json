@@ -1,0 +1,687 @@
+{
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "cursor": {
+        "maxLength": 256,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "limit": {
+        "format": "uint32",
+        "maximum": 100,
+        "minimum": 1,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "objective": {
+        "anyOf": [
+          {
+            "maxLength": 128,
+            "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 64,
+            "pattern": "^[\\u0000-\\u07ff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 42,
+            "pattern": "^[\\u0000-\\ud7ff\\ue000-\\uffff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 32,
+            "pattern": "^(?:[^\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*(?![\\s\\S])"
+          }
+        ],
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "project_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "run_ids": {
+        "items": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "maxItems": 100,
+        "minItems": 1,
+        "type": "array"
+      }
+    },
+    "required": [
+      "project_id",
+      "run_ids",
+      "objective"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArchyError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "field": {
+            "description": "JSON-style dotted field path; `$` denotes the document itself.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field",
+          "retriable"
+        ],
+        "type": "object"
+      },
+      "Check": {
+        "additionalProperties": false,
+        "properties": {
+          "constraint_id": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "measured": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "result": {
+            "$ref": "#/$defs/CheckResult"
+          }
+        },
+        "required": [
+          "constraint_id",
+          "result",
+          "explanation",
+          "required"
+        ],
+        "type": "object"
+      },
+      "CheckResult": {
+        "enum": [
+          "PASS",
+          "FAIL",
+          "WARN",
+          "UNKNOWN"
+        ],
+        "type": "string"
+      },
+      "CompareVariantsData": {
+        "additionalProperties": false,
+        "properties": {
+          "comparisons": {
+            "items": {
+              "$ref": "#/$defs/ComparisonDocument"
+            },
+            "type": "array"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "objective": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "revision",
+          "objective",
+          "comparisons"
+        ],
+        "type": "object"
+      },
+      "ComparisonCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluation": {
+            "$ref": "#/$defs/EvaluationReport"
+          },
+          "evaluation_sha256": {
+            "type": "string"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Metric"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "objective_rank": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "objective_source_metric": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "variant": {
+            "$ref": "#/$defs/Variant"
+          },
+          "variant_sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant",
+          "evaluation",
+          "variant_sha256",
+          "evaluation_sha256"
+        ],
+        "type": "object"
+      },
+      "ComparisonConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "type": "string"
+          },
+          "authority_status": {
+            "type": "string"
+          },
+          "bound": {
+            "format": "double",
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/ConstraintKind"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "bound",
+          "unit",
+          "source",
+          "authority",
+          "authority_status"
+        ],
+        "type": "object"
+      },
+      "ComparisonDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/$defs/ComparisonCandidate"
+            },
+            "type": "array"
+          },
+          "constraints": {
+            "items": {
+              "$ref": "#/$defs/ComparisonConstraint"
+            },
+            "type": "array"
+          },
+          "objective_description": {
+            "type": "string"
+          },
+          "observed_head_sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "professional_limits": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "string"
+          },
+          "source_input_sha256": {
+            "type": "string"
+          },
+          "source_manifest_sha256": {
+            "type": "string"
+          },
+          "source_normalized_sha256": {
+            "type": "string"
+          },
+          "source_run_id": {
+            "type": "string"
+          },
+          "subjective_preferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "uncomputed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "policy_version",
+          "project_id",
+          "observed_revision",
+          "source_run_id",
+          "source_manifest_sha256",
+          "source_input_sha256",
+          "source_normalized_sha256",
+          "objective_description",
+          "constraints",
+          "candidates",
+          "subjective_preferences",
+          "uncomputed",
+          "professional_limits"
+        ],
+        "type": "object"
+      },
+      "ConstraintKind": {
+        "enum": [
+          "max_height",
+          "min_edge_setback"
+        ],
+        "type": "string"
+      },
+      "DimensionalTolerance": {
+        "additionalProperties": false,
+        "properties": {
+          "area_m2": {
+            "format": "double",
+            "type": "number"
+          },
+          "length_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "method_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "length_m",
+          "area_m2",
+          "method_version"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_GEOMETRY",
+          "CONSTRAINT_FAIL",
+          "BACKEND_UNAVAILABLE",
+          "BACKEND_TIMEOUT",
+          "ARTIFACT_INVALID",
+          "REVISION_CONFLICT",
+          "PERMISSION_DENIED",
+          "INTERNAL_ERROR"
+        ],
+        "type": "string"
+      },
+      "EvaluationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/$defs/Check"
+            },
+            "type": "array"
+          },
+          "evaluation_version": {
+            "pattern": "^(planar-massing-v1|planar-massing-authority-v2)$",
+            "type": "string"
+          },
+          "geometry_parity_budget": {
+            "$ref": "#/$defs/GeometryParityBudget"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/$defs/Metric"
+            },
+            "type": "array"
+          },
+          "professional_limits": {
+            "type": "string"
+          },
+          "required_checks_passed": {
+            "type": "boolean"
+          },
+          "tolerance": {
+            "$ref": "#/$defs/DimensionalTolerance"
+          },
+          "variant_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant_id",
+          "evaluation_version",
+          "metrics",
+          "checks",
+          "tolerance",
+          "geometry_parity_budget",
+          "required_checks_passed",
+          "professional_limits"
+        ],
+        "type": "object"
+      },
+      "GeometryParityBudget": {
+        "additionalProperties": false,
+        "properties": {
+          "coordinate_length_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "footprint_area_m2": {
+            "format": "double",
+            "type": "number"
+          },
+          "gross_floor_area_m2": {
+            "format": "double",
+            "type": "number"
+          },
+          "policy_version": {
+            "type": "string"
+          },
+          "rigid_transform_policy_version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "policy_version",
+          "coordinate_length_m",
+          "footprint_area_m2",
+          "gross_floor_area_m2",
+          "rigid_transform_policy_version"
+        ],
+        "type": "object"
+      },
+      "Metric": {
+        "additionalProperties": false,
+        "properties": {
+          "method_version": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "unit",
+          "method_version"
+        ],
+        "type": "object"
+      },
+      "Shape": {
+        "enum": [
+          "rectangle",
+          "l_shape"
+        ],
+        "type": "string"
+      },
+      "ShapeParameters": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "depth_m": {
+                "format": "double",
+                "type": "number"
+              },
+              "origin_xy_m": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "shape": {
+                "const": "rectangle",
+                "type": "string"
+              },
+              "width_m": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "shape",
+              "origin_xy_m",
+              "width_m",
+              "depth_m"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "depth_m": {
+                "format": "double",
+                "type": "number"
+              },
+              "notch_depth_m": {
+                "format": "double",
+                "type": "number"
+              },
+              "notch_width_m": {
+                "format": "double",
+                "type": "number"
+              },
+              "origin_xy_m": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "shape": {
+                "const": "l_shape",
+                "type": "string"
+              },
+              "width_m": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "shape",
+              "origin_xy_m",
+              "width_m",
+              "depth_m",
+              "notch_width_m",
+              "notch_depth_m"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Variant": {
+        "additionalProperties": false,
+        "properties": {
+          "floor_to_floor_m": {
+            "format": "double",
+            "type": "number"
+          },
+          "footprint_xy_m": {
+            "items": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "generation_algorithm": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "parameters": {
+            "$ref": "#/$defs/ShapeParameters"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "string"
+          },
+          "seed": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shape": {
+            "$ref": "#/$defs/Shape"
+          },
+          "storeys": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "project_id",
+          "id",
+          "seed",
+          "generation_algorithm",
+          "shape",
+          "parameters",
+          "footprint_xy_m",
+          "storeys",
+          "floor_to_floor_m"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/CompareVariantsData"
+          },
+          "error": {
+            "type": "null"
+          },
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "$ref": "#/$defs/ArchyError"
+          },
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

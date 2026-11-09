@@ -1,0 +1,7 @@
+# A15 read-only MCP and notice integration on 0cfcf916
+
+The source patch matches SHA-256 `a2a89c2e4ae00883854399d80af090f415dff537dc2bc2fe9694447612809ac0` and passed an independent Sol integration review. The 31-file MCP freeze matches in the combined checkout, except for three reviewed shared-file merges preserving current lock ownership, CLI exports and the A14/A18 checks. The four notice implementation and test files match their independently reviewed hashes.
+
+On the combined integration checkout, formatting, strict workspace Clippy, workspace tests, the schema checker, all 24 packaging tests and the Node Unicode-pattern check exited 0. The schema checker ran the real MCP stdio suites, 50 decision-contract cases and six demo cases. The separate integration reviewer also verified stale notice-pair rejection before staging, fresh offline admission of 91 crate rows, and hashes and modes of all 19 staged files. The combined log is retained outside this tree at `.tools/a15-a21-on-0cfc-root.log`.
+
+The MCP executable provides three fixed-project read operations. Six operations remain typed unavailable responses; the separately reviewed live comparison is a follow-on. No mutation, backend execution, authenticated approval, final package acceptance, or Omarchy execution is claimed. Notice coverage checks do not authenticate a substituted notice bundle whose inventory and bundle hash are both replaced.

@@ -1,0 +1,138 @@
+[
+  {
+    "full_name": "omacom/herdr",
+    "html_url": "https://github.com/omacom/herdr",
+    "default_branch": "master",
+    "archived": false,
+    "pushed_at": "2026-09-28T08:13:42Z",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "omacom/omarchy",
+    "html_url": "https://github.com/omacom/omarchy",
+    "default_branch": "quattro",
+    "archived": false,
+    "pushed_at": "2026-10-29T11:39:46Z",
+    "license": "MIT"
+  },
+  {
+    "full_name": "ahujasid/mcp-for-blender",
+    "html_url": "https://github.com/ahujasid/mcp-for-blender",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T09:13:34Z",
+    "license": "MIT"
+  },
+  {
+    "full_name": "IfcOpenShell/IfcOpenShell",
+    "html_url": "https://github.com/IfcOpenShell/IfcOpenShell",
+    "default_branch": "v0.9.0",
+    "archived": false,
+    "pushed_at": "2026-10-29T11:12:58Z",
+    "license": "LGPL-3.0"
+  },
+  {
+    "full_name": "neka-nat/freecad-mcp",
+    "html_url": "https://github.com/neka-nat/freecad-mcp",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-25T01:12:47Z",
+    "license": "MIT"
+  },
+  {
+    "full_name": "ricosjp/truck",
+    "html_url": "https://github.com/ricosjp/truck",
+    "default_branch": "master",
+    "archived": false,
+    "pushed_at": "2026-10-27T17:49:59Z",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "nortikin/sverchok",
+    "html_url": "https://github.com/nortikin/sverchok",
+    "default_branch": "master",
+    "archived": false,
+    "pushed_at": "2026-10-28T13:35:52Z",
+    "license": "GPL-3.0"
+  },
+  {
+    "full_name": "modelcontextprotocol/rust-sdk",
+    "html_url": "https://github.com/modelcontextprotocol/rust-sdk",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-28T17:55:05Z",
+    "license": "NOASSERTION"
+  },
+  {
+    "full_name": "georust/geo",
+    "html_url": "https://github.com/georust/geo",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-28T11:45:54Z",
+    "license": "NOASSERTION"
+  },
+  {
+    "full_name": "containers/bubblewrap",
+    "html_url": "https://github.com/containers/bubblewrap",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-14T12:26:14Z",
+    "license": "NOASSERTION"
+  },
+  {
+    "full_name": "ThatOpen/engine_web-ifc",
+    "html_url": "https://github.com/ThatOpen/engine_web-ifc",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T01:09:58Z",
+    "license": "MPL-2.0"
+  },
+  {
+    "full_name": "FreeCAD/FreeCAD",
+    "html_url": "https://github.com/FreeCAD/FreeCAD",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T04:15:32Z",
+    "license": "LGPL-2.1"
+  },
+  {
+    "full_name": "astral-sh/uv",
+    "html_url": "https://github.com/astral-sh/uv",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T05:15:25Z",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "seehiong/blender-mcp-bridge",
+    "html_url": "https://github.com/seehiong/blender-mcp-bridge",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-09-13T07:14:50Z",
+    "license": "MIT"
+  },
+  {
+    "full_name": "spkane/freecad-addon-robust-mcp-server",
+    "html_url": "https://github.com/spkane/freecad-addon-robust-mcp-server",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T04:55:05Z",
+    "license": "Apache-2.0"
+  },
+  {
+    "full_name": "Impertio-Studio/Blender-Bonsai-ifcOpenshell-Sverchok-Claude-Skill-Package",
+    "html_url": "https://github.com/Impertio-Studio/Blender-Bonsai-ifcOpenshell-Sverchok-Claude-Skill-Package",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-07-08T11:06:59Z",
+    "license": "MIT"
+  },
+  {
+    "full_name": "jangtrinh/design-os-3d-blender",
+    "html_url": "https://github.com/jangtrinh/design-os-3d-blender",
+    "default_branch": "main",
+    "archived": false,
+    "pushed_at": "2026-10-29T08:20:18Z",
+    "license": "NOASSERTION"
+  }
+]

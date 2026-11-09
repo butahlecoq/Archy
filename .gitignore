@@ -1,3 +1,11 @@
+/target/
+**/runs/
+*.blend1
+__pycache__/
+.venv/
+/.verification-python/
+.runtime-assets/
+
 .venv/
 __pycache__/
 *.py[cod]

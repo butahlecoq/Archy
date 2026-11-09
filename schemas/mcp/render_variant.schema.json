@@ -1,0 +1,374 @@
+{
+  "input": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "destination": {
+        "anyOf": [
+          {
+            "maxLength": 512,
+            "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 256,
+            "pattern": "^[\\u0000-\\u07ff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 170,
+            "pattern": "^[\\u0000-\\ud7ff\\ue000-\\uffff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 128,
+            "pattern": "^(?:[^\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*(?![\\s\\S])"
+          }
+        ],
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+      },
+      "expected_project_revision": {
+        "pattern": "^(0|[1-9][0-9]{0,19})$",
+        "type": "string"
+      },
+      "idempotency_key": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "preset": {
+        "anyOf": [
+          {
+            "maxLength": 128,
+            "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 64,
+            "pattern": "^[\\u0000-\\u07ff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 42,
+            "pattern": "^[\\u0000-\\ud7ff\\ue000-\\uffff]*(?![\\s\\S])"
+          },
+          {
+            "maxLength": 32,
+            "pattern": "^(?:[^\\ud800-\\udfff]|[\\ud800-\\udbff][\\udc00-\\udfff])*(?![\\s\\S])"
+          }
+        ],
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "project_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "source_run": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      },
+      "variant_id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[\\u0000-\\u007f]*(?![\\s\\S])",
+        "type": "string"
+      }
+    },
+    "required": [
+      "project_id",
+      "source_run",
+      "variant_id",
+      "preset",
+      "idempotency_key",
+      "expected_project_revision",
+      "destination"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArchyError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/ErrorCode"
+          },
+          "field": {
+            "description": "JSON-style dotted field path; `$` denotes the document itself.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retriable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "field",
+          "retriable"
+        ],
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_SCHEMA",
+          "INVALID_GEOMETRY",
+          "CONSTRAINT_FAIL",
+          "BACKEND_UNAVAILABLE",
+          "BACKEND_TIMEOUT",
+          "ARTIFACT_INVALID",
+          "REVISION_CONFLICT",
+          "PERMISSION_DENIED",
+          "INTERNAL_ERROR"
+        ],
+        "type": "string"
+      },
+      "RenderArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_len": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "producer": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "byte_len",
+          "media_type",
+          "producer"
+        ],
+        "type": "object"
+      },
+      "RenderData": {
+        "additionalProperties": false,
+        "properties": {
+          "all_verified": {
+            "type": "boolean"
+          },
+          "manifest_sha256": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "source_manifest_sha256": {
+            "type": "string"
+          },
+          "source_run_id": {
+            "type": "string"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/$defs/RenderVariant"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "project_id",
+          "run_id",
+          "revision",
+          "path",
+          "manifest_sha256",
+          "source_run_id",
+          "source_manifest_sha256",
+          "all_verified",
+          "variants"
+        ],
+        "type": "object"
+      },
+      "RenderPreviewSymbol": {
+        "additionalProperties": false,
+        "properties": {
+          "notice": {
+            "type": "string"
+          },
+          "views": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "views",
+          "notice"
+        ],
+        "type": "object"
+      },
+      "RenderResult": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "artifacts": {
+                "items": {
+                  "$ref": "#/$defs/RenderArtifact"
+                },
+                "type": "array"
+              },
+              "preview_foreground_pixels": {
+                "items": {
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "format": "uint32",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "preview_symbol": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RenderPreviewSymbol"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "const": "verified",
+                "type": "string"
+              },
+              "verifier_version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "verifier_version",
+              "artifacts",
+              "preview_foreground_pixels"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "error": {
+                "$ref": "#/$defs/ArchyError"
+              },
+              "status": {
+                "const": "failed",
+                "type": "string"
+              },
+              "worker_response_sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "status",
+              "error"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "RenderVariant": {
+        "additionalProperties": false,
+        "properties": {
+          "required_checks_passed": {
+            "type": "boolean"
+          },
+          "result": {
+            "$ref": "#/$defs/RenderResult"
+          },
+          "variant_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "variant_id",
+          "required_checks_passed",
+          "result"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/$defs/RenderData"
+          },
+          "error": {
+            "type": "null"
+          },
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "$ref": "#/$defs/ArchyError"
+          },
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok",
+          "data",
+          "error"
+        ],
+        "type": "object"
+      }
+    ]
+  }
+}

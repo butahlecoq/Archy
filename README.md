@@ -1,45 +1,50 @@
 # Archy
 
-Archy is a prototype for agent-centered architectural design on Omarchy. It turns a structured massing brief into inspectable alternatives, BIM deliverables, and reproducible comparisons.
+Archy is an architectural workspace for Omarchy. This partial release 0.1 exposes local `init`, `validate`, `generate`, `evaluate`, `compare`, `render` and `export-ifc` commands. Render and IFC export use supervised worker boundaries. IFC export publishes schematic `DRAFT` artifacts only after verification. A18 remains open.
 
-The repository includes a deterministic massing evaluator, a local MCP server, a Blender workflow, and a project CLI. It validates rectangular alternatives, including optional plan rotation and an optional maximum building-height limit, records brief provenance, generates inspectable geometry, renders isolated previews, checks saved geometry, exports and verifies an IFC4 model, and writes JSON and HTML comparison reports. Rotation is counter-clockwise in degrees around the footprint's local lower-left corner; an omitted angle means zero. Each IFC alternative has its own building and storey levels, with one full-height mass proxy. The project CLI and MCP tools store immutable brief revisions and study history.
+The [release specification](docs/specs/release-0.1.txt) supersedes earlier proposals. Structured manifests are authoritative; Blender scenes and IFC are derived artifacts. Validation does not certify legal or professional compliance.
 
-Omarchy is the initial target environment for development and the proof of concept. The project should document any Omarchy-specific setup while keeping its architectural specifications independent of the desktop environment.
+Contributors can follow the [source quickstart](docs/contributor-quickstart.md) for a repeatable offline development check and a handoff template. It distinguishes this source demo from an Omarchy installation.
 
-## Direction
+## Development and use
 
-Archy owns the project specification, constraints, design decisions, and evaluation history. Existing tools provide specialized modeling and BIM capabilities. The intended source of truth is a structured design specification together with IFC data; a Blender scene is a derived view, not the sole record of a design.
+The current source CLI help is the command authority. Build locally with a unique target, then run the disposable demo (Python 3 standard library only):
 
-The first milestone is a proof of concept that takes one brief, generates three building masses without manual modeling, checks their stated geometric constraints, renders them, and produces a comparison whose measurements can be independently reproduced.
+```sh
+export CARGO_TARGET_DIR=/path/on/ssd/archy-a18-target
+cargo build --locked -p archy-cli
+python3 scripts/demo.py --archy "$CARGO_TARGET_DIR/debug/archy"
+```
 
-Archy is intentionally not a general CAD or BIM authoring tool. It is a deterministic decision and handoff layer for early massing: it owns the brief, evaluation, comparison, verification, and project history, while reusing existing tools such as Blender and IfcOpenShell for geometry, rendering, and exchange. Overlapping capabilities should be investigated as upstream contributions or integrations before being built into Archy.
+The script prints and retains its fresh project path. To choose the location, add `--project-dir /path/to/absent-directory`; existing paths are refused. It runs `init`, `validate`, seeded `generate`, `evaluate --all`, `render --all`, and JSON/Markdown `compare`. Accepted runs stay under `runs/`; comparison copies are `comparison.json` and `comparison.md`. Before printing verified artifact paths, it checks the receipt against native accepted-run status and artifact digests. When the service gate is absent it exits **2** with retained `BACKEND_UNAVAILABLE` failures and comparisons. `--export-variant ID` identifies a candidate for review but does not export IFC or record approval. See [CLI and demo limits](docs/cli.md).
 
-## Documents
+Install pinned Rust 1.99.1 with rustfmt/clippy, then:
 
-- [Architecture](docs/architecture.md): proposed responsibilities, data, and boundaries.
-- [Proof of concept](docs/proof-of-concept.md): workflow, deliverables, and success criteria.
-- [Massing brief schema](docs/massing-brief.schema.json): version 1 machine-readable brief shape.
-- [Agent tools](docs/agent-tools.md): local MCP access to deterministic massing evaluation.
-- [Integrations](docs/integrations.md): candidate projects and questions to investigate.
-- [Project structure](docs/project-structure.md): project revisions, study runs, and history.
-- [Roadmap](docs/roadmap.md): milestones and decisions still to make.
+```sh
+cargo build --locked --workspace
+cargo run --locked -p archy-cli -- init --name courtyard-demo --dir ./courtyard-demo
+cargo run --locked -p archy-cli -- validate --project ./courtyard-demo/project.yaml --json
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+python -m pip install jsonschema==4.26.0
+python scripts/check-schemas.py
+```
 
-## Run the massing proof of concept
+`init` requires an absent target with an existing parent. It creates project.yaml and a local schema, refusing existing files, directories or symlinks. A write failure can leave a partial new directory for inspection; recovery never removes user files. `validate --project` accepts a YAML/JSON manifest file, not a directory. `--json` emits one normalized object or error envelope on stdout; failures exit nonzero. Source bytes remain unchanged.
 
-Run the complete local workflow from the repository root with `python -m archy.workflow examples/massing-brief.yaml output/massing-study`. It evaluates the brief, builds and inspects the Blender scene, renders one isolated PNG per alternative, exports an IFC4 file, verifies its structure, geometry, and properties, and writes JSON and HTML comparison reports. Each option has a separate building, one level per floor, and one full-height proxy. Constraint failures remain in the report so alternatives can still be compared. Before Blender starts, the workflow validates the IFC input, checks that IfcOpenShell is available, and requires each building's total extrusion height to be at least 0.0001 m (0.1 mm). The output bundle includes `massing.ifc` and `manifest.json` with artifact hashes, sizes, and Blender provenance. Verify a copied or archived bundle with `python -m archy.verify output/massing-study`. Blender must be on `PATH`. Install IFC dependencies with `python -m pip install '.[ifc]'` in the Archy environment.
+## Input contract
 
-For standalone exchange, create an evaluation with `python -m archy examples/massing-brief.yaml evaluation.json`, then run `python -m archy.ifc evaluation.json massing.ifc`. Verify it with `python -m archy.ifc_verify evaluation.json massing.ifc`. These commands require the `[ifc]` extra.
+Fresh authoring uses schema_version `0.2.0`, `id` (1–128 ASCII letters/digits/underscore/hyphen), units (`m`, `mm`, `cm`, `ft`), site, brief and constraints (possibly empty). Existing `0.1.0` briefs can be imported for fresh work when their preferences are bounded declarative text; accepted historical runs keep their recorded v1 bytes. Brief requires positive integer storeys, floor-to-floor height and target GFA. Site requires width/depth or a closed axis-aligned rectangular polygon. Polygon position is retained; canonical winding starts at minimum X/Y in right-handed XY, Z-up coordinates.
 
-## Check the local toolchain
+Generic dimensions use global units; constraints may override units. Explicit `_m`/`_m2` fields always mean SI, regardless of global or constraint units. Supplying both representations fails. Null dimensions mean absent. All dimensions must be finite and positive. North defaults to zero and normalizes modulo 360. Target GFA is soft unless target_gfa_hard=true. Hard setbacks and site/storey capacity must be consistent; candidate height feasibility belongs to evaluation. Length tolerance is 1e-6 m; area comparison tolerance is separately 1e-6 m².
 
-Run `.venv/bin/python -m archy doctor` for a readable diagnostic, or add `--json` for machine-readable output. The Blender check launches Blender with a bounded factory-startup probe that imports `bpy`, `math`, `hashlib`, and `subprocess`, then reports Blender's embedded Python prefix. This confirms that Blender starts and those imports are available in its embedded Python; it does not establish compatibility with Archy's Python environment or certify that the desktop environment is contained or safe. Each check has a name, status (`available`, `unavailable`, or `deferred`), detail, and an optional remedy. The command exits 1 when a required Blender or IFC dependency is unavailable, and 0 otherwise. Compatibility checks, desktop containment checks, and packaging readiness remain deferred; this command makes no full readiness claim.
+Current constraints require unique `id`, supported `kind` (`max_height`, `min_edge_setback`), positive `bound`, explicit input `unit`, nonempty `source` and `authority`. Normalized constraints emit `bound` in meters and `unit: m`; authority remains an unverified user declaration. `max_height` is an upper bound and `min_edge_setback` a lower bound. Fresh runs with `source: claimed_regulation` retain the measured geometric check and add a separate required authority `UNKNOWN` check with no invented measurement or approval. Canonical preferences are ordered, bounded typed intentions for `massing_character`, `landscape_intent`, or `architectural_intent`; they are uncomputed and do not affect generation or evaluation. Exact old strings `courtyard` and `retain trees` retain their kinds on v1 import, while other declarative wishes retain their text under `architectural_intent`. Use bounded passive `notes` in v2 for separate source prose. Notes are untrusted data, never instructions. See [ADR 0006](docs/adr/0006-canonical-project-v2.md). Generation defaults to count=3, seed=42 and rectangle/l_shape.
 
-## Keep project revisions and studies
+Unknown/duplicate fields fail. YAML anchors, aliases, merge keys and unsupported tags fail. Input limits are 1 MiB, depth 32, and bounded nodes/events/scalars. Text resembling numbers/booleans requires YAML quotes. Errors include stable code, field path and retriable flag; syntax errors use `$` where no field is available, with parser locations in the message. Generated schemas describe structure; core validation additionally enforces cross-field dimensions, finite arithmetic and geometry.
 
-Create a project from a brief with `python -m archy project init output/courtyard --brief examples/massing-brief.yaml`. Create a proposed revision with `python -m archy project revise output/courtyard --brief revised-brief.yaml --message "Adjust the east wing"`. Each revision keeps its exact brief bytes and parent revision. A revision does not become current until you promote it.
+Omarchy is the target runtime. WSL/Ubuntu checks are development evidence; actual Omarchy acceptance is deferred. See [research](docs/research/omarchy-and-reuse.md), [dependencies](docs/dependencies.md), [license status](docs/license-status.md) and [handoff](docs/plans/task-01-handoff.md). Original core uses MIT; backend/third-party obligations remain separate.
 
-Run the current revision with `python -m archy project run output/courtyard`. To run a proposal, pass `--revision REVISION_ID`. List revisions and study results with `python -m archy project history output/courtyard`. Promote a proposal only if the current revision still matches the value you reviewed: `python -m archy project promote output/courtyard REVISION_ID --expected-current CURRENT_ID`. Project studies retain the existing workflow artifacts and manifest. Verify a run with `python -m archy.verify output/courtyard/runs/RUN_ID`.
+## Python massing prototype
 
-To let an MCP host help draft and inspect studies, install the `[mcp,ifc]` extra, put Blender on `PATH`, and launch `archy-mcp`. The local stdio server exposes the evaluator, a temporary full-workflow preview, eight persistent project tools, the brief schema, operation contract, and a study-drafting prompt. Project tools use UUIDs and a server-configured data directory; they do not accept filesystem paths. Preview artifacts are returned to the agent and removed after the call. See [Agent tools](docs/agent-tools.md) for storage configuration and tool details.
-
-Archy is a working name. Trademark, package, and repository-name availability need further investigation. A license has not yet been chosen.
+The parallel Python prototype is preserved in `archy/`, with its setup and commands in [Python prototype](docs/python-prototype.md). Both implementations remain unfinished; consolidation does not establish release acceptance.

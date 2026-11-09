@@ -1,0 +1,9 @@
+# A18 demo render continuation plan
+
+Base: `8f0dfc59bd85e2085c1e312148899455a363562d`. Scope: the source demo, its behavior tests, and entry documentation. The CLI's accepted render run and verifier remain the authority for geometric and preview verification.
+
+1. Replace the obsolete unconditional render stop with `render --all --run <evaluation> --json`, using the evaluated revision and one printed idempotency key. Validate the structured receipt, source and selected IDs, run identity, outcomes, and listed artifact digests/lengths before describing a completed render. Keep failed and unavailable outcomes visible, with retained run paths.
+2. Produce both comparison formats for the generation run and print retained project, receipt, comparison and verified artifact paths. Stop explicitly at human selection/approval. The optional `--export-variant` only records a valid candidate selector; no IFC CLI exists at this base.
+3. Replace obsolete tests with real CLI WSL unavailable-gate behavior plus an injected protocol success fixture clearly labeled as such, and adversarial malformed/error/selector/collision cases. Run the dedicated-target CLI build, demo tests, schema checker, and relevant Rust render tests. Update quickstart, README and CLI docs. Freeze a clean commit and report exact evidence and platform limits.
+
+Risks: a forged or stale JSON receipt could cause false success, paths could escape a run, and a backend failure could be mistaken for success. The demo requires native accepted-run verification through `desktop status` and binds the receipt and artifact paths, lengths, and digests to that result. Local path and byte checks add validation; a failed result always stops the demo. The injected fixture exercises only the demo's reachable success behavior, not native backend acceptance. Python uses the standard library; no new dependency is needed.
