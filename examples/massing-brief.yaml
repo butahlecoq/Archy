@@ -1,0 +1,49 @@
+schema_version: 1
+contract_version: 1
+project:
+  id: courtyard-housing-poc
+  name: Courtyard housing massing study
+units:
+  length: m
+  area: m2
+coordinate_system:
+  origin: southwest_site_corner
+  x_axis: east
+  y_axis: north
+  z_axis: up
+site:
+  width_m: 48
+  depth_m: 36
+  setbacks_m:
+    north: 3
+    east: 3
+    south: 3
+    west: 3
+  max_footprint_area_m2: 900
+  target_gross_floor_area_m2: 2400
+  max_building_height_m: 16
+alternatives:
+  - id: compact
+    footprint:
+      width_m: 24
+      depth_m: 22
+      origin_x_m: 12
+      origin_y_m: 7
+    floor_count: 5
+    floor_to_floor_height_m: 3.2
+  - id: elongated
+    footprint:
+      width_m: 30
+      depth_m: 18
+      origin_x_m: 9
+      origin_y_m: 9
+    floor_count: 5
+    floor_to_floor_height_m: 3.2
+  - id: medium-block
+    footprint:
+      width_m: 26
+      depth_m: 20
+      origin_x_m: 11
+      origin_y_m: 8
+    floor_count: 5
+    floor_to_floor_height_m: 3.2

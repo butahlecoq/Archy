@@ -30,6 +30,10 @@ Run the complete local workflow from the repository root with `python -m archy.w
 
 For standalone exchange, create an evaluation with `python -m archy examples/massing-brief.yaml evaluation.json`, then run `python -m archy.ifc evaluation.json massing.ifc`. Verify it with `python -m archy.ifc_verify evaluation.json massing.ifc`. These commands require the `[ifc]` extra.
 
+## Check the local toolchain
+
+Run `.venv/bin/python -m archy doctor` for a readable diagnostic, or add `--json` for machine-readable output. The Blender check launches Blender with a bounded factory-startup probe that imports `bpy`, `math`, `hashlib`, and `subprocess`, then reports Blender's embedded Python prefix. This confirms that Blender starts and those imports are available in its embedded Python; it does not establish compatibility with Archy's Python environment or certify that the desktop environment is contained or safe. Each check has a name, status (`available`, `unavailable`, or `deferred`), detail, and an optional remedy. The command exits 1 when a required Blender or IFC dependency is unavailable, and 0 otherwise. Compatibility checks, desktop containment checks, and packaging readiness remain deferred; this command makes no full readiness claim.
+
 ## Keep project revisions and studies
 
 Create a project from a brief with `python -m archy project init output/courtyard --brief examples/massing-brief.yaml`. Create a proposed revision with `python -m archy project revise output/courtyard --brief revised-brief.yaml --message "Adjust the east wing"`. Each revision keeps its exact brief bytes and parent revision. A revision does not become current until you promote it.

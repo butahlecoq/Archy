@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "archy-massing"
+version = "0.1.0"
+description = "Deterministic architectural massing brief evaluator"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6.0,<7", "jsonschema>=4.21,<5"]
+
+[project.scripts]
+archy = "archy.__main__:main"
+archy-workflow = "archy.workflow:main"
+archy-verify = "archy.verify:main"
+archy-ifc = "archy.ifc:main"
+archy-ifc-verify = "archy.ifc_verify:main"
+archy-mcp = "archy.mcp_server:main"
+
+[project.optional-dependencies]
+ifc = ["ifcopenshell>=0.8,<1", "shapely>=2,<3"]
+mcp = ["mcp>=1.29,<2"]
+
+[tool.setuptools]
+packages = ["archy"]
+
+[tool.setuptools.data-files]
+"share/archy/schemas" = ["docs/massing-brief.schema.json"]
+"share/archy" = ["docs/massing-operations.md"]

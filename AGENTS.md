@@ -36,6 +36,8 @@ If a requested feature overlaps an existing tool, first investigate an integrati
 
 ## Required workflow
 
+Use pstack with two implementer subagents and two reviewer subagents, using GPT-6-Luna at medium reasoning. Skip the `interrogate` skill unless the user explicitly requests it; use the two regular reviewers for review.
+
 1. Work from a GitHub issue.
 2. Use one branch and one worktree per issue.
 3. Keep changes scoped to that issue.

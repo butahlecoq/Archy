@@ -1,0 +1,6 @@
+[tools]
+python = "3.14.8"
+
+[tasks.setup]
+description = "Create a local virtual environment with Archy MCP and IFC dependencies"
+run = "python -m venv .venv && .venv/bin/python -m pip install -e '.[mcp,ifc]'"

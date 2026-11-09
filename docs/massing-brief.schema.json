@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archy.example/schemas/massing-brief-v1.json",
+  "title": "Archy massing brief",
+  "description": "Input contract accepted by the Archy version 1 massing evaluator.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_version", "project", "units", "coordinate_system", "site", "alternatives"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "contract_version": {"const": 1},
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "name": {"type": "string", "minLength": 1, "pattern": "\\S"}
+      }
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "area"],
+      "properties": {"length": {"const": "m"}, "area": {"const": "m2"}}
+    },
+    "coordinate_system": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "x_axis", "y_axis", "z_axis"],
+      "properties": {
+        "origin": {"const": "southwest_site_corner"},
+        "x_axis": {"const": "east"},
+        "y_axis": {"const": "north"},
+        "z_axis": {"const": "up"}
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_m", "depth_m", "setbacks_m", "max_footprint_area_m2", "target_gross_floor_area_m2"],
+      "properties": {
+        "width_m": {"type": "number", "exclusiveMinimum": 0},
+        "depth_m": {"type": "number", "exclusiveMinimum": 0},
+        "setbacks_m": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["north", "east", "south", "west"],
+          "properties": {
+            "north": {"type": "number", "minimum": 0},
+            "east": {"type": "number", "minimum": 0},
+            "south": {"type": "number", "minimum": 0},
+            "west": {"type": "number", "minimum": 0}
+          }
+        },
+        "max_footprint_area_m2": {"type": "number", "exclusiveMinimum": 0},
+        "target_gross_floor_area_m2": {"type": "number", "exclusiveMinimum": 0},
+        "max_building_height_m": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "footprint", "floor_count", "floor_to_floor_height_m"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"},
+          "footprint": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["width_m", "depth_m", "origin_x_m", "origin_y_m"],
+            "properties": {
+              "width_m": {"type": "number", "exclusiveMinimum": 0},
+              "depth_m": {"type": "number", "exclusiveMinimum": 0},
+              "origin_x_m": {"type": "number", "minimum": 0},
+              "origin_y_m": {"type": "number", "minimum": 0},
+              "rotation_degrees": {"type": "number", "minimum": 0, "exclusiveMaximum": 360}
+            }
+          },
+          "floor_count": {"type": "integer", "minimum": 1},
+          "floor_to_floor_height_m": {"type": "number", "exclusiveMinimum": 0}
+        }
+      }
+    }
+  }
+}
